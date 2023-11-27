@@ -1,0 +1,19 @@
+---
+
+- name: install Rclone and start web gui
+  hosts: host
+  become: true
+  tasks:
+
+    - name: apdate apt
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: install Rclone using apt
+      apt:
+        name: rclone
+        state: present
+
+    - name: start web gui
+      command: "rclone rcd --rc-web-gui --rc-user root --rc-pass rootroot"
