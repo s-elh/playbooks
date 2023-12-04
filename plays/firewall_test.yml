@@ -1,0 +1,27 @@
+---
+- name: Write to firewall example files
+  hosts: all
+  tasks:
+    - name: Ensure the file f5 exists and contains a specific sentence
+      ansible.builtin.lineinfile:
+        path: /tmp/f5
+        line: "{{ morpheus['customOptions']['f5'] }}"
+        create: yes
+        
+    - name: Ensure the file palo exists and contains a specific sentence
+      ansible.builtin.lineinfile:
+        path: /tmp/palo
+        line: "{{ morpheus['customOptions']['palo'] }}"
+        create: yes
+
+    - name: Ensure the file forti exists and contains a specific sentence
+      ansible.builtin.lineinfile:
+        path: /tmp/forti
+        line: "{{ morpheus['customOptions']['forti'] }}"
+        create: yes
+
+    - name: Ensure the file nsx exists and contains a specific sentence
+      ansible.builtin.lineinfile:
+        path: /tmp/nsx
+        line: "{{ morpheus['customOptions']['nsx'] }}"
+        create: yes
