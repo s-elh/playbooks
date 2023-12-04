@@ -1,6 +1,6 @@
 ---
 - name: Write to firewall example files
-  hosts: all
+  hosts: 192.168.100.106
   vars:
     ansible_python_interpreter: /usr/bin/python3
   tasks:
