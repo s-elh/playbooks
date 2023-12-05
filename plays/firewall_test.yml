@@ -6,9 +6,6 @@
     ansible_python_interpreter: /usr/bin/python3
   tasks:
     - name: Ensure the file f5 exists and contains a specific sentence
-      ansible.builtin.lineinfile:
-        path: /tmp/f5
-        line: "test"
-        create: yes
+      command: touch /tmp/f5 && echo "{{ morpheus['customOptions']['f5'] }}" > /tmp/f5
         
     
