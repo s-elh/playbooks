@@ -1,6 +1,6 @@
 ---
 - name: Write to firewall example files
-  hosts: unassigned
+  hosts: dev
   gather_facts: false
   tasks:
     - name: Ensure the file f5 exists and contains a specific sentence
