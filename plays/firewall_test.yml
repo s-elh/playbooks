@@ -1,11 +1,13 @@
 ---
-- name: Write to firewall example files
+
+- name: firewall example files
   hosts: dev
   gather_facts: false
   vars:
     ansible_python_interpreter: /usr/bin/python3
   tasks:
-    - name: Ensure the file f5 exists and contains a specific sentence
-      command: touch /tmp/f5
+    - name: Ensure the file f5 
+      command: 
+        cmd: touch /tmp/f5
         
     
