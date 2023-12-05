@@ -6,6 +6,6 @@
     ansible_python_interpreter: /usr/bin/python3
   tasks:
     - name: Ensure the file f5 exists and contains a specific sentence
-      command: touch /tmp/f5 && echo "{{ morpheus['customOptions']['f5'] }}" > /tmp/f5
+      command: touch /tmp/f5
         
     
