@@ -8,6 +8,6 @@
   tasks:
     - name: Ensure the file f5 
       command: 
-        cmd: touch /tmp/f5
+        cmd: "touch /tmp/f5"
         
     
