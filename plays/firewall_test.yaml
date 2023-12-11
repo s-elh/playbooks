@@ -9,5 +9,8 @@
     - name: Ensure the file f5 
       command: 
         cmd: "touch /tmp/f5"
+    - name: log
+      debug:
+        msg: {{ morpheus['customOptions']['f5'] }}
         
     
