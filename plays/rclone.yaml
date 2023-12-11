@@ -1,7 +1,7 @@
 ---
 
 - name: install Rclone and start web gui
-  hosts: dev
+  hosts: unassigned
   become: true
   tasks:
 
