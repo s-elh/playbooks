@@ -15,5 +15,3 @@
         name: rclone
         state: present
 
-    - name: start web gui
-      command: "rclone rcd --rc-web-gui --rc-user root --rc-pass rootroot"
