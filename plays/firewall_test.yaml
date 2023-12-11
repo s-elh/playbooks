@@ -11,6 +11,6 @@
         cmd: "touch /tmp/f5"
     - name: log
       debug:
-        msg: {{ morpheus['customOptions']['f5'] }}
+        msg: "{{ morpheus['customOptions']['f5'] }}"
         
     
