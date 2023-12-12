@@ -5,18 +5,25 @@
   gather_facts: false
   vars:
     ansible_python_interpreter: /usr/bin/python3
-  tasks:
-    - name: log value of f5
-      command:
-        cmd: echo "{{ morpheus['customOptions']['f5'] }}" > /tmp/f5
-    - name: log value of palo
-      command:
-        cmd: echo "{{ morpheus['customOptions']['palo'] }}" > /tmp/palo
-    - name: log value of forti
-      command:
-        cmd: echo "{{ morpheus['customOptions']['forti'] }}" > /tmp/forti
-    - name: log value of nsx
-      command:
-        cmd: echo "{{ morpheus['customOptions']['nsx'] }}" > /tmp/nsx
+  tasks:  
+    - name: Create and write to f5.txt
+      copy:
+        content: "{{ morpheus['customOptions']['f5'] }}"
+        dest: "/tmp/f5.txt"
+
+    - name: Create and write to palo.txt
+      copy:
+        content: "{{ morpheus['customOptions']['palo'] }}"
+        dest: "/tmp/palo.txt"
+
+    - name: Create and write to forti.txt
+      copy:
+        content: "{{ morpheus['customOptions']['forti'] }}"
+        dest: "/tmp/forti.txt"
+
+    - name: Create and write to nsx.txt
+      copy:
+        content: "{{ morpheus['customOptions']['nsx'] }}"
+        dest: "/tmp/nsx.txt"
         
     
