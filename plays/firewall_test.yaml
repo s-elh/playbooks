@@ -7,7 +7,7 @@
   vars:
     ansible_python_interpreter: /usr/bin/python3
   tasks: 
-    - name: log f5
+    - name: log f5 val
       debug:
         msg: "f5 is {{ morpheus['customOptions']['f5'] }}"
 
