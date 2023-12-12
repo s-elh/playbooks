@@ -1,15 +1,12 @@
 ---
 
 - name: firewall example files
-  hosts: dev
+  hosts: unassigned
   gather_facts: false
   vars:
     ansible_python_interpreter: /usr/bin/python3
   tasks:
-    - name: Ensure the file f5 
-      command: 
-        cmd: "touch /tmp/f5"
-    - name: log
+    - name: log value of f5
       debug:
         msg: "{{ morpheus['customOptions']['f5'] }}"
         
