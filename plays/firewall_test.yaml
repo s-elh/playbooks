@@ -10,7 +10,7 @@
       debug:
         msg: "f5 is {{ morpheus['customOptions']['f5'] }}"
 
-    - ansible.builtin.lineinfile:
+    - lineinfile:
         path: /tmp/f5
         line: test
         create: yes
