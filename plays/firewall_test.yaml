@@ -11,12 +11,12 @@
         msg: "f5 is {{ morpheus['customOptions']['f5'] }}"
     - name: Create and write to f5.txt
       copy:
-        content: "{{ morpheus['customOptions']['f5'] }}"
+        content: "test"
         dest: "/tmp/f5.txt"
 
     - name: Create and write to palo.txt
       copy:
-        content: "{{ morpheus['customOptions']['palo'] }}"
+        content: "test {{ morpheus['customOptions']['palo'] }}"
         dest: "/tmp/palo.txt"
 
     - name: Create and write to forti.txt
