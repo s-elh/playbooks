@@ -3,7 +3,7 @@
 - name: firewall example files
   hosts: unassigned
   become: true
-  gather_facts: false
+  #gather_facts: false
   vars:
     ansible_python_interpreter: /usr/bin/python3
   tasks: 
