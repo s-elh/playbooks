@@ -6,12 +6,13 @@
   vars:
     ansible_python_interpreter: /usr/bin/python3
   tasks: 
-    - name: Create and write to f5.txt
+    - name: log f5
       debug:
         msg: "f5 is {{ morpheus['customOptions']['f5'] }}"
 
-    - lineinfile:
-        path: /tmp/f5
+    - name: create and write to f5.txt
+      lineinfile:
+        path: /tmp/f5.txt
         line: test
         create: yes
 
