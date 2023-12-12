@@ -8,7 +8,7 @@
   tasks: 
     - name: Create and write to f5.txt
       debug:
-        msg: f5 is "{{ morpheus['customOptions']['f5'] }}"
+        msg: "f5 is {{ morpheus['customOptions']['f5'] }}"
     - name: Create and write to f5.txt
       copy:
         content: "{{ morpheus['customOptions']['f5'] }}"
