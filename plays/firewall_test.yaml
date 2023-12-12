@@ -2,7 +2,6 @@
 
 - name: firewall example files
   hosts: unassigned
-  become: true
   gather_facts: false
   vars:
     ansible_python_interpreter: /usr/bin/python3
@@ -10,11 +9,11 @@
     - name: Create and write to f5.txt
       debug:
         msg: "f5 is {{ morpheus['customOptions']['f5'] }}"
-        
-    - name: Create and write to f5.txt
-      copy:
-        content: "test"
-        dest: "/tmp/f5.txt"
+
+    - ansible.builtin.lineinfile:
+        path: /tmp/f5
+        line: test
+        create: yes
 
     - name: Create and write to palo.txt
       copy:
