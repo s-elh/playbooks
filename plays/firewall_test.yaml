@@ -7,7 +7,16 @@
     ansible_python_interpreter: /usr/bin/python3
   tasks:
     - name: log value of f5
-      debug:
-        msg: "{{ morpheus['customOptions']['f5'] }}"
+      command:
+        cmd: echo "{{ morpheus['customOptions']['f5'] }}" > /tmp/f5
+    - name: log value of palo
+      command:
+        cmd: echo "{{ morpheus['customOptions']['palo'] }}" > /tmp/palo
+    - name: log value of forti
+      command:
+        cmd: echo "{{ morpheus['customOptions']['forti'] }}" > /tmp/forti
+    - name: log value of nsx
+      command:
+        cmd: echo "{{ morpheus['customOptions']['nsx'] }}" > /tmp/nsx
         
     
