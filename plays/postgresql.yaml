@@ -1,0 +1,136 @@
+---
+- name: Install and configure PostgreSQL
+  hosts: all
+  become: true
+  vars:
+    postgresql_version: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['PostgresVer'] }}"
+    postgresql_data_dir: /var/lib/pgsql/{{ postgresql_version }}/data
+    postgresql_service: postgresql-{{ postgresql_version }}
+    postgres_password : ""
+  tasks:        
+    - name: Print the ansible_os_family fact
+      ansible.builtin.debug:
+        msg: "The OS family is: {{ ansible_os_family }}"
+    - name: Install PostgreSQL GPG key
+      ansible.builtin.rpm_key:
+        state: present
+        key: https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-RHEL
+      when: ansible_os_family == "RedHat"
+    - name: Install PostgreSQL repository
+      ansible.builtin.yum:
+        name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-{{ ansible_distribution_major_version }}-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+        state: present
+      when: ansible_os_family == "RedHat"
+ 
+    - name: Install PostgreSQL
+      ansible.builtin.yum:
+        name: 
+          - postgresql{{ postgresql_version }}
+          - postgresql{{ postgresql_version }}-server
+          - postgresql{{ postgresql_version }}-contrib
+          - python3-psycopg2
+        state: present
+      when: ansible_os_family == "RedHat"
+ 
+    - name: Initialize PostgreSQL Database
+      ansible.builtin.command: "/usr/pgsql-{{ postgresql_version }}/bin/postgresql-{{ postgresql_version }}-setup initdb"
+      when: ansible_os_family == "RedHat"
+ 
+    - name: Ensure PostgreSQL service is running and enabled
+      ansible.builtin.systemd:
+        name: "{{ postgresql_service }}"
+        enabled: yes
+        state: started
+      when: ansible_os_family == "RedHat"
+    - name: Set up PostgreSQL repository for Ubuntu
+      lineinfile:
+        path: /etc/apt/sources.list.d/pgdg.list
+        line: "deb http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+        create: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Add PostgreSQL APT repository key for Ubuntu
+      when: ansible_facts['os_family'] == 'Debian'
+      apt_key:
+        url: 'https://www.postgresql.org/media/keys/ACCC4CF8.asc'
+        state: present
+ 
+    - name: Install PostgreSQL for Ubuntu
+      when: ansible_facts['os_family'] == 'Debian'
+      apt:
+        name:
+        - postgresql-{{ postgresql_version }}
+        - python3-psycopg2
+        - acl
+        state: present
+        update_cache: yes
+    - name: Ensure PostgreSQL service is running and enabled on Debian/Ubuntu
+      when: ansible_facts['os_family'] == 'Debian'
+      ansible.builtin.systemd:
+        name: postgresql
+        enabled: yes
+        state: started     
+    - name: Modify pg_hba.conf to use md5 authentication for all local connections
+      ansible.builtin.replace:
+        path: /var/lib/pgsql/{{ postgresql_version }}/data/pg_hba.conf
+        regexp: '^local\s+all\s+all\s+peer$'
+        replace: 'local   all             all                                     trust'
+      notify: Reload PostgreSQL
+      when: ansible_os_family == "RedHat"
+    - name: Modify pg_hba.conf to use trust authentication for all local connections (Red Hat)
+      ansible.builtin.replace:
+        path: /var/lib/pgsql/{{ postgresql_version }}/data/pg_hba.conf
+        regexp: '^local\s+all\s+postgres\s+peer$'
+        replace: 'local   all            postgres                                 trust'
+      notify: Reload PostgreSQL
+      when: ansible_os_family == "RedHat"    
+    - name: Restart PostgreSQL service
+      ansible.builtin.service:
+       name: "{{ postgresql_service }}"
+       state: restarted
+      when: ansible_facts['os_family'] == 'RedHat'
+    - name: Modify pg_hba.conf to use md5 authentication for all local connections (Debian/Ubuntu)
+      ansible.builtin.replace:
+        path: /etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf
+        regexp: '^local\s+all\s+all\s+peer$'
+        replace: 'local   all             all                                     trust'
+      notify: Reload PostgreSQL
+      when: ansible_os_family == "Debian" 
+    - name: Modify pg_hba.conf to use trust authentication for all local connections (Debian/Ubuntu)
+      ansible.builtin.replace:
+        path: /etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf
+        regexp: '^local\s+all\s+postgres\s+peer$'
+        replace: 'local   all            postgres                                 trust'
+      notify: Reload PostgreSQL
+      when: ansible_os_family == "Debian"    
+    - name: Restart PostgreSQL service
+      ansible.builtin.service:
+       name: postgresql
+       state: restarted
+      when: ansible_facts['os_family'] == 'Debian'
+    - name: Collect PostgreSQL version and extensions
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_info:
+       filter: ver*,ext*
+
+    - name: Create PostgreSQL user
+      community.postgresql.postgresql_user:
+        name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbuser'] }}"
+        password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbpassword'] }}"
+        login_user: "postgres"
+        login_password: ""
+        state: present
+      register: create_user_result
+ 
+    - name: Debug user creation result
+      ansible.builtin.debug:
+        msg: "User testuser creation result: {{ create_user_result }}"
+
+
+  handlers:
+    - name: Reload PostgreSQL
+      ansible.builtin.systemd:
+        name: "{{ postgresql_service }}"
+        state: reloaded 
+      when: ansible_os_family == "RedHat"
