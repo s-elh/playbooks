@@ -1,0 +1,130 @@
+---
+- name: Install and Configure MongoDB on Ubuntu
+  hosts: all
+  become: yes
+  vars:
+    mongodb_version: "6.0"  # Adjust version as needed
+    mongodb_repo_url: "https://repo.mongodb.org/yum/redhat/$releasever/mongodb-org/{{ mongodb_version }}/x86_64/"
+
+
+  tasks:
+    - name: Add MongoDB GPG key
+      when: ansible_distribution == "Ubuntu"
+      ansible.builtin.apt_key:
+       url: https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc
+       state: present
+
+    - name: Add MongoDB repository
+      when: ansible_distribution == "Ubuntu"
+      ansible.builtin.apt_repository:
+       repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} multiverse"
+       state: present
+
+    - name: Update apt cache
+      when: ansible_distribution == "Ubuntu"
+      ansible.builtin.apt:
+       update_cache: yes
+       
+    
+
+    - name: Add MongoDB repository
+      when: ansible_distribution == 'RedHat'
+      yum_repository:
+        name: "mongodb-org-{{ mongodb_version }}"
+        description: "MongoDB Repository"
+        baseurl: "{{ mongodb_repo_url }}"
+        gpgcheck: yes
+        enabled: yes
+        gpgkey: https://www.mongodb.org/static/pgp/server-6.0.asc
+
+    - name: Ensure cache is refreshed after adding MongoDB repository
+      when: ansible_distribution == 'RedHat'
+      yum:
+        name: "*"
+        state: latest
+        update_cache: yes
+
+    - name: Install MongoDB
+      when: ansible_distribution == 'RedHat'
+      yum:
+        name: 
+         - mongodb-org
+         - mongodb-mongosh
+        state: present
+
+    - name: Enable and start MongoDB
+      when: ansible_distribution == 'RedHat'
+      systemd:
+        name: mongod
+        enabled: yes
+        state: started
+
+    - name: Ensure MongoDB is running
+      when: ansible_distribution == 'RedHat'
+      shell: "systemctl status mongod"
+      register: mongod_status
+      ignore_errors: yes
+
+    - name: Print MongoDB status
+      when: ansible_distribution == 'RedHat'
+      debug:
+        msg: "{{ mongod_status.stdout_lines }}"
+
+    - name: Configure firewalld to allow MongoDB traffic
+      when: ansible_distribution == 'RedHat'
+      firewalld:
+        service: mongodb
+        permanent: yes
+        immediate: yes
+        state: enabled
+      notify: reload firewalld
+
+  
+  
+
+    - name: Install MongoDB package on Ubuntu
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name:
+         - mongodb-org
+         - mongodb-mongosh
+        state: present
+
+    - name: Start and enable MongoDB service on Ubuntu
+      when: ansible_distribution == "Ubuntu"
+      service:
+        name: mongod
+        state: started
+        enabled: yes
+    
+
+   
+    
+    - name: Install pip3
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: python3-pip
+        state: present
+        update_cache: yes
+    - name: Ensure MongoDB Python driver is installed
+      pip:
+        name: pymongo
+
+    - name: Define roles
+      community.mongodb.mongodb_user:
+       database: testdb
+       name: testuser
+       password: 12345
+       roles: readWrite,dbAdmin,userAdmin
+       state: present
+    
+   
+     
+
+    
+ 
+  handlers:
+    - name: reload firewalld
+      service:
+        name: firewalld
+        state: reloaded            
