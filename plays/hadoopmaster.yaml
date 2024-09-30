@@ -1,5 +1,7 @@
 ---
 - hosts: all
+  vars:
+    slave_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'masternode'}.collect{it.externalIp}"
   become: yes
   tasks:
   
@@ -17,13 +19,20 @@
         state: present
         groups: sudo
         shell: /bin/bash
+        password: ACSCloud!2021!
     
-    # Step 3: Install SSH
+    # Step 3: Install and configure SSH
     - name: Install SSH
       apt:
         name: openssh-server
         state: present
         update_cache: yes
+
+    - name: configure passwordless ssh
+      command: {{ item }}
+      with_items:
+        - ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -q -N ""
+        - sshpass -p "ACSCloud!2021!" ssh-copy-id -i "$HOME/.ssh/id_rsa.pub" "hadoop@{{ slave_ip }}"
     
     # Step 4: Download and install Hadoop
     - name: Download Hadoop
@@ -114,6 +123,12 @@
               <value>mapreduce_shuffle</value>
             </property>
           </configuration>
+          
+    - name: Configure slave
+      copy:
+        dest: /usr/local/hadoop/etc/hadoop/workers
+        content: |
+          {{ slave_ip }}
 
     # Step 7: Format the NameNode
     - name: Format NameNode
