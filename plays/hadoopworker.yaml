@@ -1,6 +1,9 @@
 ---
 - hosts: all
   become: yes
+  vars:
+    master_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'masternode'}.collect{it.externalIp}"
+
   tasks:
 
     # Step 1: Install Java
@@ -17,6 +20,7 @@
         state: present
         groups: sudo
         shell: /bin/bash
+        password: ACSCloud!2021!
     
     # Step 3: Install SSH
     - name: Install SSH
@@ -57,8 +61,38 @@
     
     - name: Source the environment variables
       command: source /home/hadoop/.bashrc
+
+    # Step 6: Configure Hadoop's core-site.xml
+    - name: Configure core-site.xml with Master IP
+      copy:
+        dest: /usr/local/hadoop/etc/hadoop/core-site.xml
+        content: |
+          <configuration>
+            <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://{{ master_ip }}:9000</value>
+            </property>
+          </configuration>
+      
     
-    # Step 6: Start Hadoop DataNode and NodeManager services
+    # Step 7: Configure Hadoop's yarn-site.xml
+    - name: Configure yarn-site.xml with Master IP
+      copy:
+        dest: /usr/local/hadoop/etc/hadoop/yarn-site.xml
+        content: |
+          <configuration>
+            <property>
+              <name>yarn.resourcemanager.hostname</name>
+              <value>{{ master_ip }}</value>
+            </property>
+            <property>
+              <name>yarn.nodemanager.aux-services</name>
+              <value>mapreduce_shuffle</value>
+            </property>
+          </configuration>
+    
+
+    # Step 8: Start Hadoop DataNode and NodeManager services
     - name: Start DataNode service
       command: /usr/local/hadoop/sbin/hadoop-daemon.sh start datanode
       become_user: hadoop
@@ -66,3 +100,5 @@
     - name: Start NodeManager service
       command: /usr/local/hadoop/sbin/yarn-daemon.sh start nodemanager
       become_user: hadoop
+
+
