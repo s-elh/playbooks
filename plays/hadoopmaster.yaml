@@ -31,8 +31,8 @@
     - name: configure passwordless ssh
       command: {{ item }}
       with_items:
-        - ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -q -N ""
-        - sshpass -p "ACSCloud!2021!" ssh-copy-id -i "$HOME/.ssh/id_rsa.pub" "hadoop@{{ slave_ip }}"
+        - ' ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -q -N "" '
+        - ' sshpass -p "ACSCloud!2021!" ssh-copy-id -i "$HOME/.ssh/id_rsa.pub" "hadoop@{{ slave_ip }}" '
     
     # Step 4: Download and install Hadoop
     - name: Download Hadoop
