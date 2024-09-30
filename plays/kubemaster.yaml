@@ -40,12 +40,12 @@
     - name: Copy Kubernetes bundle to target machine
       copy:
         src: "{{ bundle_path }}"
-        dest: "{{ destination_dir }}/d73202e.tar.gz"
+        dest: "{{ destination_dir }}/473f02a.tar.gz"
         mode: '0644'
 
     - name: Extract Kubernetes bundle
       unarchive:
-        src: "{{ destination_dir }}/d73202e.tar.gz"
+        src: "{{ destination_dir }}/473f02a.tar.gz"
         dest: "{{ destination_dir }}"
         remote_src: yes
 
