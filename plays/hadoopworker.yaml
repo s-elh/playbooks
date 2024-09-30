@@ -6,6 +6,16 @@
     proxy_url: "http://10.1.38.2:3128"
 
   tasks:
+  
+    # Step 2: Create Hadoop user
+    - name: Add Hadoop user
+      user:
+        name: hadoop
+        state: present
+        groups: sudo
+        shell: /bin/bash
+        password: ACSCloud!2021!
+        
     - name: Configure HTTP proxy for apt
       copy:
         content: |
@@ -30,14 +40,7 @@
         state: present
         update_cache: yes
     
-    # Step 2: Create Hadoop user
-    - name: Add Hadoop user
-      user:
-        name: hadoop
-        state: present
-        groups: sudo
-        shell: /bin/bash
-        password: ACSCloud!2021!
+
     
     # Step 3: Install SSH
     - name: Install SSH
