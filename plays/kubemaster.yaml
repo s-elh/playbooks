@@ -1,0 +1,60 @@
+---
+- name: Configure HTTP/HTTPS proxy and install Kubernetes
+  hosts: all
+  become: yes
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    bundle_path: "/tmp/473f02a.tar.gz"
+    destination_dir: "/opt/kube"
+    output_file: "/opt/kube/join_command.txt"
+
+  tasks:
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Refresh apt cache
+      apt:
+        update_cache: yes
+
+    - name: Create destination directory
+      file:
+        path: "{{ destination_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy Kubernetes bundle to target machine
+      copy:
+        src: "{{ bundle_path }}"
+        dest: "{{ destination_dir }}/d73202e.tar.gz"
+        mode: '0644'
+
+    - name: Extract Kubernetes bundle
+      unarchive:
+        src: "{{ destination_dir }}/d73202e.tar.gz"
+        dest: "{{ destination_dir }}"
+        remote_src: yes
+
+    - name: Run Kubernetes install script and capture output
+      shell: |
+        cat {{ destination_dir }}/install.sh | sudo bash -s airgap
+      register: install_output
+
+    - name: Extract last line containing join command and save to file
+      shell: |
+        echo "{{ install_output.stdout_lines[-1] }}" > {{ output_file }}
+      when: install_output.stdout_lines is defined and install_output.stdout_lines | length > 0
