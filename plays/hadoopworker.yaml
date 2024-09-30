@@ -1,0 +1,68 @@
+---
+- hosts: workers
+  become: yes
+  tasks:
+
+    # Step 1: Install Java
+    - name: Install OpenJDK 8
+      apt:
+        name: openjdk-8-jdk
+        state: present
+        update_cache: yes
+    
+    # Step 2: Create Hadoop user
+    - name: Add Hadoop user
+      user:
+        name: hadoop
+        state: present
+        groups: sudo
+        shell: /bin/bash
+    
+    # Step 3: Install SSH
+    - name: Install SSH
+      apt:
+        name: openssh-server
+        state: present
+        update_cache: yes
+
+    # Step 4: Download and install Hadoop
+    - name: Download Hadoop
+      get_url:
+        url: https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz
+        dest: /tmp/hadoop-3.3.6.tar.gz
+
+    - name: Extract Hadoop
+      unarchive:
+        src: /tmp/hadoop-3.3.6.tar.gz
+        dest: /usr/local
+        remote_src: yes
+
+    - name: Create Hadoop symlink
+      file:
+        src: /usr/local/hadoop-3.3.6
+        dest: /usr/local/hadoop
+        state: link
+
+    # Step 5: Set environment variables
+    - name: Configure Hadoop environment variables
+      lineinfile:
+        path: /home/hadoop/.bashrc
+        line: "{{ item }}"
+        state: present
+      with_items:
+        - 'export HADOOP_HOME=/usr/local/hadoop'
+        - 'export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin'
+        - 'export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop'
+        - 'export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")'
+    
+    - name: Source the environment variables
+      command: source /home/hadoop/.bashrc
+    
+    # Step 6: Start Hadoop DataNode and NodeManager services
+    - name: Start DataNode service
+      command: /usr/local/hadoop/sbin/hadoop-daemon.sh start datanode
+      become_user: hadoop
+
+    - name: Start NodeManager service
+      command: /usr/local/hadoop/sbin/yarn-daemon.sh start nodemanager
+      become_user: hadoop
