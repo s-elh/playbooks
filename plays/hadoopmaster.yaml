@@ -1,5 +1,5 @@
 ---
-- hosts: undefined
+- hosts: all
   vars:
     slave_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'slave'}.collect{it.externalIp}"
     proxy_url: "http://10.1.38.2:3128"
