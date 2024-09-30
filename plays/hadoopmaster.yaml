@@ -107,7 +107,7 @@
           <configuration>
             <property>
               <name>yarn.resourcemanager.hostname</name>
-              <value>{{ ansible_host }}</value>
+              <value>"{{ morpheus['server']['internalIp'] }}"</value>
             </property>
             <property>
               <name>yarn.nodemanager.aux-services</name>
