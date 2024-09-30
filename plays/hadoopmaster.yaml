@@ -1,7 +1,7 @@
 ---
-- hosts: all
+- hosts: master
   vars:
-    slave_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'masternode'}.collect{it.externalIp}"
+    slave_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'slave'}.collect{it.externalIp}"
   become: yes
   tasks:
   
