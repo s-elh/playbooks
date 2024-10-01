@@ -54,7 +54,7 @@
       shell: |
         cat /root/install.sh | sudo bash -s airgap
       register: install_output
-      become: yes
+      become_user: root
 
     - name: Extract last line containing join command and save to file
       shell: |
