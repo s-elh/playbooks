@@ -48,7 +48,7 @@
         src: "{{ destination_dir }}/473f02a.tar.gz"
         dest: "/root"
         remote_src: yes
-        become: yes
+      become: yes
 
     - name: Run Kubernetes install script and capture output
       shell: |
