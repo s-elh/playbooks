@@ -46,15 +46,15 @@
     - name: Extract Kubernetes bundle
       unarchive:
         src: "{{ destination_dir }}/473f02a.tar.gz"
-        dest: "/root"
+        dest: "/home/powerm"
         remote_src: yes
       become: yes
 
     - name: Run Kubernetes install script and capture output
       shell: |
-        cat /root/install.sh | sudo bash -s airgap
+        cat /home/powerm/install.sh | sudo bash -s airgap
       register: install_output
-      become_user: root
+      
 
     - name: Extract last line containing join command and save to file
       shell: |
