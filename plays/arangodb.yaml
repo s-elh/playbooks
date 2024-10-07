@@ -1,9 +1,16 @@
 ---
 - name: Install ArangoDB
   hosts: all
-  become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
+    ansible_ssh_common_args: '-o ProxyCommand="nc -X connect -x {{ proxy_url }} %h %p"'
+  become: true
+  pre_tasks:
+    - name: Set up proxy for connection
+      set_fact:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+      delegate_to: localhost
   tasks:
     - name: Configure HTTP proxy for apt
       copy:
