@@ -4,7 +4,6 @@
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-
   tasks:
     - name: Configure HTTP proxy for apt
       copy:
@@ -12,7 +11,6 @@
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
-
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -23,37 +21,30 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
-
     - name: Download InfluxData GPG key
       get_url:
         url: https://repos.influxdata.com/influxdata-archive_compat.key
         dest: /tmp/influxdata-archive_compat.key
-
     - name: Verify and install GPG key
       shell: |
         echo '393e8779c89ac8d958f81f942f9ad7fb82a25e133faddaf92e15b16e6ac9ce4c /tmp/influxdata-archive_compat.key' | sha256sum -c && \
         cat /tmp/influxdata-archive_compat.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg > /dev/null
       args:
         creates: /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg
-
     - name: Add InfluxDB repository
       apt_repository:
         repo: deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/debian stable main
         state: present
         filename: influxdata
-
     - name: Update apt cache
       apt:
         update_cache: yes
-
     - name: Install InfluxDB
       apt:
         name: influxdb2
         state: present
-
     - name: Enable and start InfluxDB service
       systemd:
         name: influxdb
         enabled: yes
         state: started
-
