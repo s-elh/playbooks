@@ -3,8 +3,8 @@
   hosts: all
   become: true
   vars:
-    - proxy_url: "http://10.1.38.2:3128"
-    - mysql_root_password: "rootroot"
+    proxy_url: "http://10.1.38.2:3128"
+    mysql_root_password: "rootroot"
 
   tasks:
     - name: Configure HTTP proxy for apt
