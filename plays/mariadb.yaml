@@ -1,1 +1,84 @@
-TBD
+---
+- name: Install MariaDB
+  hosts: all
+  become: true
+  vars:
+    - proxy_url: "http://10.1.38.2:3128"
+    - mysql_root_password: "rootroot"
+
+  tasks:
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Install software-properties-common and Python MySQL package
+      apt:
+        name: 
+          - software-properties-common
+          - python3-pymysql
+        state: present
+        update_cache: yes
+
+    - name: Add MariaDB GPG key
+      apt_key:
+        url: https://mariadb.org/mariadb_release_signing_key.asc
+        state: present
+
+    - name: Add MariaDB repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://deb.mariadb.org/11/ubuntu jammy main"
+        state: present
+        filename: mariadb
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install MariaDB
+      apt:
+        name: 
+          - mariadb-server
+          - mariadb-client
+        state: present
+
+    - name: Enable and start MariaDB service
+      systemd:
+        name: mariadb
+        enabled: yes
+        state: started
+
+    - name: Set MariaDB root password
+      mysql_user:
+        name: root
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      ignore_errors: true
+
+    - name: Remove anonymous users
+      mysql_user:
+        name: ''
+        host_all: yes
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Remove test database
+      mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
