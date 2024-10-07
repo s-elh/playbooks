@@ -57,8 +57,3 @@
         enabled: yes
         state: started
 
-    - name: Allow InfluxDB through firewall
-      ufw:
-        rule: allow
-        port: '8086'
-        proto: tcp
