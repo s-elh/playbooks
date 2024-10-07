@@ -1,0 +1,103 @@
+---
+- name: Install Elasticsearch
+  hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    elasticsearch_version: "8.15.2"
+    elasticsearch_deb_url: "https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ elasticsearch_version }}-amd64.deb"
+    elasticsearch_sha_url: "https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ elasticsearch_version }}-amd64.deb.sha512"
+
+  tasks:
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - wget
+          - sha512sum
+        state: present
+
+    - name: Download Elasticsearch deb package
+      get_url:
+        url: "{{ elasticsearch_deb_url }}"
+        dest: "/tmp/elasticsearch-{{ elasticsearch_version }}-amd64.deb"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Download Elasticsearch SHA512 checksum
+      get_url:
+        url: "{{ elasticsearch_sha_url }}"
+        dest: "/tmp/elasticsearch-{{ elasticsearch_version }}-amd64.deb.sha512"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Verify Elasticsearch package checksum
+      command: sha512sum -c elasticsearch-{{ elasticsearch_version }}-amd64.deb.sha512
+      args:
+        chdir: /tmp
+      register: sha_check
+      failed_when: sha_check.rc != 0
+
+    - name: Install Elasticsearch package
+      apt:
+        deb: "/tmp/elasticsearch-{{ elasticsearch_version }}-amd64.deb"
+        state: present
+
+    - name: Ensure Elasticsearch service is started and enabled
+      systemd:
+        name: elasticsearch
+        state: started
+        enabled: yes
+
+    - name: Wait for Elasticsearch to start
+      wait_for:
+        port: 9200
+        delay: 10
+
+    - name: Get Elasticsearch version
+      uri:
+        url: http://localhost:9200
+        return_content: yes
+      register: elasticsearch_info
+      changed_when: false
+
+    - name: Display Elasticsearch version
+      debug:
+        var: elasticsearch_info.json.version.number
+
+    - name: Clean up downloaded files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/elasticsearch-{{ elasticsearch_version }}-amd64.deb"
+        - "/tmp/elasticsearch-{{ elasticsearch_version }}-amd64.deb.sha512"
+
+    - name: Print Elasticsearch installation complete message
+      debug:
+        msg: "Elasticsearch has been installed successfully. Please note the password and certificate and keys are output to your terminal. You can reset the password for the elastic user with the elasticsearch-reset-password command."
+        
