@@ -4,7 +4,6 @@
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    arango_version: "3.10"
 
   tasks:
     - name: Configure HTTP proxy for apt
@@ -36,12 +35,12 @@
 
     - name: Add ArangoDB GPG key
       apt_key:
-        url: https://download.arangodb.com/arangodb{{ arango_version }}/DEBIAN/Release.key
+        url: https://download.arangodb.com/arangodb312/DEBIAN/Release.key
         state: present
 
     - name: Add ArangoDB repository
       apt_repository:
-        repo: "deb https://download.arangodb.com/arangodb{{ arango_version }}/DEBIAN/ /"
+        repo: "deb https://download.arangodb.com/arangodb312/DEBIAN/ /"
         state: present
         filename: arangodb
 
