@@ -1,0 +1,68 @@
+---
+- name: Install Grafana
+  hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    grafana_version: "11.2.2"
+    grafana_deb_url: "https://dl.grafana.com/enterprise/release/grafana-enterprise_{{ grafana_version }}_amd64.deb"
+
+  tasks:
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - adduser
+          - libfontconfig1
+          - wget
+        state: present
+
+    - name: Download Grafana deb package
+      get_url:
+        url: "{{ grafana_deb_url }}"
+        dest: "/tmp/grafana-enterprise_{{ grafana_version }}_amd64.deb"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Install Grafana package
+      apt:
+        deb: "/tmp/grafana-enterprise_{{ grafana_version }}_amd64.deb"
+        state: present
+
+    - name: Ensure Grafana service is started and enabled
+      systemd:
+        name: grafana-server
+        state: started
+        enabled: yes
+
+    - name: Clean up downloaded deb file
+      file:
+        path: "/tmp/grafana-enterprise_{{ grafana_version }}_amd64.deb"
+        state: absent
+
+    - name: Print Grafana installation complete message
+      debug:
+        msg: "Grafana has been installed successfully. You can access it at https://{{ morpheus['server']['internalIp'] }}:3000"
