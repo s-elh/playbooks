@@ -3,7 +3,6 @@
   hosts: all
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    ansible_ssh_common_args: '-o ProxyCommand="nc -X connect -x {{ proxy_url }} %h %p"'
   become: true
   pre_tasks:
     - name: Set up proxy for connection
