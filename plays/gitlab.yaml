@@ -1,0 +1,89 @@
+---
+- name: Install GitLab
+  hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    gitlab_version: "17.2.8-ce.0"
+    gitlab_domain: "{{ morpheus['server']['internalIp'] }}"
+
+  tasks:
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required dependencies
+      apt:
+        name:
+          - curl
+          - openssh-server
+          - ca-certificates
+          - tzdata
+          - perl
+        state: present
+
+    - name: Download GitLab package
+      get_url:
+        url: "https://packages.gitlab.com/gitlab/gitlab-ce/packages/ubuntu/jammy/gitlab-ce_{{ gitlab_version }}_amd64.deb/download.deb"
+        dest: "/tmp/gitlab-ce_{{ gitlab_version }}_amd64.deb"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Install GitLab package
+      apt:
+        deb: "/tmp/gitlab-ce_{{ gitlab_version }}_amd64.deb"
+        state: present
+      environment:
+        EXTERNAL_URL: "http://{{ gitlab_domain }}"
+
+    - name: Reconfigure GitLab
+      command: gitlab-ctl reconfigure
+      changed_when: false
+
+    - name: Wait for GitLab to start
+      wait_for:
+        port: 80
+        delay: 10
+        timeout: 600
+
+    - name: Get GitLab version
+      command: gitlab-rake gitlab:env:info
+      register: gitlab_info
+      changed_when: false
+
+    - name: Display GitLab version
+      debug:
+        var: gitlab_info.stdout_lines
+
+    - name: Clean up downloaded package
+      file:
+        path: "/tmp/gitlab-ce_{{ gitlab_version }}_amd64.deb"
+        state: absent
+
+    - name: Print GitLab installation complete message
+      debug:
+        msg: "GitLab has been installed successfully. Access it at http://{{ gitlab_domain }}"
+
+    - name: Print root password location
+      debug:
+        msg: "The initial root password can be found in /etc/gitlab/initial_root_password. Please change it after your first login."
