@@ -1,0 +1,128 @@
+---
+- name: Install Prometheus
+  hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    prometheus_version: "2.50.1"
+    prometheus_dir: "/opt/prometheus"
+    prometheus_user: "prometheus"
+    prometheus_group: "prometheus"
+
+  tasks:
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - wget
+          - tar
+        state: present
+
+    - name: Create Prometheus user
+      user:
+        name: "{{ prometheus_user }}"
+        system: yes
+        shell: "/sbin/nologin"
+        group: "{{ prometheus_group }}"
+        createhome: no
+
+    - name: Create Prometheus directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ prometheus_user }}"
+        group: "{{ prometheus_group }}"
+        mode: '0755'
+      loop:
+        - "{{ prometheus_dir }}"
+        - "{{ prometheus_dir }}/data"
+
+    - name: Download Prometheus
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Extract Prometheus archive
+      unarchive:
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: "/tmp"
+        remote_src: yes
+
+    - name: Move Prometheus binaries
+      copy:
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+        dest: "{{ prometheus_dir }}/{{ item }}"
+        owner: "{{ prometheus_user }}"
+        group: "{{ prometheus_group }}"
+        mode: '0755'
+        remote_src: yes
+      loop:
+        - prometheus
+        - promtool
+
+    - name: Copy Prometheus configuration
+      copy:
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/prometheus.yml"
+        dest: "{{ prometheus_dir }}/prometheus.yml"
+        owner: "{{ prometheus_user }}"
+        group: "{{ prometheus_group }}"
+        mode: '0644'
+        remote_src: yes
+
+    - name: Create Prometheus systemd service file
+      template:
+        src: prometheus.service.j2
+        dest: /etc/systemd/system/prometheus.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Ensure Prometheus service is started and enabled
+      systemd:
+        name: prometheus
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Clean up downloaded files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        - "/tmp/prometheus-{{ prometheus_version }}.linux-amd64"
+
+    - name: Print Prometheus installation complete message
+      debug:
+        msg: "Prometheus has been installed successfully. It should be accessible on https://{{ morpheus['server']['internalIp'] }}::9090"
+
+  handlers:
+    - name: Restart Prometheus
+      systemd:
+        name: prometheus
+        state: restarted
