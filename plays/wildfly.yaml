@@ -1,0 +1,162 @@
+---
+- name: Install and Configure WildFly
+  hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    wildfly_version: "33.0.2.Final"
+    wildfly_url: "https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.zip"
+    wildfly_home: "/opt/wildfly"
+    wildfly_user: "wildfly"
+    wildfly_group: "wildfly"
+    java_package: "openjdk-11-jdk"
+    wildfly_bind_address: "0.0.0.0"
+    wildfly_management_bind_address: "127.0.0.1"
+    wildfly_port_offset: 0
+
+  tasks:
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install Java
+      apt:
+        name: "{{ java_package }}"
+        state: present
+
+    - name: Install unzip
+      apt:
+        name: unzip
+        state: present
+
+    - name: Create WildFly group
+      group:
+        name: "{{ wildfly_group }}"
+        state: present
+
+    - name: Create WildFly user
+      user:
+        name: "{{ wildfly_user }}"
+        group: "{{ wildfly_group }}"
+        home: "{{ wildfly_home }}"
+        createhome: no
+        system: yes
+
+    - name: Download WildFly
+      get_url:
+        url: "{{ wildfly_url }}"
+        dest: "/tmp/wildfly-{{ wildfly_version }}.zip"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Create WildFly home directory
+      file:
+        path: "{{ wildfly_home }}"
+        state: directory
+        owner: "{{ wildfly_user }}"
+        group: "{{ wildfly_group }}"
+
+    - name: Extract WildFly archive
+      unarchive:
+        src: "/tmp/wildfly-{{ wildfly_version }}.zip"
+        dest: "{{ wildfly_home }}"
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+        owner: "{{ wildfly_user }}"
+        group: "{{ wildfly_group }}"
+
+    - name: Create WildFly configuration directory
+      file:
+        path: /etc/wildfly
+        state: directory
+
+    - name: Copy WildFly standalone configuration
+      copy:
+        remote_src: yes
+        src: "{{ wildfly_home }}/standalone/configuration/standalone.xml"
+        dest: /etc/wildfly/standalone.xml
+        owner: "{{ wildfly_user }}"
+        group: "{{ wildfly_group }}"
+
+    - name: Configure WildFly standalone
+      xml:
+        path: /etc/wildfly/standalone.xml
+        xpath: /server/interfaces/interface[@name='{{ item.name }}']
+        attribute: "{{ item.attr }}"
+        value: "{{ item.value }}"
+      loop:
+        - { name: 'public', attr: 'inet-address', value: '${jboss.bind.address:{{ wildfly_bind_address }}}' }
+        - { name: 'management', attr: 'inet-address', value: '${jboss.bind.address.management:{{ wildfly_management_bind_address }}}' }
+
+    - name: Set port offset
+      xml:
+        path: /etc/wildfly/standalone.xml
+        xpath: /server/socket-binding-group[@name='standard-sockets']
+        attribute: port-offset
+        value: "{{ wildfly_port_offset }}"
+
+    - name: Create WildFly systemd service file
+      copy:
+        content: |
+          [Unit]
+          Description=WildFly Application Server
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ wildfly_user }}
+          Group={{ wildfly_group }}
+          ExecStart={{ wildfly_home }}/bin/standalone.sh -c standalone.xml -b {{ wildfly_bind_address }}
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/wildfly.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable and start WildFly service
+      systemd:
+        name: wildfly
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Open firewall ports for WildFly
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "8080"  # HTTP
+        - "9990"  # Management interface
+
+    - name: Clean up downloaded archive
+      file:
+        path: "/tmp/wildfly-{{ wildfly_version }}.zip"
+        state: absent
+
+    - name: Print WildFly installation complete message
+      debug:
+        msg: "WildFly {{ wildfly_version }} has been installed successfully and is running on port 8080. Management console is available on port 9990."
