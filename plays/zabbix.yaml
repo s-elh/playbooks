@@ -1,0 +1,141 @@
+---
+- name: Install and Configure Zabbix 7.0
+  hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    zabbix_version: "7.0-2"
+    ubuntu_version: "22.04"
+    mysql_root_password: "Password123@"
+    zabbix_db_password: "Password123@"
+    zabbix_server_name: "Zabbix Server"
+
+  tasks:
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Download Zabbix release package
+      get_url:
+        url: "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_{{ zabbix_version }}+ubuntu{{ ubuntu_version }}_all.deb"
+        dest: "/tmp/zabbix-release.deb"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Install Zabbix repository
+      apt:
+        deb: "/tmp/zabbix-release.deb"
+        state: present
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install MySQL server
+      apt:
+        name: 
+          - mysql-server
+          - python3-mysqldb
+        state: present
+
+    - name: Set MySQL root password
+      mysql_user:
+        name: root
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create Zabbix database
+      mysql_db:
+        name: zabbix
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create Zabbix database user
+      mysql_user:
+        name: zabbix
+        password: "{{ zabbix_db_password }}"
+        priv: 'zabbix.*:ALL'
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Install Zabbix server, frontend, and agent
+      apt:
+        name:
+          - zabbix-server-mysql
+          - zabbix-frontend-php
+          - zabbix-apache-conf
+          - zabbix-sql-scripts
+          - zabbix-agent
+        state: present
+
+    - name: Import initial schema and data
+      shell: zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uzabbix -p{{ zabbix_db_password }} zabbix
+      args:
+        warn: false
+
+    - name: Configure Zabbix server
+      lineinfile:
+        path: /etc/zabbix/zabbix_server.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^DBPassword=', line: 'DBPassword={{ zabbix_db_password }}' }
+
+    - name: Configure PHP for Zabbix frontend
+      lineinfile:
+        path: /etc/zabbix/apache.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '# php_value date.timezone Europe/Riga', line: 'php_value date.timezone Europe/London' }
+
+    - name: Restart and enable Zabbix server
+      systemd:
+        name: zabbix-server
+        state: restarted
+        enabled: yes
+
+    - name: Restart and enable Zabbix agent
+      systemd:
+        name: zabbix-agent
+        state: restarted
+        enabled: yes
+
+    - name: Restart Apache
+      systemd:
+        name: apache2
+        state: restarted
+
+    - name: Open firewall for Zabbix and HTTP
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "80"   # HTTP
+        - "10050"  # Zabbix agent
+        - "10051"  # Zabbix server
+
+    - name: Clean up downloaded package
+      file:
+        path: "/tmp/zabbix-release.deb"
+        state: absent
+
+    - name: Print Zabbix installation complete message
+      debug:
+        msg: "Zabbix 7.0 has been installed successfully. Access the web interface at http://{{ morpheus['server']['internalIp'] }}/zabbix"
