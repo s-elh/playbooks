@@ -10,22 +10,22 @@
   
     - name: Create and write to f5.txt
       copy:
-        content: "test {{ morpheus['customOptions']['f5'] }}"
+        content: "test"
         dest: "/tmp/f5.txt"
 
     - name: Create and write to palo.txt
       copy:
-        content: "test {{ morpheus['customOptions']['palo'] }}"
+        content: "test"
         dest: "/tmp/palo.txt"
 
     - name: Create and write to forti.txt
       copy:
-        content: "{{ morpheus['customOptions']['forti'] }}"
+        content: "test"
         dest: "/tmp/forti.txt"
 
     - name: Create and write to nsx.txt
       copy:
-        content: "{{ morpheus['customOptions']['nsx'] }}"
+        content: "firewall_test"
         dest: "/tmp/nsx.txt"
         
     
