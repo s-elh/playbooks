@@ -3,7 +3,7 @@
   hosts: all
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    ansible_ssh_retries: 10
+    ansible_ssh_retries: 5
     ansible_ssh_timeout: 60
   become: true
   gather_facts: false
@@ -12,13 +12,12 @@
     - name: Wait for SSH to be ready
       wait_for:
         port: 22
-        host: "{{ inventory_hostname }}"
-        search_regex: OpenSSH
+        host: "{{ ansible_host | default(inventory_hostname) }}"
         delay: 10
         timeout: 300
       delegate_to: localhost
       become: false
-      retries: 30
+      retries: "{{ ansible_ssh_retries }}"
       delay: 10
 
     - name: Gather facts
