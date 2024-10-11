@@ -9,7 +9,7 @@
     grafana_deb_url: "https://dl.grafana.com/enterprise/release/grafana-enterprise_{{ grafana_version }}_amd64.deb"
     ansible_ssh_retries: 5
     ansible_ssh_timeout: 60
-
+    ansible_password: "password123"
   pre_tasks:
     - name: Wait for SSH to be ready
       wait_for:
@@ -21,7 +21,6 @@
       become: false
       retries: "{{ ansible_ssh_retries }}"
       delay: 10
-
     - name: Gather facts
       setup:
       retries: "{{ ansible_ssh_retries }}"
