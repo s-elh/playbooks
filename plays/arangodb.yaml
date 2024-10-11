@@ -12,11 +12,12 @@
     - name: Wait for SSH to be ready
       wait_for:
         port: 22
-        host: "{{ ansible_host | default(inventory_hostname) }}"
+        host: "{{ inventory_hostname }}"
         search_regex: OpenSSH
         delay: 10
         timeout: 300
       delegate_to: localhost
+      become: false
       retries: 30
       delay: 10
 
@@ -30,6 +31,7 @@
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
       delegate_to: localhost
+      become: false
 
   tasks:
     - name: Configure HTTP proxy for apt
