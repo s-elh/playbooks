@@ -7,18 +7,19 @@
     proxy_url: "http://10.1.38.2:3128"
     grafana_version: "11.2.2"
     grafana_deb_url: "https://dl.grafana.com/enterprise/release/grafana-enterprise_{{ grafana_version }}_amd64.deb"
-    ansible_ssh_retries: 10
+    ansible_ssh_retries: 5
     ansible_ssh_timeout: 60
+
   pre_tasks:
     - name: Wait for SSH to be ready
       wait_for:
         port: 22
         host: "{{ ansible_host | default(inventory_hostname) }}"
-        search_regex: OpenSSH
         delay: 10
         timeout: 300
       delegate_to: localhost
-      retries: 30
+      become: false
+      retries: "{{ ansible_ssh_retries }}"
       delay: 10
 
     - name: Gather facts
@@ -95,6 +96,8 @@
       file:
         path: "/tmp/grafana-enterprise_{{ grafana_version }}_amd64.deb"
         state: absent
+      retries: "{{ ansible_ssh_retries }}"
+      delay: 10
 
     - name: Print Grafana installation complete message
       debug:
