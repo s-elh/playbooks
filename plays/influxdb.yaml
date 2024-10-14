@@ -4,6 +4,8 @@
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
+  connection: paramiko
+
   tasks:
     - name: Configure HTTP proxy for apt
       copy:
