@@ -3,6 +3,8 @@
   hosts: all
   vars:
     proxy_url: "http://10.1.38.2:3128"
+    ansible_ssh_retries: 5
+    ansible_ssh_timeout: 60
     gitlab_version: "17.2.8-ce.0"
     gitlab_domain: "{{ morpheus['server']['internalIp'] }}"
   become: true
