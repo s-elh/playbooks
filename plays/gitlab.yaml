@@ -1,12 +1,37 @@
 ---
 - name: Install GitLab
   hosts: all
-  become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
     gitlab_version: "17.2.8-ce.0"
     gitlab_domain: "{{ morpheus['server']['internalIp'] }}"
+  become: true
+  gather_facts: false
   connection: paramiko
+
+  pre_tasks:
+    - name: Wait for SSH to be ready
+      wait_for:
+        port: 22
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        delay: 10
+        timeout: 300
+      delegate_to: localhost
+      become: false
+      retries: "{{ ansible_ssh_retries }}"
+      delay: 10
+
+    - name: Gather facts
+      setup:
+      retries: "{{ ansible_ssh_retries }}"
+      delay: 10
+
+    - name: Set up proxy for connection
+      set_fact:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+      delegate_to: localhost
+      become: false
 
   tasks:
     - name: Configure HTTP proxy for apt
