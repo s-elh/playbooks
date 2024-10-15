@@ -2,19 +2,23 @@
 - name: Install Grafana
   hosts: all
   become: true
-  gather_facts: false
+  gather_facts: true  # Change this to true
   connection: paramiko
   vars:
     proxy_url: "http://10.1.38.2:3128"
     grafana_version: "11.2.2"
     grafana_deb_url: "https://dl.grafana.com/enterprise/release/grafana-enterprise_{{ grafana_version }}_amd64.deb"
   tasks:
+    - name: Display all variables/facts known for a host
+      debug:
+        var: hostvars[inventory_hostname]
+      
     - name: Ping internal IP
       ping:
         data: "{{ morpheus['server']['internalIp'] }}"
       register: ping_result
       ignore_errors: yes
-
+  
     - name: Fail if ping is unsuccessful
       fail:
         msg: "Unable to ping {{ morpheus['server']['internalIp'] }}. Please check the network configuration."
