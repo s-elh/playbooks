@@ -1,43 +1,31 @@
+---
 - name: Install GitLab
   hosts: all
+  become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
     gitlab_version: "17.2.8-ce.0"
     gitlab_domain: "{{ morpheus['server']['internalIp'] }}"
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-    ansible_paramiko_auth_type: 'publickey'
-    ansible_paramiko_verbosity: 4
-  become: true
-  gather_facts: false
   connection: paramiko
 
-  pre_tasks:
-    - name: Wait for SSH to come up
-      wait_for:
-        host: "{{ inventory_hostname }}"
-        port: 22
-        timeout: 300
-      delegate_to: localhost
-      become: false
-
   tasks:
+    - name: Ping internal IP
+      ping:
+        data: "{{ morpheus['server']['internalIp'] }}"
+      register: ping_result
+      ignore_errors: yes
+
+    - name: Fail if ping is unsuccessful
+      fail:
+        msg: "Unable to ping {{ morpheus['server']['internalIp'] }}. Please check the network configuration."
+      when: ping_result.failed
+
     - name: Configure HTTP proxy for apt
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
-
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
 
     - name: Update apt cache
       apt:
@@ -76,6 +64,7 @@
     - name: Wait for GitLab to start
       wait_for:
         port: 80
+        delay: 10
         timeout: 600
 
     - name: Get GitLab version
