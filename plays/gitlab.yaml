@@ -2,19 +2,23 @@
 - name: Install GitLab
   hosts: all
   become: true
+  gather_facts: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
     gitlab_version: "17.2.8-ce.0"
     gitlab_domain: "{{ morpheus['server']['internalIp'] }}"
-  connection: paramiko
 
   tasks:
+    - name: Display all variables/facts known for a host
+      debug:
+        var: hostvars[inventory_hostname]
+      
     - name: Ping internal IP
       ping:
         data: "{{ morpheus['server']['internalIp'] }}"
       register: ping_result
       ignore_errors: yes
-
+  
     - name: Fail if ping is unsuccessful
       fail:
         msg: "Unable to ping {{ morpheus['server']['internalIp'] }}. Please check the network configuration."
