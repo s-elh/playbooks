@@ -3,10 +3,10 @@
   hosts: all
   become: true
   vars:
-    postgresql_version: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['PostgresVer'] }}"
+    postgresql_version: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['version'] }}"
     postgresql_data_dir: /var/lib/pgsql/{{ postgresql_version }}/data
     postgresql_service: postgresql-{{ postgresql_version }}
-    postgres_password : ""
+    postgres_password : "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['Database Password'] }}"
   tasks:        
     - name: Print the ansible_os_family fact
       ansible.builtin.debug:
@@ -116,12 +116,16 @@
 
     - name: Create PostgreSQL user
       community.postgresql.postgresql_user:
-        name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbuser'] }}"
-        password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbpassword'] }}"
+        name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['Database User'] }}"
+        password: "{{ postgres_password }}"
         login_user: "postgres"
         login_password: ""
         state: present
       register: create_user_result
+
+    - name: Create a new database 
+      community.postgresql.postgresql_db:
+        name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['Database Name'] }}"
  
     - name: Debug user creation result
       ansible.builtin.debug:
