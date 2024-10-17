@@ -5,6 +5,7 @@
   vars:
     mongodb_version: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['version'] }}"  
     mongodb_repo_url: "https://repo.mongodb.org/yum/redhat/$releasever/mongodb-org/{{ mongodb_version }}/x86_64/"
+    proxy_url: "http://10.1.38.2:3128"
   connection: paramiko
 
   tasks:
