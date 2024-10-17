@@ -1,0 +1,74 @@
+---
+- name: Install InfluxDB on Windows
+  hosts: all
+  gather_facts: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    influxdb_version: "2.7.10"
+    influxdb_download_url: "https://download.influxdata.com/influxdb/releases/influxdb2-{{ influxdb_version }}-windows.zip"
+    influxdb_install_path: "C:\\Program Files\\InfluxData"
+
+  tasks:
+    - name: Display all variables/facts known for a host
+      debug:
+        var: hostvars[inventory_hostname]
+
+    - name: Ping internal IP
+      win_ping:
+        data: "{{ morpheus['server']['internalIp'] }}"
+      register: ping_result
+      ignore_errors: yes
+
+    - name: Fail if ping is unsuccessful
+      fail:
+        msg: "Unable to ping {{ morpheus['server']['internalIp'] }}. Please check the network configuration."
+      when: ping_result.failed
+
+    - name: Set proxy for PowerShell
+      win_shell: |
+        [System.Net.WebRequest]::DefaultWebProxy = New-Object System.Net.WebProxy("{{ proxy_url }}")
+        [System.Net.WebRequest]::DefaultWebProxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
+
+    - name: Download InfluxDB zip file
+      win_get_url:
+        url: "{{ influxdb_download_url }}"
+        dest: "C:\\Windows\\Temp\\influxdb2-{{ influxdb_version }}-windows.zip"
+      register: download_result
+
+    - name: Create InfluxData directory
+      win_file:
+        path: "{{ influxdb_install_path }}"
+        state: directory
+
+    - name: Extract InfluxDB zip file
+      win_unzip:
+        src: "C:\\Windows\\Temp\\influxdb2-{{ influxdb_version }}-windows.zip"
+        dest: "{{ influxdb_install_path }}"
+
+    - name: Rename InfluxDB directory
+      win_shell: |
+        Move-Item -Path "{{ influxdb_install_path }}\\influxdb2-{{ influxdb_version }}" -Destination "{{ influxdb_install_path }}\\influxdb" -Force
+
+    - name: Set InfluxDB environment variables
+      win_environment:
+        name: PATH
+        value: "{{ influxdb_install_path }}\\influxdb;{{ ansible_env.PATH }}"
+        level: machine
+
+    - name: Create InfluxDB service
+      win_service:
+        name: InfluxDB
+        path: "{{ influxdb_install_path }}\\influxdb\\influxd.exe"
+        display_name: InfluxDB Time Series Database
+        description: InfluxDB is an open-source time series database
+        start_mode: auto
+
+    - name: Start InfluxDB service
+      win_service:
+        name: InfluxDB
+        state: started
+
+    - name: Remove temporary zip file
+      win_file:
+        path: "C:\\Windows\\Temp\\influxdb2-{{ influxdb_version }}-windows.zip"
+        state: absent
