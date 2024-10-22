@@ -76,8 +76,6 @@
               --server.username root \
               --server.password '{{ root_password }}' \
               --javascript.execute-string "db._createDatabase('{{ db_name }}');"
-          args:
-            warn: false
 
         - name: Create ArangoDB user
           shell: |
@@ -85,8 +83,6 @@
               --server.username root \
               --server.password '{{ root_password }}' \
               --javascript.execute-string "require('@arangodb/users').save('{{ db_user }}', '{{ db_password }}');"
-          args:
-            warn: false
 
         - name: Grant user access to database
           shell: |
@@ -94,8 +90,6 @@
               --server.username root \
               --server.password '{{ root_password }}' \
               --javascript.execute-string "require('@arangodb/users').grantDatabase('{{ db_user }}', '{{ db_name }}');"
-          args:
-            warn: false
 
       when:
         - db_name != ''
