@@ -73,13 +73,16 @@
 
     - name: Wait for ArangoDB to be ready
       wait_for:
+        host: "{{ morpheus['server']['internalIp'] }}"
         port: 8529
-        timeout: 30
+        timeout: 60  # Increased timeout to allow more time for startup
+        state: started
       when: db_vars_provided
 
     - name: Create database user
       command: >
-        arangosh --server.authentication false
+        arangosh --server.endpoint tcp://{{ morpheus['server']['internalIp'] }}:8529
+        --server.authentication false
         --javascript.execute-string '
         try {
           db._createDatabase("{{ db_name }}");
