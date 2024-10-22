@@ -82,25 +82,25 @@
         enabled: yes
         state: started
 
-    - name: Create database and user
-      command: >
-        arangosh --server.authentication false
-        --javascript.execute-string '
-        try {
-          db._createDatabase("{{ db_name }}");
-          db._useDatabase("{{ db_name }}");
-          require("@arangodb/users").save("{{ db_user }}", "{{ db_password }}");
-          require("@arangodb/users").update("{{ db_user }}", { active: true });
-          require("@arangodb/users").grantDatabase("{{ db_user }}", "{{ db_name }}", "rw");
-          print("Database and user created successfully");
-        } catch (e) {
-          print("Error: " + e);
-          throw e;
-        }'
-      register: create_db_result
-      when: db_vars_provided
-      changed_when: create_db_result.rc == 0
-      failed_when: create_db_result.rc != 0
+  - name: Create database and user
+    command: >
+      arangosh --server.endpoint tcp://127.0.0.1:8529 --server.authentication false
+      --javascript.execute-string '
+      try {
+        db._createDatabase("{{ db_name }}");
+        db._useDatabase("{{ db_name }}");
+        require("@arangodb/users").save("{{ db_user }}", "{{ db_password }}");
+        require("@arangodb/users").update("{{ db_user }}", { active: true });
+        require("@arangodb/users").grantDatabase("{{ db_user }}", "{{ db_name }}", "rw");
+        print("Database and user created successfully");
+      } catch (e) {
+        print("Error: " + e);
+        throw e;
+      }'
+    register: create_db_result
+    when: db_vars_provided
+    changed_when: create_db_result.rc == 0
+    failed_when: create_db_result.rc != 0
 
   handlers:
     - name: Restart ArangoDB
