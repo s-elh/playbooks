@@ -3,26 +3,21 @@
   hosts: all
   become: true
   gather_facts: true
-  connection: paramiko
   vars:
     proxy_url: "http://10.1.38.2:3128"
+    db_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['Database Password'] | default('') }}"
+    db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['Database User'] | default('') }}"
+    db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['Database Name'] | default('') }}"
+    db_vars_provided: false
+  tasks:  
+    - name: Check if database variables are provided
+      set_fact:
+        db_vars_provided: true
+      when: 
+        - db_password != ''
+        - db_user != ''
+        - db_name != ''
 
-  tasks:
-    - name: Display all variables/facts known for a host
-      debug:
-        var: hostvars[inventory_hostname]
-      
-    - name: Ping internal IP
-      ping:
-        data: "{{ morpheus['server']['internalIp'] }}"
-      register: ping_result
-      ignore_errors: yes
-  
-    - name: Fail if ping is unsuccessful
-      fail:
-        msg: "Unable to ping {{ morpheus['server']['internalIp'] }}. Please check the network configuration."
-      when: ping_result.failed
-  
     - name: Configure HTTP proxy for apt
       copy:
         content: |
@@ -75,3 +70,43 @@
         name: arangodb3
         enabled: yes
         state: started
+
+    - name: Wait for ArangoDB to be ready
+      wait_for:
+        port: 8529
+        timeout: 30
+      when: db_vars_provided
+
+    - name: Create database user
+      command: >
+        arangosh --server.authentication false
+        --javascript.execute-string '
+        try {
+          db._createDatabase("{{ db_name }}");
+          db._useDatabase("{{ db_name }}");
+          require("@arangodb/users").save("{{ db_user }}", "{{ db_password }}");
+          require("@arangodb/users").update("{{ db_user }}", { active: true });
+          require("@arangodb/users").grantDatabase("{{ db_user }}", "{{ db_name }}", "rw");
+          print("Database and user created successfully");
+        } catch (e) {
+          print("Error: " + e);
+          throw e;
+        }'
+      register: create_db_result
+      when: db_vars_provided
+      changed_when: create_db_result.rc == 0
+      failed_when: create_db_result.rc != 0
+
+    - name: Secure ArangoDB - disable authentication false after setup
+      lineinfile:
+        path: /etc/arangodb3/arangod.conf
+        regexp: '^authentication = false'
+        line: 'authentication = true'
+      when: db_vars_provided
+      notify: restart arangodb
+
+  handlers:
+    - name: restart arangodb
+      systemd:
+        name: arangodb3
+        state: restarted
