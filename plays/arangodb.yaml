@@ -9,7 +9,9 @@
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
     db_vars_provided: false
-  tasks:  
+    arango_language: "en"
+
+  tasks:
     - name: Check if database variables are provided
       set_fact:
         db_vars_provided: true
@@ -65,6 +67,15 @@
         name: arangodb3
         state: present
 
+    - name: Set ArangoDB default language
+      lineinfile:
+        path: /etc/arangodb3/arangod.conf
+        regexp: '^default-language'
+        line: 'default-language = {{ arango_language }}'
+        create: yes
+      notify:
+        - Restart ArangoDB
+
     - name: Enable and start ArangoDB service
       systemd:
         name: arangodb3
@@ -90,3 +101,9 @@
       when: db_vars_provided
       changed_when: create_db_result.rc == 0
       failed_when: create_db_result.rc != 0
+
+  handlers:
+    - name: Restart ArangoDB
+      systemd:
+        name: arangodb3
+        state: restarted
