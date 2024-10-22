@@ -43,20 +43,6 @@
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Preconfigure ArangoDB root password
-      debconf:
-        name: arangodb3
-        question: "arangodb3/password"
-        value: "{{ root_password }}"
-        vtype: "string"
-
-    - name: Preconfigure ArangoDB root password confirmation
-      debconf:
-        name: arangodb3
-        question: "arangodb3/password_again"
-        value: "{{ root_password }}"
-        vtype: "string"
-
     - name: Install ArangoDB
       apt:
         name: arangodb3
@@ -68,11 +54,37 @@
         state: started
         enabled: yes
 
+    - name: Wait for ArangoDB to be ready
+      wait_for:
+        host: 127.0.0.1
+        port: 8529
+        delay: 5
+        timeout: 30
+
+    - name: Set ArangoDB root password
+      shell: |
+        arangosh \
+          --server.endpoint tcp://127.0.0.1:8529 \
+          --javascript.execute-string "require('@arangodb/users').update('root', '{{ root_password }}');"
+
+    - name: Enable authentication in ArangoDB configuration
+      ini_file:
+        path: /etc/arangodb3/arangod.conf
+        section: server
+        option: authentication
+        value: 'true'
+
+    - name: Restart ArangoDB service
+      service:
+        name: arangodb3
+        state: restarted
+
     - name: Proceed with database setup if credentials are provided
       block:
         - name: Create ArangoDB database
           shell: |
             arangosh \
+              --server.endpoint tcp://127.0.0.1:8529 \
               --server.username root \
               --server.password '{{ root_password }}' \
               --javascript.execute-string "db._createDatabase('{{ db_name }}');"
@@ -80,6 +92,7 @@
         - name: Create ArangoDB user
           shell: |
             arangosh \
+              --server.endpoint tcp://127.0.0.1:8529 \
               --server.username root \
               --server.password '{{ root_password }}' \
               --javascript.execute-string "require('@arangodb/users').save('{{ db_user }}', '{{ db_password }}');"
@@ -87,6 +100,7 @@
         - name: Grant user access to database
           shell: |
             arangosh \
+              --server.endpoint tcp://127.0.0.1:8529 \
               --server.username root \
               --server.password '{{ root_password }}' \
               --javascript.execute-string "require('@arangodb/users').grantDatabase('{{ db_user }}', '{{ db_name }}');"
