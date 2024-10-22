@@ -81,6 +81,8 @@
         name: arangodb3
         enabled: yes
         state: started
+      notify:
+        - Restart ArangoDB
 
     - name: Create database and user
       command: >
@@ -101,6 +103,7 @@
       when: db_vars_provided
       changed_when: create_db_result.rc == 0
       failed_when: create_db_result.rc != 0
+
   handlers:
     - name: Restart ArangoDB
       systemd:
