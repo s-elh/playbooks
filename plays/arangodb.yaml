@@ -1,25 +1,13 @@
 ---
-- name: Install ArangoDB
+- name: Install and Configure InfluxDB
   hosts: all
-  become: true
-  gather_facts: true
+  become: yes
   vars:
     proxy_url: "http://10.1.38.2:3128"
     db_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] | default('') }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
-    db_vars_provided: false
-    arango_language: "en"
-
   tasks:
-    - name: Check if database variables are provided
-      set_fact:
-        db_vars_provided: true
-      when: 
-        - db_password != ''
-        - db_user != ''
-        - db_name != ''
-
     - name: Configure HTTP proxy for apt
       copy:
         content: |
@@ -38,74 +26,69 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Install required packages
-      apt:
-        name:
-          - gnupg
-          - curl
-          - apt-transport-https
-        state: present
-        update_cache: yes
+    - name: Download InfluxData GPG key
+      get_url:
+        url: https://repos.influxdata.com/influxdata-archive_compat.key
+        dest: /tmp/influxdata-archive_compat.key
 
-    - name: Add ArangoDB GPG key
-      apt_key:
-        url: https://download.arangodb.com/arangodb312/DEBIAN/Release.key
-        state: present
+    - name: Verify and install GPG key
+      shell: |
+        echo '393e8779c89ac8d958f81f942f9ad7fb82a25e133faddaf92e15b16e6ac9ce4c /tmp/influxdata-archive_compat.key' | sha256sum -c && \
+        cat /tmp/influxdata-archive_compat.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg > /dev/null
+      args:
+        creates: /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg
 
-    - name: Add ArangoDB repository
+    - name: Add InfluxDB repository
       apt_repository:
-        repo: "deb https://download.arangodb.com/arangodb312/DEBIAN/ /"
+        repo: deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/debian stable main
         state: present
-        filename: arangodb
+        filename: influxdata
 
     - name: Update apt cache
       apt:
         update_cache: yes
+        cache_valid_time: 3600
 
-    - name: Install ArangoDB
+    - name: Install InfluxDB
       apt:
-        name: arangodb3
+        name: influxdb
         state: present
 
-    - name: Set ArangoDB default language
-      lineinfile:
-        path: /etc/arangodb3/arangod.conf
-        regexp: '^default-language'
-        line: 'default-language = {{ arango_language }}'
-        create: yes
-      notify:
-        - Restart ArangoDB
-
-    - name: Enable and start ArangoDB service
-      systemd:
-        name: arangodb3
-        enabled: yes
+    - name: Enable and start InfluxDB service
+      service:
+        name: influxdb
         state: started
-      notify:
-        - Restart ArangoDB
+        enabled: yes
 
-    - name: Create database and user
-      command: >
-        arangosh --server.endpoint tcp://127.0.0.1:8529 --server.authentication false
-        --javascript.execute-string '
-        try {
-          db._createDatabase("{{ db_name }}");
-          db._useDatabase("{{ db_name }}");
-          require("@arangodb/users").save("{{ db_user }}", "{{ db_password }}");
-          require("@arangodb/users").update("{{ db_user }}", { active: true });
-          require("@arangodb/users").grantDatabase("{{ db_user }}", "{{ db_name }}", "rw");
-          print("Database and user created successfully");
-        } catch (e) {
-          print("Error: " + e);
-          throw e;
-        }'
-      register: create_db_result
-      when: db_vars_provided
-      changed_when: create_db_result.rc == 0
-      failed_when: create_db_result.rc != 0
+    - name: Proceed with database setup if credentials are provided
+      block:
+        - name: Create InfluxDB database
+          influxdb_database:
+            name: "{{ db_name }}"
 
-  handlers:
-    - name: Restart ArangoDB
-      systemd:
-        name: arangodb3
-        state: restarted
+        - name: Create InfluxDB user
+          influxdb_user:
+            username: "{{ db_user }}"
+            password: "{{ db_password }}"
+            state: present
+            admin: yes
+
+        - name: Grant user privileges on database
+          influxdb_user:
+            username: "{{ db_user }}"
+            password: "{{ db_password }}"
+            databases: "{{ db_name }}"
+            state: present
+            admin: no
+            grants:
+              - ALL
+      when:
+        - db_name != ''
+        - db_user != ''
+        - db_password != ''
+
+    - name: Skip database setup if credentials are not provided
+      debug:
+        msg: "Database credentials not provided; skipping database and user creation."
+      when:
+        - db_name == '' or db_user == '' or db_password == ''
