@@ -7,6 +7,7 @@
     postgres_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
+    sudo_password: "<%=cypher.read('secret/pw')%>"
     db_vars_provided: false
 
   tasks:
@@ -18,50 +19,11 @@
         - postgres_password != ''
         - db_name != ''
 
-    - name: Install prerequisites
-      apt:
-        name:
-          - curl
-          - ca-certificates
-          - gnupg
-          - lsb-release
-        state: present
-      when: ansible_os_family == 'Debian'
-
-    - name: Create directories for PostgreSQL setup
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      with_items:
-        - /usr/share/postgresql-common/pgdg
-        - /etc/apt/sources.list.d
-        - /etc/apt/trusted.gpg.d
-      when: ansible_os_family == 'Debian'
-
-    - name: Download PostgreSQL signing key
-      shell: |
-        curl -fsSL https://apt.postgresql.org/pub/repos/apt/ACCC4CF8.asc -o /etc/apt/trusted.gpg.d/postgresql.asc
-      args:
-        creates: /etc/apt/trusted.gpg.d/postgresql.asc
-      when: ansible_os_family == 'Debian'
-
-    - name: Add PostgreSQL repository
-      shell: |
-        echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
-      args:
-        creates: /etc/apt/sources.list.d/pgdg.list
-      when: ansible_os_family == 'Debian'
-
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-      when: ansible_os_family == 'Debian'
-
     - name: Install PostgreSQL
       apt:
-        name: "postgresql-{{ postgresql_version }}"
+        name: postgresql
         state: present
+        update_cache: yes
       when: ansible_os_family == 'Debian'
 
     - name: Ensure PostgreSQL is started and enabled
@@ -73,27 +35,27 @@
     - name: Set PostgreSQL password for postgres user
       when: postgres_password is defined
       shell: |
-        sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
+        PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
       register: set_postgres_password
 
     - name: Create database user
       when: db_vars_provided
       shell: |
-        sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
+        PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
       register: create_user_result
       ignore_errors: yes
 
     - name: Create database
       when: db_vars_provided
       shell: |
-        sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
+        PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
       register: create_db_result
       ignore_errors: yes
 
     - name: Grant privileges
       when: db_vars_provided
       shell: |
-        sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
+        PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
       register: grant_privileges
 
     - name: Debug database setup results
