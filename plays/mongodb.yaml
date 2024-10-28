@@ -95,23 +95,15 @@
         enabled: yes
         state: started
 
-    - name: Set up MongoDB user and database
+    - name: Set up MongoDB user and database via shell
       when: db_vars_provided
-      community.mongodb.mongodb_user:
-        login_user: "{{ db_user }}"
-        login_password: "{{ db_password }}"
-        database: "{{ db_name }}"
-        name: "{{ db_user }}"
-        password: "{{ db_password }}"
-        roles: 
-          - readWrite
-          - dbAdmin
-        state: present
+      shell: |
+        mongosh {{ db_name }} --eval "db.createUser({user: '{{ db_user }}', pwd: '{{ db_password }}', roles: [{role: 'readWrite', db: '{{ db_name }}'}, {role: 'dbAdmin', db: '{{ db_name }}'}]})"
       register: mongo_user_setup
-      changed_when: mongo_user_setup is succeeded
-      failed_when: mongo_user_setup is failed
+      changed_when: "'Successfully added user' in mongo_user_setup.stdout"
+      failed_when: "'Error' in mongo_user_setup.stderr"
 
     - name: Print status of MongoDB setup
       debug:
         msg: "MongoDB setup completed with user {{ db_user }} and database {{ db_name }}"
-      when: mongo_user_setup is succeeded
+      when: db_vars_provided
