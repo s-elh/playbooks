@@ -47,13 +47,13 @@
         update_cache: yes
 
     - name: Add MariaDB GPG key
-      apt_key:
+      ansible.builtin.apt_key:
         url: https://mariadb.org/mariadb_release_signing_key.asc
         state: present
 
     - name: Add MariaDB repository
       apt_repository:
-        repo: "deb [arch=amd64] https://deb.mariadb.org/11/ubuntu {{ ansible_distribution_release }} main"
+        repo: "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.pgp] https://mirror.marwan.ma/mariadb/repo/11.4/ubuntu jammy main"
         state: present
         filename: mariadb
 
