@@ -10,6 +10,17 @@
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
     db_vars_provided: false
 
+  pre_tasks:
+    - name: Ensure apt cache is clean
+      when: ansible_facts['os_family'] == 'Debian'
+      command: rm -rf /var/lib/apt/lists/*
+      changed_when: false
+
+    - name: Wait for apt lock release
+      when: ansible_facts['os_family'] == 'Debian'
+      shell: while fuser /var/lib/dpkg/lock >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do sleep 1; done
+      changed_when: false
+      
   tasks:
     - name: Check if database variables are provided
       set_fact:
@@ -25,13 +36,28 @@
 
     - name: Install prerequisites for PostgreSQL on Debian/Ubuntu
       when: ansible_facts['os_family'] == 'Debian'
-      apt:
-        name: 
-          - curl
-          - ca-certificates
-          - gnupg
-        state: present
-        update_cache: yes
+      block:
+        - name: Update apt cache first
+          apt:
+            update_cache: yes
+            cache_valid_time: 3600
+          register: apt_update
+          retries: 5
+          delay: 10
+          until: apt_update is success
+
+        - name: Install required packages
+          apt:
+            name: 
+              - curl
+              - ca-certificates
+              - gnupg
+              - lsb-release
+            state: present
+          register: pkg_install
+          retries: 3
+          delay: 5
+          until: pkg_install is success
 
     - name: Create directory for PostgreSQL keys
       when: ansible_facts['os_family'] == 'Debian'
@@ -46,16 +72,25 @@
         curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
       args:
         warn: false
+      register: gpg_key
+      retries: 3
+      delay: 5
+      until: gpg_key is success
 
     - name: Add PostgreSQL repository for Debian/Ubuntu
       when: ansible_facts['os_family'] == 'Debian'
       shell: |
         echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+      register: repo_add
 
-    - name: Update apt cache
-      when: ansible_facts['os_family'] == 'Debian'
+    - name: Update apt cache after adding repository
+      when: ansible_facts['os_family'] == 'Debian' and repo_add is changed
       apt:
         update_cache: yes
+      register: final_update
+      retries: 5
+      delay: 10
+      until: final_update is success
 
     - name: Install PostgreSQL for Ubuntu
       when: ansible_facts['os_family'] == 'Debian'
@@ -64,13 +99,18 @@
           - "postgresql-{{ postgresql_version }}"
           - python3-psycopg2
         state: present
+      register: postgres_install
+      retries: 3
+      delay: 5
+      until: postgres_install is success
 
-    - name: Ensure PostgreSQL service is running and enabled on Debian/Ubuntu
+    - name: Ensure PostgreSQL service is running and enabled
       when: ansible_facts['os_family'] == 'Debian'
-      ansible.builtin.systemd:
+      systemd:
         name: postgresql
         enabled: yes
         state: started
+      register: postgres_service
 
     - name: Collect PostgreSQL version and extensions
       shell: |
