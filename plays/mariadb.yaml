@@ -10,7 +10,6 @@
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
     db_vars_provided: false
-
   tasks:
     - name: Check if database variables are provided
       set_fact:
@@ -43,22 +42,34 @@
         name: 
           - software-properties-common
           - python3-pymysql
+          - curl
+          - gnupg2
         state: present
         update_cache: yes
 
-    - name: Add MariaDB GPG key
-      ansible.builtin.apt_key:
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download MariaDB GPG key
+      get_url:
         url: https://mariadb.org/mariadb_release_signing_key.asc
-        state: present
+        dest: /tmp/mariadb_signing_key.asc
+        mode: '0644'
+
+    - name: Create MariaDB GPG keyring
+      shell: |
+        gpg --dearmor < /tmp/mariadb_signing_key.asc > /etc/apt/keyrings/mariadb-keyring.pgp
+      args:
+        creates: /etc/apt/keyrings/mariadb-keyring.pgp
 
     - name: Add MariaDB repository
       apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.pgp] https://mirror.marwan.ma/mariadb/repo/11.4/ubuntu jammy main"
+        repo: "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.pgp] https://mirror.marwan.ma/mariadb/repo/11.2/ubuntu jammy main"
         state: present
         filename: mariadb
-
-    - name: Update apt cache
-      apt:
         update_cache: yes
 
     - name: Install MariaDB
@@ -67,6 +78,7 @@
           - mariadb-server
           - mariadb-client
         state: present
+        update_cache: yes
 
     - name: Enable and start MariaDB service
       systemd:
