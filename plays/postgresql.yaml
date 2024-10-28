@@ -28,16 +28,25 @@
         state: present
       when: ansible_os_family == 'Debian'
 
-    - name: Add PostgreSQL APT repository key
-      apt_key:
-        url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
-        state: present
+    - name: Create directory for PostgreSQL keys
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
       when: ansible_os_family == 'Debian'
 
-    - name: Add PostgreSQL APT repository
-      apt_repository:
-        repo: "deb http://apt.postgresql.org/pub/repos/apt {{ ansible_lsb.codename }}-pgdg main"
-        state: present
+    - name: Download PostgreSQL GPG key
+      shell: |
+        curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+      args:
+        creates: /etc/apt/keyrings/postgresql.gpg
+      when: ansible_os_family == 'Debian'
+
+    - name: Add PostgreSQL repository
+      shell: |
+        echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+      args:
+        creates: /etc/apt/sources.list.d/pgdg.list
       when: ansible_os_family == 'Debian'
 
     - name: Update apt cache
@@ -68,14 +77,14 @@
       shell: |
         sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
       register: create_user_result
-      ignore_errors: yes  # In case user already exists
+      ignore_errors: yes
 
     - name: Create database
       when: db_vars_provided
       shell: |
         sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
       register: create_db_result
-      ignore_errors: yes  # In case database already exists
+      ignore_errors: yes
 
     - name: Grant privileges
       when: db_vars_provided
