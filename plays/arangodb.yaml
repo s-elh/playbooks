@@ -68,11 +68,11 @@
           --javascript.execute-string "require('@arangodb/users').update('root', '{{ root_password }}');"
 
     - name: Enable authentication in ArangoDB configuration
-      ini_file:
+      lineinfile:
         path: /etc/arangodb3/arangod.conf
-        section: server
-        option: authentication
-        value: 'true'
+        regexp: '^#?authentication'
+        line: 'authentication = true'
+        insertafter: '[server]'
 
     - name: Restart ArangoDB service
       service:
