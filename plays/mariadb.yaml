@@ -11,12 +11,6 @@
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
     db_vars_provided: false
 
-  pre_tasks:
-    - name: Install community.mysql collection
-      ansible.builtin.shell: ansible-galaxy collection install community.mysql
-      delegate_to: localhost
-      run_once: true
-
   tasks:
     - name: Check if database variables are provided
       set_fact:
@@ -81,45 +75,27 @@
         state: started
 
     - name: Set MariaDB root password
-      community.mysql.mysql_user:
-        name: root
-        password: "{{ mysql_root_password }}"
-        login_unix_socket: /var/run/mysqld/mysqld.sock
+      shell: |
+        mysql --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
       ignore_errors: true
 
     - name: Remove anonymous users
-      community.mysql.mysql_user:
-        name: ''
-        host_all: yes
-        state: absent
-        login_user: root
-        login_password: "{{ mysql_root_password }}"
+      shell: |
+        mysql --user=root --password="{{ mysql_root_password }}" --execute="DELETE FROM mysql.user WHERE User=''; FLUSH PRIVILEGES;"
 
     - name: Remove test database
-      community.mysql.mysql_db:
-        name: test
-        state: absent
-        login_user: root
-        login_password: "{{ mysql_root_password }}"
+      shell: |
+        mysql --user=root --password="{{ mysql_root_password }}" --execute="DROP DATABASE IF EXISTS test; DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%'; FLUSH PRIVILEGES;"
 
-    - name: Create database and user if variables are provided
+    - name: Create database if variables are provided
       when: db_vars_provided
-      block:
-        - name: Create database
-          community.mysql.mysql_db:
-            name: "{{ db_name }}"
-            state: present
-            login_user: root
-            login_password: "{{ mysql_root_password }}"
+      shell: |
+        mysql --user=root --password="{{ mysql_root_password }}" --execute="CREATE DATABASE IF NOT EXISTS {{ db_name }};"
 
-        - name: Create user with privileges
-          community.mysql.mysql_user:
-            name: "{{ db_user }}"
-            password: "{{ db_password }}"
-            priv: "{{ db_name }}.*:ALL"
-            state: present
-            login_user: root
-            login_password: "{{ mysql_root_password }}"
+    - name: Create user and grant privileges if variables are provided
+      when: db_vars_provided
+      shell: |
+        mysql --user=root --password="{{ mysql_root_password }}" --execute="CREATE USER IF NOT EXISTS '{{ db_user }}'@'%' IDENTIFIED BY '{{ db_password }}'; GRANT ALL PRIVILEGES ON {{ db_name }}.* TO '{{ db_user }}'@'%'; FLUSH PRIVILEGES;"
 
     - name: Print status of MariaDB setup
       debug:
