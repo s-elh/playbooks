@@ -8,7 +8,17 @@
     postgres_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
+    db_vars_provided: false
+
   tasks:
+    - name: Check if database variables are provided
+      set_fact:
+        db_vars_provided: true
+      when: 
+        - db_user != ''
+        - postgres_password != ''
+        - db_name != ''
+
     - name: Print the ansible_os_family fact
       ansible.builtin.debug:
         msg: "The OS family is: {{ ansible_os_family }}"
@@ -72,15 +82,23 @@
       debug:
         msg: "PostgreSQL information: {{ postgres_info.stdout_lines }}"
 
-    - name: Create PostgreSQL user
+    - name: Create PostgreSQL user if variables are provided
+      when: db_vars_provided
       shell: |
         sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
       register: create_user_result
 
-    - name: Create a new database 
+    - name: Create a new database if variables are provided
+      when: db_vars_provided
       shell: |
         sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
 
-    - name: Debug user creation result
+    - name: Debug user creation result if variables are provided
+      when: db_vars_provided
       debug:
         msg: "User creation result: {{ create_user_result }}"
+
+    - name: Skip database setup if credentials are not provided
+      debug:
+        msg: "Database credentials not provided; skipping database and user creation."
+      when: not db_vars_provided
