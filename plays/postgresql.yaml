@@ -7,9 +7,17 @@
     postgres_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
-    db_vars_provided: false  # Set to true if db_name and db_user are provided
+    db_vars_provided: false
 
   tasks:
+    - name: Check if database variables are provided
+      set_fact:
+        db_vars_provided: true
+      when: 
+        - db_user != ''
+        - postgres_password != ''
+        - db_name != ''
+
     - name: Install prerequisites
       apt:
         name:
@@ -49,33 +57,36 @@
         state: started
         enabled: yes
 
-    - name: Set PostgreSQL password for 'postgres' user
-      become_user: postgres
-      postgresql_user:
-        name: postgres
-        password: "{{ postgres_password }}"
-        role_attr_flags: "SUPERUSER"
+    - name: Set PostgreSQL password for postgres user
       when: postgres_password is defined
-
-    - name: Create database
-      become_user: postgres
-      postgresql_db:
-        name: "{{ db_name }}"
-      when: db_vars_provided
+      shell: |
+        sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
+      register: set_postgres_password
 
     - name: Create database user
-      become_user: postgres
-      postgresql_user:
-        name: "{{ db_user }}"
-        password: "{{ postgres_password }}"
-        priv: "{{ db_name }}:ALL"
       when: db_vars_provided
+      shell: |
+        sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
+      register: create_user_result
+      ignore_errors: yes  # In case user already exists
 
-    - name: Grant all privileges on database to user
-      become_user: postgres
-      postgresql_privs:
-        db: "{{ db_name }}"
-        roles: "{{ db_user }}"
-        type: database
-        privs: ALL
+    - name: Create database
       when: db_vars_provided
+      shell: |
+        sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
+      register: create_db_result
+      ignore_errors: yes  # In case database already exists
+
+    - name: Grant privileges
+      when: db_vars_provided
+      shell: |
+        sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
+      register: grant_privileges
+
+    - name: Debug database setup results
+      when: db_vars_provided
+      debug:
+        msg: 
+          - "User creation: {{ create_user_result.stdout | default('No output') }}"
+          - "Database creation: {{ create_db_result.stdout | default('No output') }}"
+          - "Privilege grant: {{ grant_privileges.stdout | default('No output') }}"
