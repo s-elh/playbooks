@@ -1,15 +1,26 @@
 ---
-- name: Install and Configure MongoDB on Ubuntu
+- name: Install and Configure MongoDB
   hosts: all
-  become: yes
+  become: true
+  gather_facts: true
   vars:
-    mongodb_version: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['version'] }}"  
+    mongodb_version: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['version'] | default('6.0') }}"  
     mongodb_repo_url: "https://repo.mongodb.org/yum/redhat/$releasever/mongodb-org/{{ mongodb_version }}/x86_64/"
     proxy_url: "http://10.1.38.2:3128"
-  connection: paramiko
+    db_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] | default('') }}"
+    db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
+    db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
+    db_vars_provided: false
 
   tasks:
-  
+    - name: Check if database variables are provided
+      set_fact:
+        db_vars_provided: true
+      when: 
+        - db_password != ''
+        - db_user != ''
+        - db_name != ''
+
     - name: Configure HTTP proxy for apt
       copy:
         content: |
@@ -27,27 +38,25 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
-        
+
     - name: Add MongoDB GPG key
       when: ansible_distribution == "Ubuntu"
       ansible.builtin.apt_key:
-       url: https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc
-       state: present
+        url: "https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc"
+        state: present
 
     - name: Add MongoDB repository
       when: ansible_distribution == "Ubuntu"
       ansible.builtin.apt_repository:
-       repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} multiverse"
-       state: present
+        repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} multiverse"
+        state: present
 
     - name: Update apt cache
       when: ansible_distribution == "Ubuntu"
       ansible.builtin.apt:
-       update_cache: yes
-       
-    
+        update_cache: yes
 
-    - name: Add MongoDB repository
+    - name: Add MongoDB repository (RedHat)
       when: ansible_distribution == 'RedHat'
       yum_repository:
         name: "mongodb-org-{{ mongodb_version }}"
@@ -55,9 +64,9 @@
         baseurl: "{{ mongodb_repo_url }}"
         gpgcheck: yes
         enabled: yes
-        gpgkey: https://www.mongodb.org/static/pgp/server-6.0.asc
+        gpgkey: "https://www.mongodb.org/static/pgp/server-6.0.asc"
 
-    - name: Ensure cache is refreshed after adding MongoDB repository
+    - name: Update YUM cache
       when: ansible_distribution == 'RedHat'
       yum:
         name: "*"
@@ -68,83 +77,41 @@
       when: ansible_distribution == 'RedHat'
       yum:
         name: 
-         - mongodb-org
-         - mongodb-mongosh
+          - mongodb-org
+          - mongodb-mongosh
         state: present
 
-    - name: Enable and start MongoDB
-      when: ansible_distribution == 'RedHat'
+    - name: Install MongoDB on Ubuntu
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name:
+          - mongodb-org
+          - mongodb-mongosh
+        state: present
+
+    - name: Enable and start MongoDB service
       systemd:
         name: mongod
         enabled: yes
         state: started
 
-    - name: Ensure MongoDB is running
-      when: ansible_distribution == 'RedHat'
-      shell: "systemctl status mongod"
-      register: mongod_status
-      ignore_errors: yes
-
-    - name: Print MongoDB status
-      when: ansible_distribution == 'RedHat'
-      debug:
-        msg: "{{ mongod_status.stdout_lines }}"
-
-    - name: Configure firewalld to allow MongoDB traffic
-      when: ansible_distribution == 'RedHat'
-      firewalld:
-        service: mongodb
-        permanent: yes
-        immediate: yes
-        state: enabled
-      notify: reload firewalld
-
-  
-  
-
-    - name: Install MongoDB package on Ubuntu
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        name:
-         - mongodb-org
-         - mongodb-mongosh
-        state: present
-
-    - name: Start and enable MongoDB service on Ubuntu
-      when: ansible_distribution == "Ubuntu"
-      service:
-        name: mongod
-        state: started
-        enabled: yes
-    
-
-   
-    
-    - name: Install pip3
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        name: python3-pip
-        state: present
-        update_cache: yes
-    - name: Ensure MongoDB Python driver is installed
-      pip:
-        name: pymongo
-
-    - name: Define roles
+    - name: Set up MongoDB user and database
+      when: db_vars_provided
       community.mongodb.mongodb_user:
-       database: testdb
-       name: testuser
-       password: 12345
-       roles: readWrite,dbAdmin,userAdmin
-       state: present
-    
-   
-     
+        login_user: "{{ db_user }}"
+        login_password: "{{ db_password }}"
+        database: "{{ db_name }}"
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        roles: 
+          - readWrite
+          - dbAdmin
+        state: present
+      register: mongo_user_setup
+      changed_when: mongo_user_setup is succeeded
+      failed_when: mongo_user_setup is failed
 
-    
- 
-  handlers:
-    - name: reload firewalld
-      service:
-        name: firewalld
-        state: reloaded            
+    - name: Print status of MongoDB setup
+      debug:
+        msg: "MongoDB setup completed with user {{ db_user }} and database {{ db_name }}"
+      when: mongo_user_setup is succeeded
