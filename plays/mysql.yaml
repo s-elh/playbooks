@@ -1,12 +1,25 @@
 ---
-- name: Install MySQL
+- name: Install and Configure MySQL
   hosts: all
   become: true
+  gather_facts: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-  connection: paramiko
+    mysql_root_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] | default('rootroot') }}"
+    db_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] | default('') }}"
+    db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
+    db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
+    db_vars_provided: false
 
   tasks:
+    - name: Check if database variables are provided
+      set_fact:
+        db_vars_provided: true
+      when: 
+        - db_password != ''
+        - db_user != ''
+        - db_name != ''
+
     - name: Configure HTTP proxy for apt
       copy:
         content: |
@@ -41,16 +54,38 @@
         state: started
         enabled: yes
 
-    - name: Get MySQL version
+    - name: Set MySQL root password
+      shell: |
+        mysql --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
+      ignore_errors: true
+
+    - name: Remove anonymous users
+      shell: |
+        mysql --user=root --password="{{ mysql_root_password }}" --execute="DELETE FROM mysql.user WHERE User=''; FLUSH PRIVILEGES;"
+
+    - name: Remove test database
+      shell: |
+        mysql --user=root --password="{{ mysql_root_password }}" --execute="DROP DATABASE IF EXISTS test; DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%'; FLUSH PRIVILEGES;"
+
+    - name: Create database if variables are provided
+      when: db_vars_provided
+      shell: |
+        mysql --user=root --password="{{ mysql_root_password }}" --execute="CREATE DATABASE IF NOT EXISTS {{ db_name }};"
+
+    - name: Create user and grant privileges if variables are provided
+      when: db_vars_provided
+      shell: |
+        mysql --user=root --password="{{ mysql_root_password }}" --execute="CREATE USER IF NOT EXISTS '{{ db_user }}'@'%' IDENTIFIED BY '{{ db_password }}'; GRANT ALL PRIVILEGES ON {{ db_name }}.* TO '{{ db_user }}'@'%'; FLUSH PRIVILEGES;"
+
+    - name: Display MySQL version
       command: mysql --version
       register: mysql_version
       changed_when: false
 
-    - name: Display MySQL version
+    - name: Print MySQL version
       debug:
         var: mysql_version.stdout
 
     - name: Print MySQL installation complete message
       debug:
-        msg: "MySQL has been installed successfully. Remember to secure your installation by running: sudo mysql_secure_installation "
-  
+        msg: "MySQL has been installed successfully. Remember to secure your installation by running: sudo mysql_secure_installation"
