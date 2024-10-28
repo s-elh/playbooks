@@ -11,6 +11,12 @@
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
     db_vars_provided: false
 
+  pre_tasks:
+    - name: Install community.mysql collection
+      ansible.builtin.shell: ansible-galaxy collection install community.mysql
+      delegate_to: localhost
+      run_once: true
+
   tasks:
     - name: Check if database variables are provided
       set_fact:
@@ -75,14 +81,14 @@
         state: started
 
     - name: Set MariaDB root password
-      mysql_user:
+      community.mysql.mysql_user:
         name: root
         password: "{{ mysql_root_password }}"
         login_unix_socket: /var/run/mysqld/mysqld.sock
       ignore_errors: true
 
     - name: Remove anonymous users
-      mysql_user:
+      community.mysql.mysql_user:
         name: ''
         host_all: yes
         state: absent
@@ -90,7 +96,7 @@
         login_password: "{{ mysql_root_password }}"
 
     - name: Remove test database
-      mysql_db:
+      community.mysql.mysql_db:
         name: test
         state: absent
         login_user: root
@@ -100,14 +106,14 @@
       when: db_vars_provided
       block:
         - name: Create database
-          mysql_db:
+          community.mysql.mysql_db:
             name: "{{ db_name }}"
             state: present
             login_user: root
             login_password: "{{ mysql_root_password }}"
 
         - name: Create user with privileges
-          mysql_user:
+          community.mysql.mysql_user:
             name: "{{ db_user }}"
             password: "{{ db_password }}"
             priv: "{{ db_name }}.*:ALL"
