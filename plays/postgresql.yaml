@@ -8,7 +8,7 @@
     postgres_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
-    sudo_password: "<%=cypher.read('secret/pw')%>"
+    sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
     db_vars_provided: false
 
   tasks:
