@@ -1,6 +1,6 @@
 ---
 - name: Test Cypher Detection
-  hosts: localhost
+  hosts: all
   become: true
   vars:
     sudo_password: "<%=cypher.read('secret/pw')%>"
