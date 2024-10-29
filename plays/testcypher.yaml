@@ -3,7 +3,7 @@
   hosts: all
   become: true
   vars:
-    sudo_password: "<%=cypher.read('secret/pw')%>"
+    sudo_password: "{{ lookup('cypher', 'secret=pw') }}"
 
   tasks:
     - name: Display Cypher-read value
