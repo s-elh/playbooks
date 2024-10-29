@@ -10,6 +10,7 @@
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
     sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
     db_vars_provided: false
+    ansible_remote_tmp: "/tmp/.ansible/tmp"
 
   tasks:
     - name: Configure HTTP proxy for apt
@@ -56,12 +57,16 @@
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
       register: set_postgres_password
+      args:
+        chdir: /tmp
 
     - name: Create database user
       when: db_vars_provided
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
       register: create_user_result
+      args:
+        chdir: /tmp
       ignore_errors: yes
 
     - name: Create database
@@ -69,6 +74,8 @@
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
       register: create_db_result
+      args:
+        chdir: /tmp
       ignore_errors: yes
 
     - name: Grant privileges
@@ -76,6 +83,8 @@
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
       register: grant_privileges
+      args:
+        chdir: /tmp
 
     - name: Debug database setup results
       when: db_vars_provided
