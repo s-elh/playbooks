@@ -11,7 +11,7 @@
     sudo_password: "<%=cypher.read('secret/pw')%>"
     db_vars_provided: false
     rhel_username: "mmajnioui@powerm.ma"
-    rhel_password: "<%=cypher.read('secret/rhelpw')%>"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
 
   tasks:
     - name: Get RHEL major version
