@@ -1,0 +1,11 @@
+---
+- name: Test Cypher Detection
+  hosts: localhost
+  become: true
+  vars:
+    sudo_password: "<%=cypher.read('secret/pw')%>"
+
+  tasks:
+    - name: Display Cypher-read value
+      debug:
+        msg: "Cypher read value for sudo_password: {{ sudo_password }}"
