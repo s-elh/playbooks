@@ -71,9 +71,11 @@
 
     - name: Enable required RHEL repositories
       when: ansible_os_family == 'RedHat'
-      rhsm_repository:
-        name: "{{ rhel_repos[rhel_major_version] }}"
-        state: enabled
+      command: subscription-manager repos --enable={{ item }}
+      with_items: "{{ rhel_repos[rhel_major_version] }}"
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
 
     # PostgreSQL repository setup for RHEL
     - name: Install PostgreSQL repository (RHEL)
