@@ -64,7 +64,7 @@
     # RHEL-specific tasks
     - name: Register and subscribe RHEL system
       when: ansible_os_family == 'RedHat'
-      redhat_subscription:
+      rhsm_subscription:
         state: present
         username: "{{ rhel_username }}"
         password: "{{ rhel_password }}"
@@ -82,7 +82,6 @@
       yum:
         name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-{{ rhel_major_version }}-x86_64/pgdg-redhat-repo-latest.noarch.rpm
         state: present
-      when: ansible_os_family == 'RedHat'
 
     - name: Check if database variables are provided
       set_fact:
