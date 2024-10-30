@@ -64,11 +64,10 @@
     # RHEL-specific tasks
     - name: Register and subscribe RHEL system
       when: ansible_os_family == 'RedHat'
-      rhsm_subscription:
-        state: present
-        username: "{{ rhel_username }}"
-        password: "{{ rhel_password }}"
-        auto_attach: true
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
 
     - name: Enable required RHEL repositories
       when: ansible_os_family == 'RedHat'
