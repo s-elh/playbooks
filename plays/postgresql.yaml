@@ -8,17 +8,47 @@
     postgres_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
-    sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
+    sudo_password: "<%=cypher.read('secret/pw')%>"
     db_vars_provided: false
-    ansible_remote_tmp: "/tmp/.ansible/tmp"
+    rhel_username: "mmajnioui@powerm.ma"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
 
   tasks:
-    - name: Configure HTTP proxy for apt
+    - name: Get RHEL major version
+      when: ansible_os_family == 'RedHat'
+      set_fact:
+        rhel_major_version: "{{ ansible_distribution_major_version }}"
+
+    - name: Set RHEL repository names based on version
+      when: ansible_os_family == 'RedHat'
+      set_fact:
+        rhel_repos:
+          "7":
+            - rhel-7-server-rpms
+            - rhel-7-server-optional-rpms
+          "8":
+            - rhel-8-for-x86_64-baseos-rpms
+            - rhel-8-for-x86_64-appstream-rpms
+          "9":
+            - rhel-9-for-x86_64-baseos-rpms
+            - rhel-9-for-x86_64-appstream-rpms
+
+    - name: Configure HTTP proxy for apt (Debian/Ubuntu)
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
+      when: ansible_os_family == 'Debian'
+
+    - name: Configure HTTP proxy for yum (RHEL)
+      copy:
+        content: |
+          proxy={{ proxy_url }}
+          proxy_username=
+          proxy_password=
+        dest: /etc/yum.conf.d/proxy.conf
+      when: ansible_os_family == 'RedHat'
 
     - name: Configure HTTP proxy for the environment
       lineinfile:
@@ -31,6 +61,29 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
+    # RHEL-specific tasks
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == 'RedHat'
+      redhat_subscription:
+        state: present
+        username: "{{ rhel_username }}"
+        password: "{{ rhel_password }}"
+        auto_attach: true
+
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == 'RedHat'
+      rhsm_repository:
+        name: "{{ rhel_repos[rhel_major_version] }}"
+        state: enabled
+
+    # PostgreSQL repository setup for RHEL
+    - name: Install PostgreSQL repository (RHEL)
+      when: ansible_os_family == 'RedHat'
+      yum:
+        name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-{{ rhel_major_version }}-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+        state: present
+      when: ansible_os_family == 'RedHat'
+
     - name: Check if database variables are provided
       set_fact:
         db_vars_provided: true
@@ -39,34 +92,54 @@
         - postgres_password != ''
         - db_name != ''
 
-    - name: Install PostgreSQL
+    # PostgreSQL installation based on OS family
+    - name: Install PostgreSQL (Debian/Ubuntu)
       apt:
         name: postgresql
         state: present
         update_cache: yes
       when: ansible_os_family == 'Debian'
 
-    - name: Ensure PostgreSQL is started and enabled
+    - name: Install PostgreSQL (RHEL)
+      yum:
+        name: 
+          - postgresql{{ postgresql_version | replace('.', '') }}-server
+          - postgresql{{ postgresql_version | replace('.', '') }}-contrib
+        state: present
+        update_cache: yes
+      when: ansible_os_family == 'RedHat'
+
+    - name: Initialize PostgreSQL database (RHEL only)
+      command: "/usr/pgsql-{{ postgresql_version }}/bin/postgresql-{{ postgresql_version }}-setup initdb"
+      args:
+        creates: "/var/lib/pgsql/{{ postgresql_version }}/data/postgresql.conf"
+      when: ansible_os_family == 'RedHat'
+
+    - name: Ensure PostgreSQL is started and enabled (RHEL)
+      service:
+        name: "postgresql-{{ postgresql_version }}"
+        state: started
+        enabled: yes
+      when: ansible_os_family == 'RedHat'
+
+    - name: Ensure PostgreSQL is started and enabled (Debian/Ubuntu)
       service:
         name: postgresql
         state: started
         enabled: yes
+      when: ansible_os_family == 'Debian'
 
     - name: Set PostgreSQL password for postgres user
       when: postgres_password is defined
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
       register: set_postgres_password
-      args:
-        chdir: /tmp
 
     - name: Create database user
       when: db_vars_provided
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
       register: create_user_result
-      args:
-        chdir: /tmp
       ignore_errors: yes
 
     - name: Create database
@@ -74,8 +147,6 @@
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
       register: create_db_result
-      args:
-        chdir: /tmp
       ignore_errors: yes
 
     - name: Grant privileges
@@ -83,8 +154,6 @@
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
       register: grant_privileges
-      args:
-        chdir: /tmp
 
     - name: Debug database setup results
       when: db_vars_provided
