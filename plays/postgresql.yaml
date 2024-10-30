@@ -12,6 +12,7 @@
     db_vars_provided: false
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    ansible_remote_tmp: "/tmp/.ansible/tmp"  # Set remote_tmp to /tmp
 
   tasks:
     - name: Get RHEL major version
