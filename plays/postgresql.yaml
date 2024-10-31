@@ -43,12 +43,10 @@
       when: ansible_os_family == 'Debian'
 
     - name: Configure HTTP proxy for yum (RHEL)
-      copy:
-        content: |
-          proxy={{ proxy_url }}
-          proxy_username=
-          proxy_password=
-        dest: /etc/yum.conf.d/proxy.conf
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
       when: ansible_os_family == 'RedHat'
 
     - name: Configure HTTP proxy for the environment
