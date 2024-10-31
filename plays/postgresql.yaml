@@ -13,7 +13,7 @@
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     ansible_remote_tmp: "/tmp/.ansible/tmp"
-  
+
   tasks:
     - name: Get RHEL major version
       when: ansible_os_family == 'RedHat'
@@ -76,13 +76,7 @@
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
-    # PostgreSQL GPG key import and repository setup for RHEL
-    - name: Import PostgreSQL GPG key
-      rpm_key:
-        state: present
-        key: https://download.postgresql.org/pub/repos/yum/RPM-GPG-KEY-PGDG
-      when: ansible_os_family == 'RedHat'
-
+    # PostgreSQL repository setup for RHEL
     - name: Install PostgreSQL repository (RHEL)
       yum:
         name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-{{ rhel_major_version }}-x86_64/pgdg-redhat-repo-latest.noarch.rpm
