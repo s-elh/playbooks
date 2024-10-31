@@ -4,7 +4,6 @@
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    postgresql_version: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['version'] }}"
     postgres_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
@@ -19,28 +18,6 @@
       when: ansible_os_family == 'RedHat'
       set_fact:
         rhel_major_version: "{{ ansible_distribution_major_version }}"
-
-    - name: Set RHEL repository names based on version
-      when: ansible_os_family == 'RedHat'
-      set_fact:
-        rhel_repos:
-          "7":
-            - rhel-7-server-rpms
-            - rhel-7-server-optional-rpms
-          "8":
-            - rhel-8-for-x86_64-baseos-rpms
-            - rhel-8-for-x86_64-appstream-rpms
-          "9":
-            - rhel-9-for-x86_64-baseos-rpms
-            - rhel-9-for-x86_64-appstream-rpms
-
-    - name: Configure HTTP proxy for apt (Debian/Ubuntu)
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-      when: ansible_os_family == 'Debian'
 
     - name: Configure HTTP proxy for yum (RHEL)
       lineinfile:
@@ -70,21 +47,29 @@
 
     - name: Enable required RHEL repositories
       when: ansible_os_family == 'RedHat'
-      command: subscription-manager repos --enable={{ item }}
-      with_items: "{{ rhel_repos[rhel_major_version] }}"
+      command: subscription-manager repos --enable rhel-{{ rhel_major_version }}-for-x86_64-appstream-rpms
       register: repo_result
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
-    # PostgreSQL repository setup for RHEL
-    - name: Install PostgreSQL repository (RHEL)
+    # PostgreSQL installation and configuration for RHEL
+    - name: Install PostgreSQL server (RHEL)
       yum:
-        name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-{{ rhel_major_version }}-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+        name: "@postgresql"
         state: present
       when: ansible_os_family == 'RedHat'
 
-    - name: Disable built-in PostgreSQL module
-      command: dnf -qy module disable postgresql
+    - name: Initialize PostgreSQL database (RHEL only)
+      command: "/usr/bin/postgresql-setup --initdb"
+      args:
+        creates: "/var/lib/pgsql/data/postgresql.conf"
+      when: ansible_os_family == 'RedHat'
+
+    - name: Ensure PostgreSQL is started and enabled (RHEL)
+      service:
+        name: postgresql
+        state: started
+        enabled: yes
       when: ansible_os_family == 'RedHat'
 
     - name: Check if database variables are provided
@@ -94,43 +79,6 @@
         - db_user != ''
         - postgres_password != ''
         - db_name != ''
-
-    # PostgreSQL installation based on OS family
-    - name: Install PostgreSQL (Debian/Ubuntu)
-      apt:
-        name: postgresql
-        state: present
-        update_cache: yes
-      when: ansible_os_family == 'Debian'
-
-    - name: Install PostgreSQL server (RHEL)
-      yum:
-        name: 
-          - postgresql{{ postgresql_version | replace('.', '') }}-server
-          - postgresql{{ postgresql_version | replace('.', '') }}-contrib
-        state: present
-        update_cache: yes
-      when: ansible_os_family == 'RedHat'
-
-    - name: Initialize PostgreSQL database (RHEL only)
-      command: "/usr/pgsql-{{ postgresql_version }}/bin/postgresql-{{ postgresql_version }}-setup initdb"
-      args:
-        creates: "/var/lib/pgsql/{{ postgresql_version }}/data/postgresql.conf"
-      when: ansible_os_family == 'RedHat'
-
-    - name: Ensure PostgreSQL is started and enabled (RHEL)
-      service:
-        name: "postgresql-{{ postgresql_version }}"
-        state: started
-        enabled: yes
-      when: ansible_os_family == 'RedHat'
-
-    - name: Ensure PostgreSQL is started and enabled (Debian/Ubuntu)
-      service:
-        name: postgresql
-        state: started
-        enabled: yes
-      when: ansible_os_family == 'Debian'
 
     - name: Set PostgreSQL password for postgres user
       when: postgres_password is defined
