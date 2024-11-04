@@ -11,7 +11,7 @@
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
     rhel_username: "mmajnioui@powerm.ma"
-    rhel_password: "{{ lookup('cypher','secret/rhelpw') }}"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     db_vars_provided: false
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
