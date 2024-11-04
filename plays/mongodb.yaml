@@ -33,6 +33,33 @@
         - db_user != ''
         - db_name != ''
 
+    # Ubuntu-specific tasks
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Add MongoDB GPG key (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      ansible.builtin.apt_key:
+        url: "https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc"
+        state: present
+
+    - name: Add MongoDB repository (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      ansible.builtin.apt_repository:
+        repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} multiverse"
+        state: present
+
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      ansible.builtin.apt:
+        update_cache: yes
+
+    # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
       lineinfile:
         path: /etc/yum.conf
@@ -40,7 +67,7 @@
         create: yes
       when: ansible_os_family == 'RedHat'
 
-    - name: Configure HTTP proxy for the environment
+    - name: Configure HTTP proxy for the environment (All OS)
       lineinfile:
         path: /etc/environment
         line: '{{ item }}'
@@ -65,23 +92,6 @@
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
-    - name: Add MongoDB GPG key
-      when: ansible_distribution == "Ubuntu"
-      ansible.builtin.apt_key:
-        url: "https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc"
-        state: present
-
-    - name: Add MongoDB repository (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      ansible.builtin.apt_repository:
-        repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} multiverse"
-        state: present
-
-    - name: Update apt cache
-      when: ansible_distribution == "Ubuntu"
-      ansible.builtin.apt:
-        update_cache: yes
-
     - name: Add MongoDB repository (RedHat)
       when: ansible_distribution == 'RedHat'
       yum_repository:
@@ -92,14 +102,14 @@
         enabled: yes
         gpgkey: "https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc"
 
-    - name: Update YUM cache
+    - name: Update YUM cache (RedHat)
       when: ansible_distribution == 'RedHat'
       yum:
         name: "*"
         state: latest
         update_cache: yes
 
-    - name: Install MongoDB
+    - name: Install MongoDB (RedHat)
       when: ansible_distribution == 'RedHat'
       yum:
         name: 
