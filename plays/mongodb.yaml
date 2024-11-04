@@ -11,7 +11,7 @@
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
     rhel_username: "mmajnioui@powerm.ma"
-    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    rhel_password: "{{ lookup('cypher','secret/rhelpw') }}"
     db_vars_provided: false
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
@@ -33,7 +33,7 @@
         - db_user != ''
         - db_name != ''
 
-    # Ubuntu-specific tasks
+    # Configure proxy settings first
     - name: Configure HTTP proxy for apt (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       copy:
@@ -42,15 +42,47 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Add MongoDB GPG key (Ubuntu)
+    - name: Configure system-wide proxy settings
+      copy:
+        content: |
+          export http_proxy={{ proxy_url }}
+          export https_proxy={{ proxy_url }}
+          export HTTP_PROXY={{ proxy_url }}
+          export HTTPS_PROXY={{ proxy_url }}
+        dest: /etc/profile.d/proxy.sh
+      register: proxy_config
+
+    - name: Source proxy settings
+      shell: source /etc/profile.d/proxy.sh
+      when: proxy_config.changed
+      args:
+        executable: /bin/bash
+
+    # Update /etc/hosts with MongoDB domain
+    - name: Update /etc/hosts with MongoDB domain
+      lineinfile:
+        path: /etc/hosts
+        line: "104.18.248.128 www.mongodb.org"
+        state: present
+
+    # Ubuntu-specific tasks with proxy awareness
+    - name: Download MongoDB GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      ansible.builtin.apt_key:
+      get_url:
         url: "https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc"
+        dest: /tmp/mongodb-key.asc
+        use_proxy: yes
+        validate_certs: no
+
+    - name: Import MongoDB GPG key (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt_key:
+        file: /tmp/mongodb-key.asc
         state: present
 
     - name: Add MongoDB repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      ansible.builtin.apt_repository:
+      apt_repository:
         repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} multiverse"
         state: present
 
