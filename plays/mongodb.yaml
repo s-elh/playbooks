@@ -33,12 +33,12 @@
         - db_user != ''
         - db_name != ''
 
-    - name: Configure HTTP proxy for apt
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+    - name: Configure HTTP proxy for yum (RHEL)
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+      when: ansible_os_family == 'RedHat'
 
     - name: Configure HTTP proxy for the environment
       lineinfile:
