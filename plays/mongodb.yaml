@@ -33,7 +33,7 @@
         - db_user != ''
         - db_name != ''
 
-    # Configure proxy settings first
+    # Updated Ubuntu-specific tasks
     - name: Configure HTTP proxy for apt (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       copy:
@@ -42,54 +42,44 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Configure system-wide proxy settings
-      copy:
-        content: |
-          export http_proxy={{ proxy_url }}
-          export https_proxy={{ proxy_url }}
-          export HTTP_PROXY={{ proxy_url }}
-          export HTTPS_PROXY={{ proxy_url }}
-        dest: /etc/profile.d/proxy.sh
-      register: proxy_config
+    - name: Create directory for MongoDB keys (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
 
-    - name: Source proxy settings
-      shell: source /etc/profile.d/proxy.sh
-      when: proxy_config.changed
-      args:
-        executable: /bin/bash
-
-    # Update /etc/hosts with MongoDB domain
-    - name: Update /etc/hosts with MongoDB domain
-      lineinfile:
-        path: /etc/hosts
-        line: "104.18.248.128 www.mongodb.org"
-        state: present
-
-    # Ubuntu-specific tasks with proxy awareness
     - name: Download MongoDB GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       get_url:
         url: "https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc"
-        dest: /tmp/mongodb-key.asc
+        dest: "/tmp/mongodb-{{ mongodb_version }}.asc"
         use_proxy: yes
         validate_certs: no
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     - name: Import MongoDB GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt_key:
-        file: /tmp/mongodb-key.asc
+        file: "/tmp/mongodb-{{ mongodb_version }}.asc"
         state: present
 
     - name: Add MongoDB repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      apt_repository:
+      ansible.builtin.apt_repository:
         repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} multiverse"
         state: present
+        update_cache: no
 
     - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       ansible.builtin.apt:
         update_cache: yes
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
