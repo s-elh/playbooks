@@ -7,13 +7,22 @@
     postgres_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
-    sudo_password: "<%=cypher.read('secret/pw')%>"
+    sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
     db_vars_provided: false
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
-    ansible_remote_tmp: "/tmp/.ansible/tmp"
+    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
+    - name: Ensure Ansible remote tmp directory exists and is writable
+      file:
+        path: "{{ ansible_remote_tmp }}"
+        state: directory
+        mode: '1777'
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      become: true
+
     - name: Get RHEL major version
       when: ansible_os_family == 'RedHat'
       set_fact:
@@ -63,6 +72,7 @@
       command: "/usr/bin/postgresql-setup --initdb"
       args:
         creates: "/var/lib/pgsql/data/postgresql.conf"
+        chdir: /tmp
       when: ansible_os_family == 'RedHat'
 
     - name: Ensure PostgreSQL is started and enabled (RHEL)
@@ -83,27 +93,35 @@
     - name: Set PostgreSQL password for postgres user
       when: postgres_password is defined
       shell: |
-        cd /tmp && PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
+        PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
+      args:
+        chdir: /tmp
       register: set_postgres_password
 
     - name: Create database user
       when: db_vars_provided
       shell: |
-        cd /tmp && PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
+        PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
+      args:
+        chdir: /tmp
       register: create_user_result
       ignore_errors: yes
 
     - name: Create database
       when: db_vars_provided
       shell: |
-        cd /tmp && PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
+        PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
+      args:
+        chdir: /tmp
       register: create_db_result
       ignore_errors: yes
 
     - name: Grant privileges
       when: db_vars_provided
       shell: |
-        cd /tmp && PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
+        PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
+      args:
+        chdir: /tmp
       register: grant_privileges
 
     - name: Debug database setup results
