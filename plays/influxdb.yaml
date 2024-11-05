@@ -9,7 +9,20 @@
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
     db_vars_provided: false
+    rhel_username: "mmajnioui@powerm.ma"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
+
   tasks:
+    - name: Ensure Ansible remote tmp directory exists and is writable
+      file:
+        path: "{{ ansible_remote_tmp }}"
+        state: directory
+        mode: '1777'
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      become: true
+
     - name: Check if database variables are provided
       set_fact:
         db_vars_provided: true
@@ -18,14 +31,56 @@
         - db_user != ''
         - db_name != ''
 
-    - name: Configure HTTP proxy for apt
+    # Ubuntu-specific tasks
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Configure HTTP proxy for the environment
+    - name: Download InfluxData GPG key (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      get_url:
+        url: https://repos.influxdata.com/influxdata-archive_compat.key
+        dest: /tmp/influxdata-archive_compat.key
+
+    - name: Verify and install GPG key (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        echo '393e8779c89ac8d958f81f942f9ad7fb82a25e133faddaf92e15b16e6ac9ce4c /tmp/influxdata-archive_compat.key' | sha256sum -c && \
+        cat /tmp/influxdata-archive_compat.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg > /dev/null
+      args:
+        creates: /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg
+
+    - name: Add InfluxDB repository (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt_repository:
+        repo: deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/debian stable main
+        state: present
+        filename: influxdata
+
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        update_cache: yes
+
+    - name: Install InfluxDB (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: influxdb2
+        state: present
+
+    # RHEL-specific tasks
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == 'RedHat'
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Configure HTTP proxy for the environment (All OS)
       lineinfile:
         path: /etc/environment
         line: '{{ item }}'
@@ -36,33 +91,38 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Download InfluxData GPG key
-      get_url:
-        url: https://repos.influxdata.com/influxdata-archive_compat.key
-        dest: /tmp/influxdata-archive_compat.key
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
 
-    - name: Verify and install GPG key
-      shell: |
-        echo '393e8779c89ac8d958f81f942f9ad7fb82a25e133faddaf92e15b16e6ac9ce4c /tmp/influxdata-archive_compat.key' | sha256sum -c && \
-        cat /tmp/influxdata-archive_compat.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg > /dev/null
-      args:
-        creates: /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
 
-    - name: Add InfluxDB repository
-      apt_repository:
-        repo: deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/debian stable main
-        state: present
-        filename: influxdata
+    - name: Add InfluxDB repository (RHEL)
+      when: ansible_os_family == 'RedHat'
+      yum_repository:
+        name: influxdb
+        description: InfluxDB Repository
+        baseurl: https://repos.influxdata.com/rhel/$releasever/$basearch/stable
+        gpgcheck: yes
+        enabled: yes
+        gpgkey: https://repos.influxdata.com/influxdata-archive_compat.key
 
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-
-    - name: Install InfluxDB
-      apt:
+    - name: Install InfluxDB (RHEL)
+      when: ansible_os_family == 'RedHat'
+      yum:
         name: influxdb2
         state: present
+        update_cache: yes
 
+    # Common tasks for both distributions
     - name: Enable and start InfluxDB service
       systemd:
         name: influxdb
@@ -80,4 +140,4 @@
       when: db_vars_provided
       register: influx_setup
       changed_when: influx_setup.rc == 0
-      failed_when: influx_setup.rc != 0    
+      failed_when: influx_setup.rc != 0
