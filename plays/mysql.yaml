@@ -10,8 +10,20 @@
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
     db_vars_provided: false
+    rhel_username: "mmajnioui@powerm.ma"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
+    - name: Ensure Ansible remote tmp directory exists and is writable
+      file:
+        path: "{{ ansible_remote_tmp }}"
+        state: directory
+        mode: '1777'
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      become: true
+
     - name: Check if database variables are provided
       set_fact:
         db_vars_provided: true
@@ -20,7 +32,9 @@
         - db_user != ''
         - db_name != ''
 
-    - name: Configure HTTP proxy for apt
+    # Ubuntu-specific tasks
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
@@ -38,23 +52,86 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Update apt cache
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Install MySQL Server
+    - name: Install MySQL Server (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       apt:
         name: mysql-server
         state: present
 
+    # RHEL-specific tasks
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == 'RedHat'
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
+
+    - name: Download MySQL Repository RPM (RHEL)
+      when: ansible_os_family == 'RedHat'
+      get_url:
+        url: https://repo.mysql.com/mysql80-community-release-el{{ ansible_distribution_major_version }}-1.noarch.rpm
+        dest: /tmp/mysql80-community-release.rpm
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Install MySQL Repository RPM (RHEL)
+      when: ansible_os_family == 'RedHat'
+      yum:
+        name: /tmp/mysql80-community-release.rpm
+        state: present
+        disable_gpg_check: yes
+
+    - name: Install MySQL Server (RHEL)
+      when: ansible_os_family == 'RedHat'
+      yum:
+        name: mysql-community-server
+        state: present
+        update_cache: yes
+
+    # Common tasks for both distributions
     - name: Ensure MySQL service is started and enabled
       systemd:
-        name: mysql
+        name: "{{ 'mysql' if ansible_distribution == 'Ubuntu' else 'mysqld' }}"
         state: started
         enabled: yes
 
-    - name: Set MySQL root password
+    - name: Get temporary root password (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: grep 'temporary password' /var/log/mysqld.log | awk '{print $NF}'
+      register: mysql_temp_password
+      changed_when: false
+
+    - name: Change MySQL root password (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        mysql --user=root --password='{{ mysql_temp_password.stdout }}' --connect-expired-password -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
+      register: root_password_update
+      ignore_errors: true
+      no_log: true
+
+    - name: Set MySQL root password (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       shell: |
         mysql --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
       ignore_errors: true
