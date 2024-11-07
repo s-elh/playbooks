@@ -86,50 +86,39 @@
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
-    - name: Remove installed MySQL if exists (RHEL)
+    - name: Remove existing MySQL if exists (RHEL)
       when: ansible_os_family == 'RedHat'
-      yum:
-        name: 
-          - mysql
-          - mysql-server
-        state: absent
+      shell: |
+        rpm -qa | grep -i mysql | xargs rpm -e --nodeps || true
+      ignore_errors: yes
 
     - name: Disable MySQL module (RHEL)
       when: ansible_os_family == 'RedHat'
-      command: dnf module disable mysql -y
-      register: disable_module
-      changed_when: disable_module.rc == 0
-      failed_when: disable_module.rc != 0
+      shell: dnf module disable mysql -y
+      ignore_errors: yes
 
-    - name: Download MySQL Repository RPM (RHEL)
+    - name: Download MySQL repo RPM (RHEL)
       when: ansible_os_family == 'RedHat'
-      get_url:
-        url: https://repo.mysql.com/mysql80-community-release-el{{ ansible_distribution_major_version }}-1.noarch.rpm
-        dest: /tmp/mysql80-community-release.rpm
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
+      shell: |
+        curl -x {{ proxy_url }} -L https://repo.mysql.com/mysql80-community-release-el{{ ansible_distribution_major_version }}-1.noarch.rpm -o /tmp/mysql80-community-release.rpm
 
-    - name: Install MySQL Repository RPM (RHEL)
+    - name: Install MySQL repo RPM (RHEL)
       when: ansible_os_family == 'RedHat'
-      yum:
-        name: /tmp/mysql80-community-release.rpm
-        state: present
-        disable_gpg_check: yes
+      shell: |
+        rpm -ivh /tmp/mysql80-community-release.rpm
+      ignore_errors: yes
 
-    - name: Clear yum cache (RHEL)
+    - name: Clean yum cache (RHEL)
       when: ansible_os_family == 'RedHat'
-      yum:
-        name: '*'
-        state: present
-        update_cache: yes
+      shell: |
+        yum clean all
+        rm -rf /var/cache/yum
+        yum makecache
 
     - name: Install MySQL Server (RHEL)
       when: ansible_os_family == 'RedHat'
-      yum:
-        name: mysql-community-server
-        state: present
-        disable_gpg_check: yes
+      shell: |
+        yum install -y mysql-community-server --nogpgcheck
 
     # Common tasks for both distributions
     - name: Ensure MySQL service is started and enabled
