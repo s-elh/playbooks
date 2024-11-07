@@ -69,7 +69,9 @@
     - name: Install InfluxDB (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
-        name: influxdb2
+        name: 
+          - influxdb2
+          - influxdb2-cli
         state: present
 
     # RHEL-specific tasks
@@ -115,10 +117,12 @@
         enabled: yes
         gpgkey: https://repos.influxdata.com/influxdata-archive_compat.key
 
-    - name: Install InfluxDB (RHEL)
+    - name: Install InfluxDB packages (RHEL)
       when: ansible_os_family == 'RedHat'
       yum:
-        name: influxdb2
+        name: 
+          - influxdb2
+          - influxdb2-cli
         state: present
         update_cache: yes
 
@@ -129,14 +133,21 @@
         enabled: yes
         state: started
 
+    - name: Wait for InfluxDB service to be ready
+      wait_for:
+        port: 8086
+        timeout: 30
+
     - name: Set up initial InfluxDB configuration
       command: >
-        influx setup 
+        /usr/bin/influx setup 
         --org my-org 
         --bucket "{{ db_name }}" 
         --username "{{ db_user }}" 
         --password "{{ db_password }}"
         --force
+      environment:
+        PATH: "/usr/bin:/usr/local/bin:/bin"
       when: db_vars_provided
       register: influx_setup
       changed_when: influx_setup.rc == 0
