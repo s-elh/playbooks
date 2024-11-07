@@ -32,7 +32,7 @@
         - db_user != ''
         - db_name != ''
 
-    # Ubuntu-specific tasks [keeping all Ubuntu tasks unchanged]
+    # Ubuntu-specific tasks
     - name: Configure HTTP proxy for apt (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       copy:
@@ -41,7 +41,54 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    [... previous Ubuntu tasks remain exactly the same ...]
+    - name: Install required packages (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: 
+          - software-properties-common
+          - python3-pymysql
+          - curl
+          - gnupg2
+        state: present
+        update_cache: yes
+
+    - name: Create keyrings directory (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download MariaDB GPG key (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      get_url:
+        url: https://mariadb.org/mariadb_release_signing_key.asc
+        dest: /tmp/mariadb_signing_key.asc
+        mode: '0644'
+
+    - name: Create MariaDB GPG keyring (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        gpg --dearmor < /tmp/mariadb_signing_key.asc > /etc/apt/keyrings/mariadb-keyring.pgp
+      args:
+        creates: /etc/apt/keyrings/mariadb-keyring.pgp
+
+    - name: Add MariaDB repository (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.pgp] https://mirror.marwan.ma/mariadb/repo/11.2/ubuntu jammy main"
+        state: present
+        filename: mariadb
+        update_cache: yes
+
+    - name: Install MariaDB (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: 
+          - mariadb-server
+          - mariadb-client
+        state: present
+        update_cache: yes
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
