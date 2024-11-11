@@ -92,9 +92,7 @@
         state: present
 
     - name: Import initial schema and data
-      shell: zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uzabbix -p{{ zabbix_db_password }} zabbix
-      args:
-        warn: false
+      shell: "zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uzabbix -p{{ zabbix_db_password }} zabbix"
 
     - name: Configure Zabbix server
       lineinfile:
