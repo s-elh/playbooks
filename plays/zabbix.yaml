@@ -72,12 +72,19 @@
         dest: ~/.my.cnf
         mode: '0600'
 
-    - name: Create Zabbix database and user
+    - name: Enable log_bin_trust_function_creators
+      shell: |
+        mysql --user=root <<EOF
+        SET GLOBAL log_bin_trust_function_creators = 1;
+        EOF
+
+    - name: Create Zabbix database and user with required privileges
       shell: |
         mysql --user=root <<EOF
         CREATE DATABASE IF NOT EXISTS zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
         CREATE USER IF NOT EXISTS 'zabbix'@'localhost' IDENTIFIED BY '{{ zabbix_db_password }}';
         GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';
+        GRANT SUPER ON *.* TO 'zabbix'@'localhost';
         FLUSH PRIVILEGES;
         EOF
 
@@ -91,8 +98,25 @@
           - zabbix-agent
         state: present
 
+    - name: Create MySQL configuration for binary logging
+      copy:
+        content: |
+          [mysqld]
+          log_bin_trust_function_creators=1
+        dest: /etc/mysql/mysql.conf.d/zabbix.cnf
+        mode: '0644'
+
+    - name: Restart MySQL to apply new configuration
+      systemd:
+        name: mysql
+        state: restarted
+
     - name: Import initial schema and data
       shell: "zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uzabbix -p{{ zabbix_db_password }} zabbix"
+      register: import_result
+      retries: 3
+      delay: 10
+      until: import_result.rc == 0
 
     - name: Configure Zabbix server
       lineinfile:
