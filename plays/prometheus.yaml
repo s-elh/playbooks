@@ -4,7 +4,7 @@
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    prometheus_version: "2.50.1"
+    prometheus_version: "2.55.1"
     prometheus_dir: "/opt/prometheus"
     prometheus_user: "prometheus"
     prometheus_group: "prometheus"
@@ -104,9 +104,22 @@
       shell: |
         export http_proxy="{{ proxy_url }}"
         export https_proxy="{{ proxy_url }}"
-        wget --timeout=300 --tries=3 -q "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz" -O "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        curl -x {{ proxy_url }} -L \
+          "https://github.com/prometheus/prometheus/releases/download/v2.55.1/prometheus-2.55.1.linux-amd64.tar.gz" \
+          -o "/tmp/prometheus-2.55.1.linux-amd64.tar.gz"
       args:
-        creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        creates: "/tmp/prometheus-2.55.1.linux-amd64.tar.gz"
+
+    # Simple verification
+    - name: Check if download was successful
+      stat:
+        path: "/tmp/prometheus-2.55.1.linux-amd64.tar.gz"
+      register: prometheus_archive
+
+    - name: Fail if download was not successful
+      fail:
+        msg: "Failed to download Prometheus archive"
+      when: not prometheus_archive.stat.exists
 
     - name: Extract Prometheus archive
       unarchive:
