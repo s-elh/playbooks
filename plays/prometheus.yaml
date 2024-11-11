@@ -101,12 +101,12 @@
         - "{{ prometheus_dir }}/data"
 
     - name: Download Prometheus
-      get_url:
-        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
-        dest: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
+      shell: |
+        export http_proxy="{{ proxy_url }}"
+        export https_proxy="{{ proxy_url }}"
+        wget --timeout=300 --tries=3 -q "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz" -O "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+      args:
+        creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
 
     - name: Extract Prometheus archive
       unarchive:
