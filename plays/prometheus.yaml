@@ -8,7 +8,6 @@
     prometheus_dir: "/opt/prometheus"
     prometheus_user: "prometheus"
     prometheus_group: "prometheus"
-  connection: paramiko
 
   tasks:
     - name: Configure HTTP proxy for apt
