@@ -104,7 +104,7 @@
       shell: |
         export http_proxy="{{ proxy_url }}"
         export https_proxy="{{ proxy_url }}"
-        curl -x {{ proxy_url }} -L \
+        curl -x {{ proxy_url }} -L -k \
           "https://github.com/prometheus/prometheus/releases/download/v2.55.1/prometheus-2.55.1.linux-amd64.tar.gz" \
           -o "/tmp/prometheus-2.55.1.linux-amd64.tar.gz"
       args:
