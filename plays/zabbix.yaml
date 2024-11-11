@@ -9,7 +9,6 @@
     mysql_root_password: "Password123@"
     zabbix_db_password: "Password123@"
     zabbix_server_name: "Zabbix Server"
-  connection: paramiko
 
   tasks:
     - name: Configure HTTP proxy for apt
