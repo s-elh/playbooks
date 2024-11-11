@@ -45,57 +45,41 @@
       apt:
         update_cache: yes
 
-    # Install all required packages including Python MySQL dependencies
-    - name: Install MySQL server and dependencies
+    - name: Install MySQL server
       apt:
-        name: 
-          - mysql-server
-          - python3-mysqldb
-          - python3-pymysql
-          - libmysqlclient-dev
-          - python3-dev
-          - default-libmysqlclient-dev
-          - build-essential
+        name: mysql-server
         state: present
 
-    # Wait for MySQL to be ready
     - name: Wait for MySQL to start
       wait_for:
         port: 3306
         timeout: 30
 
-    # Ensure MySQL Python package is available for Ansible
-    - name: Install PyMySQL using pip
-      pip:
-        name: PyMySQL
-        state: present
-
     - name: Set MySQL root password
-      mysql_user:
-        name: root
-        password: "{{ mysql_root_password }}"
-        login_unix_socket: /var/run/mysqld/mysqld.sock
-        state: present
-      vars:
-        ansible_python_interpreter: /usr/bin/python3
+      shell: |
+        mysql --user=root <<EOF
+        ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{{ mysql_root_password }}';
+        FLUSH PRIVILEGES;
+        EOF
+      ignore_errors: yes
 
-    - name: Create Zabbix database
-      mysql_db:
-        name: zabbix
-        state: present
-        login_unix_socket: /var/run/mysqld/mysqld.sock
-      vars:
-        ansible_python_interpreter: /usr/bin/python3
+    - name: Create MySQL config file
+      copy:
+        content: |
+          [client]
+          user=root
+          password={{ mysql_root_password }}
+        dest: ~/.my.cnf
+        mode: '0600'
 
-    - name: Create Zabbix database user
-      mysql_user:
-        name: zabbix
-        password: "{{ zabbix_db_password }}"
-        priv: 'zabbix.*:ALL'
-        state: present
-        login_unix_socket: /var/run/mysqld/mysqld.sock
-      vars:
-        ansible_python_interpreter: /usr/bin/python3
+    - name: Create Zabbix database and user
+      shell: |
+        mysql --user=root <<EOF
+        CREATE DATABASE IF NOT EXISTS zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+        CREATE USER IF NOT EXISTS 'zabbix'@'localhost' IDENTIFIED BY '{{ zabbix_db_password }}';
+        GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';
+        FLUSH PRIVILEGES;
+        EOF
 
     - name: Install Zabbix server, frontend, and agent
       apt:
