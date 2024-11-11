@@ -3,12 +3,11 @@
   hosts: all
   become: true
   become_method: sudo
-  become_pass: "{{ lookup('cypher','secret/pw') }}"
   vars:
+    ansible_sudo_pass: "{{ lookup('cypher','secret/pw') }}"
     proxy_url: "http://10.1.38.2:3128"
     mysql_root_password: "Password123@"
     zabbix_db_password: "Password123@"
-
   tasks:
     - name: Configure HTTP proxy for the environment
       lineinfile:
@@ -20,6 +19,7 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
+
     - name: Install wget
       apt:
         name: wget
