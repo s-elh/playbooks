@@ -8,15 +8,62 @@
     prometheus_dir: "/opt/prometheus"
     prometheus_user: "prometheus"
     prometheus_group: "prometheus"
+    rhel_username: "mmajnioui@powerm.ma"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
-    - name: Configure HTTP proxy for apt
+    # Ubuntu-specific tasks
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name:
+          - wget
+          - tar
+        state: present
+
+    # RHEL-specific tasks
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == 'RedHat'
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
+
+    - name: Install required packages (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        yum install -y wget tar
+
+    # Common tasks for both distributions
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -28,16 +75,10 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: Install required packages
-      apt:
-        name:
-          - wget
-          - tar
+    - name: Create Prometheus group
+      group:
+        name: "{{ prometheus_group }}"
+        system: yes
         state: present
 
     - name: Create Prometheus user
@@ -119,7 +160,7 @@
 
     - name: Print Prometheus installation complete message
       debug:
-        msg: "Prometheus has been installed successfully. It should be accessible on https://{{ morpheus['server']['internalIp'] }}::9090"
+        msg: "Prometheus has been installed successfully. It should be accessible on https://{{ morpheus['server']['internalIp'] }}:9090"
 
   handlers:
     - name: Restart Prometheus
