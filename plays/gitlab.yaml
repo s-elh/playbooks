@@ -127,7 +127,7 @@
     - name: Install GitLab (RHEL)
       when: ansible_os_family == 'RedHat'
       shell: |
-        EXTERNAL_URL="http://{{ gitlab_domain }}" yum install -y gitlab-ce-{{ gitlab_version }} --nogpgcheck
+        EXTERNAL_URL="http://{{ gitlab_domain }}" yum install -y gitlab-ce --nogpgcheck
 
     # Common tasks for both distributions
     - name: Reconfigure GitLab
