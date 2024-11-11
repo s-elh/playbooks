@@ -4,7 +4,7 @@
   become: true
   become_method: sudo
   vars:
-    ansible_sudo_pass: "{{ lookup('cypher', 'key=secret/pw') }}"
+    ansible_sudo_pass: "{{ lookup('cypher','secret=secret/pw') }}"
     proxy_url: "http://10.1.38.2:3128"
     mysql_root_password: "Password123@"
     zabbix_db_password: "Password123@"
