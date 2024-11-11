@@ -129,16 +129,6 @@
         name: apache2
         state: restarted
 
-    - name: Open firewall for Zabbix and HTTP
-      ufw:
-        rule: allow
-        port: "{{ item }}"
-        proto: tcp
-      loop:
-        - "80"   # HTTP
-        - "10050"  # Zabbix agent
-        - "10051"  # Zabbix server
-
     - name: Clean up downloaded package
       file:
         path: "/tmp/zabbix-release.deb"
