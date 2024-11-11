@@ -111,8 +111,14 @@
         name: mysql
         state: restarted
 
+    - name: Check if Zabbix database is already initialized
+      shell: "mysql -u zabbix -p{{ zabbix_db_password }} zabbix -e 'SHOW TABLES LIKE \"users\"'"
+      register: db_check
+      ignore_errors: yes
+
     - name: Import initial schema and data
       shell: "zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uzabbix -p{{ zabbix_db_password }} zabbix"
+      when: db_check.rc != 0
       register: import_result
       retries: 3
       delay: 10
