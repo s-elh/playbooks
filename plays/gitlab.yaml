@@ -7,6 +7,9 @@
     proxy_url: "http://10.1.38.2:3128"
     gitlab_version: "17.2.8-ce.0"
     gitlab_domain: "{{ morpheus['server']['internalIp'] }}"
+    rhel_username: "mmajnioui@powerm.ma"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
     - name: Display all variables/facts known for a host
@@ -24,19 +27,23 @@
         msg: "Unable to ping {{ morpheus['server']['internalIp'] }}. Please check the network configuration."
       when: ping_result.failed
 
-    - name: Configure HTTP proxy for apt
+    # Ubuntu-specific tasks
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Update apt cache
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Install required dependencies
+    - name: Install required dependencies (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       apt:
         name:
           - curl
@@ -46,7 +53,8 @@
           - perl
         state: present
 
-    - name: Download GitLab package
+    - name: Download GitLab package (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       get_url:
         url: "https://packages.gitlab.com/gitlab/gitlab-ce/packages/ubuntu/jammy/gitlab-ce_{{ gitlab_version }}_amd64.deb/download.deb"
         dest: "/tmp/gitlab-ce_{{ gitlab_version }}_amd64.deb"
@@ -54,13 +62,74 @@
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-    - name: Install GitLab package
+    - name: Install GitLab package (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       apt:
         deb: "/tmp/gitlab-ce_{{ gitlab_version }}_amd64.deb"
         state: present
       environment:
         EXTERNAL_URL: "http://{{ gitlab_domain }}"
 
+    # RHEL-specific tasks
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == 'RedHat'
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Configure HTTP proxy for the environment (RHEL)
+      when: ansible_os_family == 'RedHat'
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
+
+    - name: Download GitLab repository script (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        curl -x {{ proxy_url }} -L "https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.rpm.sh" -o /tmp/gitlab_script.sh
+
+    - name: Set execute permissions on GitLab script (RHEL)
+      when: ansible_os_family == 'RedHat'
+      file:
+        path: /tmp/gitlab_script.sh
+        mode: '0755'
+
+    - name: Install GitLab repository (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        export http_proxy="{{ proxy_url }}"
+        export https_proxy="{{ proxy_url }}"
+        /tmp/gitlab_script.sh
+      args:
+        executable: /bin/bash
+
+    - name: Install GitLab (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        EXTERNAL_URL="http://{{ gitlab_domain }}" yum install -y gitlab-ce-{{ gitlab_version }} --nogpgcheck
+
+    # Common tasks for both distributions
     - name: Reconfigure GitLab
       command: gitlab-ctl reconfigure
       changed_when: false
@@ -80,10 +149,14 @@
       debug:
         var: gitlab_info.stdout_lines
 
-    - name: Clean up downloaded package
+    - name: Clean up downloaded files
       file:
-        path: "/tmp/gitlab-ce_{{ gitlab_version }}_amd64.deb"
+        path: "{{ item }}"
         state: absent
+      with_items:
+        - "/tmp/gitlab-ce_{{ gitlab_version }}_amd64.deb"
+        - "/tmp/gitlab_script.sh"
+      ignore_errors: yes
 
     - name: Print GitLab installation complete message
       debug:
