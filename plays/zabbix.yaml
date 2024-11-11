@@ -9,7 +9,6 @@
     mysql_root_password: "Password123@"
     zabbix_db_password: "Password123@"
     zabbix_server_name: "Zabbix Server"
-
   tasks:
     - name: Configure HTTP proxy for apt
       copy:
@@ -46,11 +45,29 @@
       apt:
         update_cache: yes
 
-    - name: Install MySQL server
+    # Install all required packages including Python MySQL dependencies
+    - name: Install MySQL server and dependencies
       apt:
         name: 
           - mysql-server
           - python3-mysqldb
+          - python3-pymysql
+          - libmysqlclient-dev
+          - python3-dev
+          - default-libmysqlclient-dev
+          - build-essential
+        state: present
+
+    # Wait for MySQL to be ready
+    - name: Wait for MySQL to start
+      wait_for:
+        port: 3306
+        timeout: 30
+
+    # Ensure MySQL Python package is available for Ansible
+    - name: Install PyMySQL using pip
+      pip:
+        name: PyMySQL
         state: present
 
     - name: Set MySQL root password
@@ -58,12 +75,17 @@
         name: root
         password: "{{ mysql_root_password }}"
         login_unix_socket: /var/run/mysqld/mysqld.sock
+        state: present
+      vars:
+        ansible_python_interpreter: /usr/bin/python3
 
     - name: Create Zabbix database
       mysql_db:
         name: zabbix
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
+      vars:
+        ansible_python_interpreter: /usr/bin/python3
 
     - name: Create Zabbix database user
       mysql_user:
@@ -72,6 +94,8 @@
         priv: 'zabbix.*:ALL'
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
+      vars:
+        ansible_python_interpreter: /usr/bin/python3
 
     - name: Install Zabbix server, frontend, and agent
       apt:
