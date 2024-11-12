@@ -20,33 +20,23 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    # Configure Docker proxy
-    - name: Create Docker systemd directory
-      file:
-        path: /etc/systemd/system/docker.service.d
-        state: directory
-        mode: '0755'
-
-    - name: Configure Docker service with proxy
-      copy:
-        content: |
-          [Service]
-          Environment="HTTP_PROXY={{ proxy_url }}"
-          Environment="HTTPS_PROXY={{ proxy_url }}"
-          Environment="NO_PROXY=localhost,127.0.0.1,172.17.0.0/16"
-        dest: /etc/systemd/system/docker.service.d/http-proxy.conf
-        mode: '0644'
-
+    # Configure Docker
     - name: Create Docker config directory
       file:
         path: /etc/docker
         state: directory
         mode: '0755'
 
-    - name: Configure Docker daemon with proxy and settings
+    - name: Configure Docker daemon
       copy:
         content: |
           {
+            "default-address-pools": [
+              {
+                "base": "172.17.0.0/16",
+                "size": 24
+              }
+            ],
             "dns": ["8.8.8.8", "8.8.4.4"],
             "log-driver": "json-file",
             "log-opts": {
@@ -56,12 +46,26 @@
             "proxies": {
               "http-proxy": "{{ proxy_url }}",
               "https-proxy": "{{ proxy_url }}",
-              "no-proxy": "localhost,127.0.0.1,172.17.0.0/16"
-            },
-            "storage-driver": "overlay2",
-            "ipv6": false
+              "no-proxy": "localhost,127.0.0.1"
+            }
           }
         dest: /etc/docker/daemon.json
+        mode: '0644'
+
+    - name: Create Docker systemd override directory
+      file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Configure Docker service proxy
+      copy:
+        content: |
+          [Service]
+          Environment="HTTP_PROXY={{ proxy_url }}"
+          Environment="HTTPS_PROXY={{ proxy_url }}"
+          Environment="NO_PROXY=localhost,127.0.0.1,172.17.0.0/16"
+        dest: /etc/systemd/system/docker.service.d/http-proxy.conf
         mode: '0644'
 
     - name: Reload systemd daemon
@@ -73,35 +77,34 @@
         name: docker
         state: restarted
 
-    # Debug Docker configuration
-    - name: Check Docker status
-      command: systemctl status docker
-      register: docker_status
-      ignore_errors: yes
+    # Create required directories
+    - name: Create Coolify directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0700'
+      with_items:
+        - /data/coolify/source
+        - /data/coolify/ssh
+        - /data/coolify/applications
+        - /data/coolify/databases
+        - /data/coolify/backups
+        - /data/coolify/services
+        - /data/coolify/proxy
+        - /data/coolify/webhooks-during-maintenance
+        - /data/coolify/sentinel
+        - /data/coolify/ssh/keys
+        - /data/coolify/ssh/mux
+        - /data/coolify/proxy/dynamic
 
-    - name: Display Docker status
-      debug:
-        var: docker_status.stdout_lines
+    - name: Set proper ownership
+      file:
+        path: /data/coolify
+        owner: '9999'
+        group: root
+        recurse: yes
 
-    - name: Check Docker info
-      command: docker info
-      register: docker_info
-      ignore_errors: yes
-
-    - name: Display Docker info
-      debug:
-        var: docker_info.stdout_lines
-
-    - name: Test Docker pull
-      command: docker pull hello-world
-      register: docker_pull_test
-      ignore_errors: yes
-
-    - name: Display Docker pull test results
-      debug:
-        var: docker_pull_test
-
-    # Download and install Coolify with debugging
+    # Install Coolify
     - name: Download Coolify install script
       get_url:
         url: https://cdn.coollabs.io/coolify/install.sh
@@ -111,30 +114,24 @@
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-    - name: Display Coolify script content
-      command: cat /tmp/coolify_install.sh
-      register: script_content
-
-    - name: Show script content
-      debug:
-        var: script_content.stdout_lines
-
-    - name: Execute Coolify install script with debug
-      shell: bash -x /tmp/coolify_install.sh
+    - name: Execute Coolify install script
+      shell: bash /tmp/coolify_install.sh
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
         HTTP_PROXY: "{{ proxy_url }}"
         HTTPS_PROXY: "{{ proxy_url }}"
-        DOCKER_HTTP_PROXY: "{{ proxy_url }}"
-        DOCKER_HTTPS_PROXY: "{{ proxy_url }}"
       register: coolify_install
 
     - name: Display Coolify installation output
       debug:
-        var: coolify_install
+        var: coolify_install.stdout_lines
 
     - name: Clean up installation files
       file:
         path: /tmp/coolify_install.sh
         state: absent
+
+    - name: Print installation complete message
+      debug:
+        msg: "Coolify has been installed successfully. Access it at http://{{ ansible_host }}:8000"
