@@ -1,7 +1,7 @@
 ---
 - name: Install and configure Zabbix
   hosts: all
-  vars
+  vars:
     proxy_url: "http://10.1.38.2:3128"
     sudo_password: "{{ lookup('cypher', 'secret=secret/pw') }}"
     db_password: "Password123@"
