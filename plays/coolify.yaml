@@ -6,6 +6,7 @@
     proxy_url: "http://10.1.38.2:3128"
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
 
   tasks:
     # Common proxy environment configuration
@@ -145,7 +146,7 @@
         group: root
         recurse: yes
 
-    # Install Coolify
+    # Download and install Coolify with sudo password
     - name: Download Coolify install script
       get_url:
         url: https://cdn.coollabs.io/coolify/install.sh
@@ -155,9 +156,10 @@
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-    # Execute as root with proper environment
-    - name: Execute Coolify install script
-      shell: sudo -E bash /tmp/coolify_install.sh
+    # Execute with explicit sudo command and password
+    - name: Execute Coolify install script with sudo
+      shell: |
+        echo "{{ sudo_password }}" | sudo -S bash /tmp/coolify_install.sh
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
