@@ -6,7 +6,6 @@
     proxy_url: "http://10.1.38.2:3128"
     ansible_become_password: "{{ lookup('cypher', 'secret=secret/pw') }}"
   tasks:
-
     - name: Configure HTTP proxy for apt
       copy:
         content: |
@@ -24,6 +23,43 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
+
+    # Add Docker proxy configuration
+    - name: Create Docker daemon directory
+      file:
+        path: /etc/docker
+        state: directory
+        mode: '0755'
+
+    - name: Configure Docker daemon with proxy
+      copy:
+        content: |
+          {
+            "dns": ["8.8.8.8", "8.8.4.4"],
+            "proxies": {
+              "http-proxy": "{{ proxy_url }}",
+              "https-proxy": "{{ proxy_url }}",
+              "no-proxy": "localhost,127.0.0.1"
+            }
+          }
+        dest: /etc/docker/daemon.json
+        mode: '0644'
+
+    - name: Create Docker systemd directory
+      file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Configure Docker service with proxy
+      copy:
+        content: |
+          [Service]
+          Environment="HTTP_PROXY={{ proxy_url }}"
+          Environment="HTTPS_PROXY={{ proxy_url }}"
+          Environment="NO_PROXY=localhost,127.0.0.1"
+        dest: /etc/systemd/system/docker.service.d/http-proxy.conf
+        mode: '0644'
 
     - name: Update apt cache
       apt:
@@ -72,6 +108,12 @@
         state: present
       register: docker_install_result
       ignore_errors: yes
+
+    # Add daemon reload after proxy configuration
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+      when: docker_install_result is success
 
     - name: Ensure Docker service is started and enabled
       systemd:
