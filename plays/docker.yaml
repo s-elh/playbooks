@@ -1,13 +1,12 @@
 ---
-- name: Install Docker
+- name: Install Docker following official Docker documentation
   hosts: all
   become: true
-  become_method: sudo
   vars:
     proxy_url: "http://10.1.38.2:3128"
     ansible_become_password: "{{ lookup('cypher', 'secret=secret/pw') }}"
-
   tasks:
+
     - name: Configure HTTP proxy for apt
       copy:
         content: |
@@ -35,8 +34,6 @@
         name:
           - ca-certificates
           - curl
-          - gnupg
-          - lsb-release
         state: present
 
     - name: Create keyrings directory
@@ -45,28 +42,24 @@
         state: directory
         mode: '0755'
 
-    - name: Add Docker's official GPG key
-      shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    - name: Download Docker GPG key
+      shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
       args:
-        creates: /etc/apt/keyrings/docker.gpg
+        creates: /etc/apt/keyrings/docker.asc
+
+    - name: Ensure Docker GPG key has read permissions
+      file:
+        path: /etc/apt/keyrings/docker.asc
+        mode: '0644'
 
     - name: Set up the Docker repository
       shell: |
-        echo \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-        $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+        $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
     - name: Update apt cache (again)
       apt:
         update_cache: yes
-
-    - name: Debug - List available Docker packages
-      shell: apt-cache search docker-ce
-      register: docker_packages
-      
-    - name: Display available Docker packages
-      debug:
-        var: docker_packages.stdout_lines
 
     - name: Install Docker packages
       apt:
@@ -80,10 +73,6 @@
       register: docker_install_result
       ignore_errors: yes
 
-    - name: Display Docker installation result
-      debug:
-        var: docker_install_result
-
     - name: Ensure Docker service is started and enabled
       systemd:
         name: docker
@@ -92,8 +81,7 @@
       when: docker_install_result is success
 
     - name: Verify Docker installation
-      command: docker run hello-world
-      become: true
+      command: sudo docker run hello-world
       register: hello_world_output
       changed_when: false
       when: docker_install_result is success
