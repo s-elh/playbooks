@@ -1,7 +1,6 @@
 ---
 - name: Install and Configure WildFly
   hosts: all
-  become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
     wildfly_version: "33.0.2.Final"
@@ -99,22 +98,26 @@
         owner: "{{ wildfly_user }}"
         group: "{{ wildfly_group }}"
 
-    - name: Configure WildFly standalone
-      xml:
+    - name: Configure WildFly standalone - Set public interface
+      lineinfile:
         path: /etc/wildfly/standalone.xml
-        xpath: /server/interfaces/interface[@name='{{ item.name }}']
-        attribute: "{{ item.attr }}"
-        value: "{{ item.value }}"
-      loop:
-        - { name: 'public', attr: 'inet-address', value: '${jboss.bind.address:{{ wildfly_bind_address }}}' }
-        - { name: 'management', attr: 'inet-address', value: '${jboss.bind.address.management:{{ wildfly_management_bind_address }}}' }
+        regexp: 'inet-address value=.*jboss.bind.address'
+        line: '<inet-address value="${jboss.bind.address:{{ wildfly_bind_address }}}"/>'
+        backrefs: yes
 
-    - name: Set port offset
-      xml:
+    - name: Configure WildFly standalone - Set management interface
+      lineinfile:
         path: /etc/wildfly/standalone.xml
-        xpath: /server/socket-binding-group[@name='standard-sockets']
-        attribute: port-offset
-        value: "{{ wildfly_port_offset }}"
+        regexp: 'inet-address value=.*jboss.bind.address.management'
+        line: '<inet-address value="${jboss.bind.address.management:{{ wildfly_management_bind_address }}}"/>'
+        backrefs: yes
+
+    - name: Set port offset in WildFly configuration
+      lineinfile:
+        path: /etc/wildfly/standalone.xml
+        regexp: 'port-offset value=.*'
+        line: '<socket-binding-group name="standard-sockets" port-offset="{{ wildfly_port_offset }}">'
+        backrefs: yes
 
     - name: Create WildFly systemd service file
       copy:
