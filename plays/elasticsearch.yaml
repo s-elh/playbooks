@@ -7,7 +7,6 @@
     elasticsearch_version: "8.15.2"
     elasticsearch_deb_url: "https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ elasticsearch_version }}-amd64.deb"
     elasticsearch_sha_url: "https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ elasticsearch_version }}-amd64.deb.sha512"
-  connection: paramiko
 
   tasks:
     - name: Configure HTTP proxy for apt
