@@ -60,7 +60,7 @@
     - name: Debug - List available Docker packages
       shell: apt-cache search docker-ce
       register: docker_packages
-      
+
     - name: Display available Docker packages
       debug:
         var: docker_packages.stdout_lines
@@ -81,6 +81,32 @@
       debug:
         var: docker_install_result
 
+    - name: Configure Docker daemon proxy
+      copy:
+        content: |
+          {
+            "proxies": {
+              "default": {
+                "httpProxy": "{{ proxy_url }}",
+                "httpsProxy": "{{ proxy_url }}"
+              }
+            }
+          }
+        dest: /etc/systemd/system/docker.service.d/proxy.conf
+        mode: '0644'
+      notify:
+        - Restart Docker
+
+    - name: Configure Docker DNS
+      copy:
+        content: |
+          {
+            "dns": ["8.8.8.8", "8.8.4.4"]
+          }
+        dest: /etc/docker/daemon.json
+      notify:
+        - Restart Docker
+
     - name: Ensure Docker service is started and enabled
       systemd:
         name: docker
@@ -98,3 +124,9 @@
       debug:
         var: hello_world_output.stdout_lines
       when: docker_install_result is success
+
+  handlers:
+    - name: Restart Docker
+      systemd:
+        name: docker
+        state: restarted
