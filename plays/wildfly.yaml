@@ -12,41 +12,36 @@
     wildfly_bind_address: "0.0.0.0"
     wildfly_management_bind_address: "127.0.0.1"
     wildfly_port_offset: 0
-  connection: paramiko
+    apt_proxy_temp: "/tmp/95proxies"
 
   tasks:
-    - name: Configure HTTP proxy for apt
+    - name: Create temporary HTTP proxy configuration for apt
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+        dest: "{{ apt_proxy_temp }}"
 
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
-    - name: Update apt cache
+    - name: Update apt cache using temporary proxy configuration
       apt:
         update_cache: yes
         cache_valid_time: 3600
+      environment:
+        APT_CONFIG: "{{ apt_proxy_temp }}"
 
     - name: Install Java
       apt:
         name: "{{ java_package }}"
         state: present
+      environment:
+        APT_CONFIG: "{{ apt_proxy_temp }}"
 
     - name: Install unzip
       apt:
         name: unzip
         state: present
+      environment:
+        APT_CONFIG: "{{ apt_proxy_temp }}"
 
     - name: Create WildFly group
       group:
