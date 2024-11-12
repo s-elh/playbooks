@@ -14,6 +14,8 @@
         Acquire::http::Proxy "{{ proxy_url }}";
         Acquire::https::Proxy "{{ proxy_url }}";
         EOF
+      vars:
+        sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
 
     - name: Update apt cache and install prerequisites
       shell: |
