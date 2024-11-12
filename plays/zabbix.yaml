@@ -7,11 +7,13 @@
     zabbix_db_password: "Password123@"
     sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
   tasks:
-    - name: Configure HTTP proxy for the environment
-      shell: |
-        echo 'export http_proxy={{ proxy_url }}' | echo "{{ sudo_password }}" | sudo -S tee -a /etc/environment
-        echo 'export https_proxy={{ proxy_url }}' | echo "{{ sudo_password }}" | sudo -S tee -a /etc/environment
-        echo 'Acquire::http::Proxy "{{ proxy_url }}";' | echo "{{ sudo_password }}" | sudo -S tee /etc/apt/apt.conf.d/95proxies
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
 
     - name: Update apt cache and install prerequisites
       shell: |
