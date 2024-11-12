@@ -61,15 +61,18 @@
         createhome: no
         system: yes
 
-    - name: Download WildFly
-      get_url:
-        url: "{{ wildfly_url }}"
-        dest: "/tmp/wildfly-{{ wildfly_version }}.zip"
-        timeout: 300
-        validate_certs: false 
+    - name: Download WildFly using wget
+      shell: |
+        wget "{{ wildfly_url }}" -O /tmp/wildfly-{{ wildfly_version }}.zip
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
+      args:
+        warn: false
+      register: download_result
+      retries: 3
+      delay: 5
+      until: download_result.rc == 0
 
     - name: Create WildFly home directory
       file:
