@@ -29,63 +29,19 @@
         line: 'proxy={{ proxy_url }}'
         create: yes
 
-    - name: Check subscription status
+    - name: Register and subscribe RHEL system
       when: ansible_os_family == "RedHat"
-      command: subscription-manager status
-      register: subscription_status
-      failed_when: false
-      changed_when: false
-
-    - name: Clean subscription if already registered
-      when: 
-        - ansible_os_family == "RedHat"
-        - subscription_status.rc == 0
-      command: subscription-manager remove --all
-      failed_when: false
-
-    - name: Unregister if already registered
-      when: 
-        - ansible_os_family == "RedHat"
-        - subscription_status.rc == 0
-      command: subscription-manager unregister
-      failed_when: false
-
-    - name: Register with RHEL Subscription
-      when: ansible_os_family == "RedHat"
-      command: >
-        subscription-manager register 
-        --username={{ rhel_username }} 
-        --password={{ rhel_password }} 
-        --auto-attach 
-        --force
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-      register: register_result
-      failed_when: 
-        - register_result.rc != 0 
-        - "'This system is already registered' not in register_result.stderr"
-      changed_when: register_result.rc == 0
-
-    - name: Refresh subscription (only if registered)
-      when: 
-        - ansible_os_family == "RedHat"
-        - register_result is success
-      command: subscription-manager refresh
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
 
     - name: Enable required RHEL repositories
-      when: 
-        - ansible_os_family == "RedHat"
-        - register_result is success
-      shell: |
-        subscription-manager repos --disable "*"
-        subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-baseos-rpms
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager repos --enable rhel-8-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
 
     - name: Download Elasticsearch repository file (RHEL)
       when: ansible_os_family == "RedHat"
@@ -116,7 +72,6 @@
       when: ansible_os_family == "RedHat"
       command: yum makecache
 
-    # Rest of the playbook remains the same...
     # Ubuntu-specific tasks
     - name: Configure HTTP proxy for apt (Ubuntu)
       when: ansible_distribution == "Ubuntu"
