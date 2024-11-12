@@ -44,6 +44,52 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
+    # Configure Docker proxy
+    - name: Create Docker systemd directory
+      file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Configure Docker service with proxy
+      copy:
+        content: |
+          [Service]
+          Environment="HTTP_PROXY={{ proxy_url }}"
+          Environment="HTTPS_PROXY={{ proxy_url }}"
+          Environment="NO_PROXY=localhost,127.0.0.1"
+        dest: /etc/systemd/system/docker.service.d/http-proxy.conf
+        mode: '0644'
+
+    - name: Create Docker config directory
+      file:
+        path: /etc/docker
+        state: directory
+        mode: '0755'
+
+    - name: Configure Docker daemon with proxy
+      copy:
+        content: |
+          {
+            "dns": ["8.8.8.8", "8.8.4.4"],
+            "proxies": {
+              "http-proxy": "{{ proxy_url }}",
+              "https-proxy": "{{ proxy_url }}",
+              "no-proxy": "localhost,127.0.0.1"
+            }
+          }
+        dest: /etc/docker/daemon.json
+        mode: '0644'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart Docker service
+      systemd:
+        name: docker
+        state: restarted
+
     # Download and install Coolify
     - name: Download Coolify install script
       get_url:
