@@ -1,0 +1,132 @@
+---
+- name: Install Coolify
+  hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    rhel_username: "mmajnioui@powerm.ma"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+
+  tasks:
+    # Common proxy environment configuration
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    # Ubuntu-specific tasks
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisites (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+          - lsb-release
+        state: present
+
+    # RHEL-specific tasks
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == "RedHat"
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    - name: Install prerequisites (RHEL)
+      when: ansible_os_family == "RedHat"
+      dnf:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg2
+          - redhat-lsb-core
+        state: present
+
+    # Common Docker installation check
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_check
+      ignore_errors: true
+      changed_when: false
+
+    # Docker installation if not present (reference previous Docker playbook)
+    - name: Install Docker if not present
+      include_tasks: docker_install.yml
+      when: docker_check.rc != 0
+
+    # Download and install Coolify
+    - name: Download Coolify install script
+      get_url:
+        url: https://cdn.coollabs.io/coolify/install.sh
+        dest: /tmp/coolify_install.sh
+        mode: '0755'
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Execute Coolify install script
+      shell: bash /tmp/coolify_install.sh
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+        HTTP_PROXY: "{{ proxy_url }}"
+        HTTPS_PROXY: "{{ proxy_url }}"
+      register: coolify_install
+
+    - name: Display Coolify installation output
+      debug:
+        var: coolify_install.stdout_lines
+
+    # Wait for Coolify to start
+    - name: Wait for Coolify to be ready
+      wait_for:
+        port: 8000
+        timeout: 300
+        delay: 10
+
+    # Verification and cleanup
+    - name: Verify Coolify containers are running
+      shell: docker ps | grep coolify
+      register: coolify_containers
+      changed_when: false
+
+    - name: Display running Coolify containers
+      debug:
+        var: coolify_containers.stdout_lines
+
+    - name: Clean up installation files
+      file:
+        path: /tmp/coolify_install.sh
+        state: absent
+
+    - name: Print installation complete message
+      debug:
+        msg: "Coolify has been installed successfully. Access it at http://{{ ansible_host }}:8000"
