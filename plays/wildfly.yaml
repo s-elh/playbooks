@@ -65,9 +65,11 @@
       get_url:
         url: "{{ wildfly_url }}"
         dest: "/tmp/wildfly-{{ wildfly_version }}.zip"
+        timeout: 60
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
+
 
     - name: Create WildFly home directory
       file:
