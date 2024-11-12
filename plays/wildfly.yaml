@@ -147,14 +147,20 @@
         enabled: yes
         daemon_reload: yes
 
-    - name: Open firewall ports for WildFly
-      ufw:
-        rule: allow
-        port: "{{ item }}"
-        proto: tcp
-      loop:
-        - "8080"  # HTTP
-        - "9990"  # Management interface
+    - name: Open HTTP port for WildFly
+      shell: ufw allow 8080/tcp
+      register: http_firewall
+      ignore_errors: true
+
+    - name: Open Management interface port for WildFly
+      shell: ufw allow 9990/tcp
+      register: management_firewall
+      ignore_errors: true
+
+    - name: Enable UFW firewall
+      shell: ufw enable
+      when: http_firewall is succeeded and management_firewall is succeeded
+      ignore_errors: true
 
     - name: Clean up downloaded archive
       file:
