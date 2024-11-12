@@ -20,6 +20,11 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
+    - name: Configure APT proxy
+      lineinfile:
+        path: /etc/apt/apt.conf.d/95proxies
+        line: 'Acquire::http::Proxy "{{ proxy_url }}";'
+
     - name: Install wget
       apt:
         name: wget
