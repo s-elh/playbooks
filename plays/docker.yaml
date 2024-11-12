@@ -2,9 +2,10 @@
 - name: Install Docker
   hosts: all
   become: true
+  become_method: sudo
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    sudo_password: "{{ lookup('cypher', 'secret=secret/pw') }}"
+    ansible_become_password: "{{ lookup('cypher', 'secret=secret/pw') }}"
 
   tasks:
     - name: Configure HTTP proxy for apt
@@ -93,8 +94,6 @@
     - name: Verify Docker installation
       command: docker run hello-world
       become: true
-      become_method: sudo
-      become_password: "{{ sudo_password }}"
       register: hello_world_output
       changed_when: false
       when: docker_install_result is success
