@@ -1,12 +1,12 @@
 ---
-- name: Install Elasticsearch
+- name: Install Elasticsearch Stack
   hosts: all
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
+    elastic_version: "8.x"
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
-    es_version: "8.x"
 
   tasks:
     # Common proxy environment configuration
@@ -36,48 +36,24 @@
         name:
           - apt-transport-https
           - gpg
-          - wget
-          - coreutils
+          - curl
         state: present
         update_cache: yes
 
     - name: Download Elasticsearch GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      get_url:
-        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
-        dest: /tmp/elasticsearch.key
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-
-    - name: Create keyring directory (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      file:
-        path: /usr/share/keyrings
-        state: directory
-        mode: '0755'
-
-    - name: Import Elasticsearch GPG key (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: cat /tmp/elasticsearch.key | gpg --dearmor -o /usr/share/keyrings/elasticsearch-keyring.gpg
+      shell: |
+        curl -x {{ proxy_url }} -fsSL https://artifacts.elastic.co/GPG-KEY-elasticsearch | gpg --dearmor -o /usr/share/keyrings/elasticsearch-keyring.gpg
 
     - name: Add Elasticsearch repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      copy:
-        content: "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/{{ es_version }}/apt stable main"
-        dest: /etc/apt/sources.list.d/elastic-{{ es_version }}.list
+      shell: |
+        echo "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/{{ elastic_version }}/apt stable main" | tee /etc/apt/sources.list.d/elastic-{{ elastic_version }}.list
 
     - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
-
-    - name: Install Elasticsearch (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        name: elasticsearch
-        state: present
-      register: es_install_ubuntu
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
@@ -94,79 +70,113 @@
       failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
       changed_when: subscription_result.rc == 0
 
-    - name: Create Elasticsearch repo file (RHEL)
+    - name: Download Elasticsearch repository file (RHEL)
       when: ansible_os_family == "RedHat"
-      copy:
-        content: |
-          [elasticsearch-{{ es_version }}]
-          name=Elasticsearch repository for {{ es_version }} packages
-          baseurl=https://artifacts.elastic.co/packages/{{ es_version }}/yum
-          gpgcheck=1
-          gpgkey=https://artifacts.elastic.co/GPG-KEY-elasticsearch
-          enabled=1
-          proxy={{ proxy_url }}
-        dest: /etc/yum.repos.d/elasticsearch.repo
+      get_url:
+        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+        dest: /etc/pki/rpm-gpg/GPG-KEY-elasticsearch
         mode: '0644'
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
-    - name: Import Elasticsearch GPG key (RHEL)
+    - name: Add Elasticsearch repository (RHEL)
       when: ansible_os_family == "RedHat"
-      rpm_key:
-        key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
-        state: present
+      yum_repository:
+        name: elasticsearch-{{ elastic_version }}
+        description: Elasticsearch repository for {{ elastic_version }} packages
+        baseurl: https://artifacts.elastic.co/packages/{{ elastic_version }}/yum
+        gpgcheck: yes
+        gpgkey: file:///etc/pki/rpm-gpg/GPG-KEY-elasticsearch
+        enabled: yes
 
-    - name: Install Elasticsearch (RHEL)
-      when: ansible_os_family == "RedHat"
-      dnf:
+    # Common installation tasks
+    - name: Install Elasticsearch
+      package:
         name: elasticsearch
         state: present
-      register: es_install_rhel
 
-    # Common post-installation tasks
-    - name: Create Elasticsearch configuration
+    - name: Install Kibana
+      package:
+        name: kibana
+        state: present
+
+    - name: Install Logstash
+      package:
+        name: logstash
+        state: present
+
+    - name: Configure Kibana
+      lineinfile:
+        path: /etc/kibana/kibana.yml
+        regexp: '^server\.host:'
+        line: 'server.host: "0.0.0.0"'
+        create: yes
+
+    - name: Create Elasticsearch systemd directory
+      file:
+        path: /etc/systemd/system/elasticsearch.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Configure Elasticsearch service with proxy
       copy:
         content: |
-          cluster.name: my-cluster
-          node.name: {{ inventory_hostname }}
-          path.data: /var/lib/elasticsearch
-          path.logs: /var/log/elasticsearch
-          network.host: 0.0.0.0
-          discovery.type: single-node
-        dest: /etc/elasticsearch/elasticsearch.yml
-        mode: '0660'
-        owner: root
-        group: elasticsearch
-      when: es_install_ubuntu is success or es_install_rhel is success
+          [Service]
+          Environment="HTTP_PROXY={{ proxy_url }}"
+          Environment="HTTPS_PROXY={{ proxy_url }}"
+          Environment="NO_PROXY=localhost,127.0.0.1"
+        dest: /etc/systemd/system/elasticsearch.service.d/http-proxy.conf
+        mode: '0644'
 
-    - name: Start and enable Elasticsearch service
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Start and enable Elasticsearch
       systemd:
         name: elasticsearch
         state: started
         enabled: yes
-        daemon_reload: yes
-      when: es_install_ubuntu is success or es_install_rhel is success
+
+    - name: Start and enable Kibana
+      systemd:
+        name: kibana
+        state: started
+        enabled: yes
+
+    - name: Start and enable Logstash
+      systemd:
+        name: logstash
+        state: started
+        enabled: yes
 
     - name: Wait for Elasticsearch to start
       wait_for:
         port: 9200
-        delay: 30
+        delay: 10
         timeout: 300
-      when: es_install_ubuntu is success or es_install_rhel is success
 
-    - name: Check Elasticsearch status
-      uri:
-        url: http://localhost:9200/_cluster/health
-        method: GET
-        return_content: yes
-      register: es_health
-      when: es_install_ubuntu is success or es_install_rhel is success
+    - name: Generate Elastic password
+      shell: |
+        cd /usr/share/elasticsearch && ./bin/elasticsearch-reset-password -u elastic --batch
+      register: elastic_password
+      changed_when: false
 
-    - name: Display Elasticsearch health
+    - name: Generate Kibana enrollment token
+      shell: |
+        cd /usr/share/elasticsearch && ./bin/elasticsearch-create-enrollment-token -s kibana
+      register: kibana_token
+      changed_when: false
+
+    - name: Display Elastic password
       debug:
-        var: es_health
-      when: es_install_ubuntu is success or es_install_rhel is success
+        var: elastic_password.stdout_lines
 
-    - name: Clean up temporary files
-      file:
-        path: /tmp/elasticsearch.key
-        state: absent
-      when: ansible_distribution == "Ubuntu"
+    - name: Display Kibana enrollment token
+      debug:
+        var: kibana_token.stdout_lines
+
+    - name: Print installation complete message
+      debug:
+        msg: "Elasticsearch Stack has been installed successfully. Access Kibana at http://localhost:5601"
