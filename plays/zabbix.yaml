@@ -7,13 +7,13 @@
     zabbix_db_password: "Password123@"
     sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
   tasks:
-    - name: Configure HTTP proxy for apt (Ubuntu)
+    - name: Configure HTTP proxy for apt (Ubuntu) without direct write access
       when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+      shell: |
+        echo "{{ lookup('cypher','secret=secret/pw') }}" | sudo -S tee /etc/apt/apt.conf.d/95proxies > /dev/null <<EOF
+        Acquire::http::Proxy "{{ proxy_url }}";
+        Acquire::https::Proxy "{{ proxy_url }}";
+        EOF
 
     - name: Update apt cache and install prerequisites
       shell: |
