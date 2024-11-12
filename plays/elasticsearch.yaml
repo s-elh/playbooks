@@ -195,4 +195,4 @@
 
     - name: Print installation complete message
       debug:
-        msg: "Elasticsearch Stack has been installed successfully. Access Kibana at http://localhost:5601"
+        msg: "Elasticsearch Stack has been installed successfully. Access Kibana at https://{{ morpheus['server']['internalIp'] }}:5601"
