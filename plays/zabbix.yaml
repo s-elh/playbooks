@@ -1,55 +1,119 @@
 ---
-- name: Install Zabbix 7.0
+- name: Install and configure Zabbix
   hosts: all
-  vars:
+  vars
     proxy_url: "http://10.1.38.2:3128"
-    mysql_root_password: "Password123@"
-    zabbix_db_password: "Password123@"
-    sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
+    sudo_password: "{{ lookup('cypher', 'secret=secret/pw') }}"
+    db_password: "Password123@"
+
   tasks:
-    - name: Configure HTTP proxy for apt (Ubuntu) without direct write access
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        echo "{{ lookup('cypher','secret=secret/pw') }}" | sudo -S tee /etc/apt/apt.conf.d/95proxies > /dev/null <<EOF
-        Acquire::http::Proxy "{{ proxy_url }}";
-        Acquire::https::Proxy "{{ proxy_url }}";
-        EOF
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+  
+    - name: Start new shell session with root privileges
+      ansible.builtin.shell: "sudo -s"
       vars:
-        sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
+        ansible_become_pass: "{{ sudo_password }}"
 
-    - name: Update apt cache and install prerequisites
-      shell: |
-        echo "{{ sudo_password }}" | sudo -S apt update && echo "{{ sudo_password }}" | sudo -S apt install -y wget lsb-release gnupg mysql-server
+    - name: Download Zabbix repository package
+      ansible.builtin.get_url:
+        url: "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu22.04_all.deb"
+        dest: "/tmp/zabbix-release_latest+ubuntu22.04_all.deb"
 
-    - name: Download and install Zabbix repository
-      shell: |
-        wget https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu$(lsb_release -rs)_all.deb
-        echo "{{ sudo_password }}" | sudo -S dpkg -i zabbix-release_latest+ubuntu$(lsb_release -rs)_all.deb
-        echo "{{ sudo_password }}" | sudo -S apt update
+    - name: Install Zabbix repository package
+      ansible.builtin.apt:
+        deb: "/tmp/zabbix-release_latest+ubuntu22.04_all.deb"
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
 
-    - name: Install Zabbix packages
-      shell: |
-        echo "{{ sudo_password }}" | sudo -S apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent zabbix-sql-scripts
+    - name: Update APT cache
+      ansible.builtin.apt:
+        update_cache: yes
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
 
-    - name: Configure MySQL database for Zabbix
-      shell: |
-        echo "CREATE DATABASE zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
-              CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '{{ zabbix_db_password }}';
-              GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';
-              SET GLOBAL log_bin_trust_function_creators = 1;" | echo "{{ sudo_password }}" | sudo -S mysql -uroot -p'{{ mysql_root_password }}'
+    - name: Install Zabbix server, frontend, and agent
+      ansible.builtin.apt:
+        name:
+          - zabbix-server-mysql
+          - zabbix-frontend-php
+          - zabbix-apache-conf
+          - zabbix-sql-scripts
+          - zabbix-agent
+        state: present
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
 
-    - name: Import Zabbix database schema
-      shell: |
-        zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uzabbix -p'{{ zabbix_db_password }}' zabbix
+    - name: Create Zabbix database
+      ansible.builtin.mysql_db:
+        name: zabbix
+        encoding: utf8mb4
+        collation: utf8mb4_bin
+        state: present
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
 
-    - name: Configure Zabbix server database password
-      shell: |
-        echo "{{ sudo_password }}" | sudo -S sed -i "s/^# DBPassword=/DBPassword={{ zabbix_db_password }}/" /etc/zabbix/zabbix_server.conf
+    - name: Create Zabbix database user
+      ansible.builtin.mysql_user:
+        name: zabbix
+        host: localhost
+        password: "{{ db_password }}"
+        priv: "zabbix.*:ALL"
+        state: present
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
 
-    - name: Start and enable Zabbix services
-      shell: |
-        echo "{{ sudo_password }}" | sudo -S systemctl restart zabbix-server zabbix-agent apache2
-        echo "{{ sudo_password }}" | sudo -S systemctl enable zabbix-server zabbix-agent apache2
+    - name: Set log_bin_trust_function_creators option
+      ansible.builtin.mysql_variable:
+        variable: log_bin_trust_function_creators
+        value: 1
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
 
-    - name: Cleanup
-      shell: echo "{{ sudo_password }}" | sudo -S rm -f zabbix-release_latest+ubuntu$(lsb_release -rs)_all.deb
+    - name: Import Zabbix initial schema
+      ansible.builtin.command:
+        cmd: "zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 -uzabbix -p{{ db_password }} zabbix"
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
+
+    - name: Disable log_bin_trust_function_creators option
+      ansible.builtin.mysql_variable:
+        variable: log_bin_trust_function_creators
+        value: 0
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
+
+    - name: Configure DBPassword for Zabbix server
+      ansible.builtin.lineinfile:
+        path: "/etc/zabbix/zabbix_server.conf"
+        regexp: "^DBPassword="
+        line: "DBPassword={{ db_password }}"
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
+
+    - name: Restart and enable Zabbix services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: restarted
+        enabled: yes
+      loop:
+        - zabbix-server
+        - zabbix-agent
+        - apache2
+      vars:
+        ansible_become_pass: "{{ sudo_password }}"
