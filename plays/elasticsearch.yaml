@@ -21,6 +21,65 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
+    # RHEL-specific tasks
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == "RedHat"
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    - name: Clean subscription-manager (RHEL)
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager clean
+
+    - name: Refresh subscription-manager (RHEL)
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager refresh
+
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-baseos-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
+
+    - name: Download Elasticsearch repository file (RHEL)
+      when: ansible_os_family == "RedHat"
+      get_url:
+        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+        dest: /etc/pki/rpm-gpg/GPG-KEY-elasticsearch
+        mode: '0644'
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Add Elasticsearch repository (RHEL)
+      when: ansible_os_family == "RedHat"
+      yum_repository:
+        name: elasticsearch-{{ elastic_version }}
+        description: Elasticsearch repository for {{ elastic_version }} packages
+        baseurl: https://artifacts.elastic.co/packages/{{ elastic_version }}/yum
+        gpgcheck: yes
+        gpgkey: file:///etc/pki/rpm-gpg/GPG-KEY-elasticsearch
+        enabled: yes
+        proxy: "{{ proxy_url }}"
+
+    - name: Clean yum cache (RHEL)
+      when: ansible_os_family == "RedHat"
+      command: yum clean all
+
+    - name: Update yum cache (RHEL)
+      when: ansible_os_family == "RedHat"
+      command: yum makecache
+
     # Ubuntu-specific tasks
     - name: Configure HTTP proxy for apt (Ubuntu)
       when: ansible_distribution == "Ubuntu"
@@ -54,41 +113,6 @@
       when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
-
-    # RHEL-specific tasks
-    - name: Configure HTTP proxy for yum (RHEL)
-      when: ansible_os_family == "RedHat"
-      lineinfile:
-        path: /etc/yum.conf
-        line: 'proxy={{ proxy_url }}'
-        create: yes
-
-    - name: Register and subscribe RHEL system
-      when: ansible_os_family == "RedHat"
-      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
-      register: subscription_result
-      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
-      changed_when: subscription_result.rc == 0
-
-    - name: Download Elasticsearch repository file (RHEL)
-      when: ansible_os_family == "RedHat"
-      get_url:
-        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
-        dest: /etc/pki/rpm-gpg/GPG-KEY-elasticsearch
-        mode: '0644'
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-
-    - name: Add Elasticsearch repository (RHEL)
-      when: ansible_os_family == "RedHat"
-      yum_repository:
-        name: elasticsearch-{{ elastic_version }}
-        description: Elasticsearch repository for {{ elastic_version }} packages
-        baseurl: https://artifacts.elastic.co/packages/{{ elastic_version }}/yum
-        gpgcheck: yes
-        gpgkey: file:///etc/pki/rpm-gpg/GPG-KEY-elasticsearch
-        enabled: yes
 
     # Common installation tasks
     - name: Install Elasticsearch
