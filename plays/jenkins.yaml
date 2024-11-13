@@ -143,4 +143,4 @@
 
     - name: Print installation complete message
       debug:
-        msg: "Jenkins has been installed successfully. Access it at http://your-server:8080"
+        msg: "Jenkins has been installed successfully. Access it at https://{{ morpheus['server']['internalIp'] }}:8080"
