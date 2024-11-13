@@ -82,24 +82,29 @@
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
-    - name: Install Java and dependencies (RHEL)
+    - name: Install wget and Java dependencies (RHEL)
       when: ansible_os_family == "RedHat"
       dnf:
         name: 
+          - wget
           - java-17-openjdk
           - fontconfig
         state: present
 
     - name: Download Jenkins repo (RHEL)
       when: ansible_os_family == "RedHat"
-      shell: wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+      get_url:
+        url: https://pkg.jenkins.io/redhat-stable/jenkins.repo
+        dest: /etc/yum.repos.d/jenkins.repo
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
     - name: Import Jenkins key (RHEL)
       when: ansible_os_family == "RedHat"
-      shell: rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+      rpm_key:
+        key: https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+        state: present
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
