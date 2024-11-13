@@ -1,0 +1,173 @@
+---
+- name: Install Minio on Ubuntu and RHEL
+  hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    minio_home: /opt/minio
+    rhel_username: "mmajnioui@powerm.ma"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    minio_user: minio
+    minio_version: "20241029160148.0.0"
+
+  tasks:
+    # Common proxy environment configuration
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Create minio user
+      user:
+        name: "{{ minio_user }}"
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Create Minio directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ minio_user }}"
+        group: "{{ minio_user }}"
+        mode: '0755'
+      with_items:
+        - "{{ minio_home }}"
+        - "{{ minio_home }}/data"
+
+    # Ubuntu-specific tasks
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Download Minio package (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      get_url:
+        url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio_{{ minio_version }}_amd64.deb"
+        dest: "/tmp/minio.deb"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Install Minio (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        deb: /tmp/minio.deb
+        state: present
+      register: minio_install_ubuntu
+
+    # RHEL-specific tasks
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == "RedHat"
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager repos --enable rhel-8-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
+
+    - name: Install wget (RHEL)
+      when: ansible_os_family == "RedHat"
+      dnf:
+        name: wget
+        state: present
+
+    - name: Download Minio package (RHEL)
+      when: ansible_os_family == "RedHat"
+      get_url:
+        url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio-{{ minio_version }}-1.x86_64.rpm"
+        dest: "/tmp/minio.rpm"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Install Minio (RHEL)
+      when: ansible_os_family == "RedHat"
+      dnf:
+        name: /tmp/minio.rpm
+        state: present
+        disable_gpg_check: yes
+      register: minio_install_rhel
+
+    # Common tasks for both distributions
+    - name: Create Minio systemd service file
+      copy:
+        dest: /etc/systemd/system/minio.service
+        content: |
+          [Unit]
+          Description=MinIO
+          Documentation=https://min.io/docs
+          Wants=network-online.target
+          After=network-online.target
+          AssertFileIsExecutable=/usr/local/bin/minio
+
+          [Service]
+          User={{ minio_user }}
+          Group={{ minio_user }}
+          WorkingDirectory=/usr/local
+          Environment="MINIO_ROOT_USER=admin"
+          Environment="MINIO_ROOT_PASSWORD=Password123!"
+          ExecStart=/usr/local/bin/minio server {{ minio_home }}/data --console-address :9001
+          Restart=always
+          LimitNOFILE=65536
+          TimeoutStopSec=infinity
+          SendSIGKILL=no
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Start and enable Minio service
+      systemd:
+        name: minio
+        state: started
+        enabled: yes
+
+    - name: Clean up downloaded files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /tmp/minio.deb
+        - /tmp/minio.rpm
+      ignore_errors: yes
+
+    - name: Wait for Minio to start
+      wait_for:
+        port: 9001
+        delay: 10
+        timeout: 300
+
+    - name: Print installation complete message
+      debug:
+        msg: 
+          - "Minio has been installed successfully."
+          - "Access the Minio Console at https://{{ morpheus['server']['internalIp'] }}:9001"
+          - "Default credentials:"
+          - "Username: admin"
+          - "Password: Password123!"
+          - "Please change these credentials after first login."
