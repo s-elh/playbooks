@@ -4,7 +4,7 @@
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    prometheus_version: "2.47.0"
+    prometheus_version: "2.43.0"
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     prometheus_user: prometheus
@@ -108,7 +108,7 @@
         --proxy-password= 
         -e http_proxy={{ proxy_url }} 
         -e https_proxy={{ proxy_url }} 
-        https://dl.grafana.com/oss/prometheus/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz 
+        https://github.com/prometheus/prometheus/releases/download/v2.43.0/prometheus-2.43.0.linux-amd64.tar.gz 
         -O /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
       args:
         creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
