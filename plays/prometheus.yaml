@@ -78,11 +78,11 @@
         state: present
         update_cache: yes
 
-  - name: Install wget (Ubuntu)
-    when: ansible_distribution == "Ubuntu"
-    apt:
-      name: wget
-      state: present
+    - name: Install wget (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: wget
+        state: present
   
     # Common tasks
     - name: Create Prometheus system group
