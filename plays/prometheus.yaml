@@ -33,6 +33,57 @@
       failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
       changed_when: subscription_result.rc == 0
 
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == "RedHat"
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager repos --enable rhel-8-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
+
+    - name: Enable BaseOS repository (RHEL)
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager repos --enable rhel-8-for-x86_64-baseos-rpms
+      register: baseos_result
+      failed_when: baseos_result.rc != 0 and 'already enabled' not in baseos_result.stderr
+      changed_when: baseos_result.rc == 0
+
+    - name: Create dnf proxy configuration
+      when: ansible_os_family == "RedHat"
+      copy:
+        dest: /etc/dnf/dnf.conf
+        content: |
+          [main]
+          gpgcheck=1
+          installonly_limit=3
+          clean_requirements_on_remove=True
+          best=True
+          proxy={{ proxy_url }}
+        mode: '0644'
+
+    - name: Clean dnf cache
+      when: ansible_os_family == "RedHat"
+      command: dnf clean all
+
+    - name: Install wget (RHEL)
+      when: ansible_os_family == "RedHat"
+      dnf:
+        name: wget
+        state: present
+        update_cache: yes
+
+    - name: Install wget (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: wget
+        state: present
+  
     # Common tasks
     - name: Create Prometheus system group
       group:
@@ -47,18 +98,6 @@
         system: yes
         shell: /sbin/nologin
         create_home: no
-  
-    - name: Install wget (RHEL)
-      when: ansible_os_family == "RedHat"
-      dnf:
-        name: wget
-        state: present
-
-    - name: Install wget (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        name: wget
-        state: present
   
     - name: Download Prometheus
       shell: |
