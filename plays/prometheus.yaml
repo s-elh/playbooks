@@ -108,7 +108,7 @@
         --proxy-password= 
         -e http_proxy={{ proxy_url }} 
         -e https_proxy={{ proxy_url }} 
-        https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz 
+        https://dl.grafana.com/oss/prometheus/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz 
         -O /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
       args:
         creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
