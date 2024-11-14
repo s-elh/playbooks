@@ -1,69 +1,19 @@
 ---
-- name: Install Prometheus
+- name: Install Prometheus on Ubuntu and RHEL
   hosts: all
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    prometheus_version: "2.55.1"
-    prometheus_dir: "/opt/prometheus"
-    prometheus_user: "prometheus"
-    prometheus_group: "prometheus"
+    prometheus_version: "2.47.0"
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
-    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
+    prometheus_user: prometheus
+    prometheus_group: prometheus
+    prometheus_config_dir: /etc/prometheus
+    prometheus_data_dir: /var/lib/prometheus
 
   tasks:
-    # Ubuntu-specific tasks
-    - name: Configure HTTP proxy for apt (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-
-    - name: Update apt cache (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: Install required packages (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        name:
-          - wget
-          - tar
-        state: present
-
-    # RHEL-specific tasks
-    - name: Configure HTTP proxy for yum (RHEL)
-      when: ansible_os_family == 'RedHat'
-      lineinfile:
-        path: /etc/yum.conf
-        line: 'proxy={{ proxy_url }}'
-        create: yes
-
-    - name: Register and subscribe RHEL system
-      when: ansible_os_family == 'RedHat'
-      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
-      register: subscription_result
-      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
-      changed_when: subscription_result.rc == 0
-
-    - name: Enable required RHEL repositories
-      when: ansible_os_family == 'RedHat'
-      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
-      register: repo_result
-      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
-      changed_when: repo_result.rc == 0
-
-    - name: Install required packages (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        yum install -y wget tar
-
-    # Common tasks for both distributions
+    # Common proxy environment configuration
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -75,19 +25,42 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Create Prometheus group
+    # RHEL-specific tasks
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    # Common tasks
+    - name: Create Prometheus system group
       group:
         name: "{{ prometheus_group }}"
         system: yes
         state: present
 
-    - name: Create Prometheus user
+    - name: Create Prometheus system user
       user:
         name: "{{ prometheus_user }}"
-        system: yes
-        shell: "/sbin/nologin"
         group: "{{ prometheus_group }}"
-        createhome: no
+        system: yes
+        shell: /sbin/nologin
+        create_home: no
+
+    - name: Download Prometheus
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Extract Prometheus archive
+      unarchive:
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: /tmp
+        remote_src: yes
 
     - name: Create Prometheus directories
       file:
@@ -96,87 +69,110 @@
         owner: "{{ prometheus_user }}"
         group: "{{ prometheus_group }}"
         mode: '0755'
-      loop:
-        - "{{ prometheus_dir }}"
-        - "{{ prometheus_dir }}/data"
+      with_items:
+        - "{{ prometheus_config_dir }}"
+        - "{{ prometheus_data_dir }}"
 
-    - name: Download Prometheus
-      shell: |
-        export http_proxy="{{ proxy_url }}"
-        export https_proxy="{{ proxy_url }}"
-        curl -x {{ proxy_url }} -L -k \
-          "https://github.com/prometheus/prometheus/releases/download/v2.55.1/prometheus-2.55.1.linux-amd64.tar.gz" \
-          -o "/tmp/prometheus-2.55.1.linux-amd64.tar.gz"
-      args:
-        creates: "/tmp/prometheus-2.55.1.linux-amd64.tar.gz"
-
-    # Simple verification
-    - name: Check if download was successful
-      stat:
-        path: "/tmp/prometheus-2.55.1.linux-amd64.tar.gz"
-      register: prometheus_archive
-
-    - name: Fail if download was not successful
-      fail:
-        msg: "Failed to download Prometheus archive"
-      when: not prometheus_archive.stat.exists
-
-    - name: Extract Prometheus archive
-      unarchive:
-        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
-        dest: "/tmp"
-        remote_src: yes
-
-    - name: Move Prometheus binaries
+    - name: Copy Prometheus binaries
       copy:
         src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
-        dest: "{{ prometheus_dir }}/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        remote_src: yes
         owner: "{{ prometheus_user }}"
         group: "{{ prometheus_group }}"
         mode: '0755'
-        remote_src: yes
-      loop:
+      with_items:
         - prometheus
         - promtool
 
-    - name: Copy Prometheus configuration
+    - name: Copy Prometheus configuration files
       copy:
-        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/prometheus.yml"
-        dest: "{{ prometheus_dir }}/prometheus.yml"
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}/"
+        dest: "{{ prometheus_config_dir }}/{{ item }}/"
+        remote_src: yes
+        owner: "{{ prometheus_user }}"
+        group: "{{ prometheus_group }}"
+      with_items:
+        - console_libraries
+        - consoles
+
+    - name: Create Prometheus configuration
+      copy:
+        dest: "{{ prometheus_config_dir }}/prometheus.yml"
+        content: |
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+
+          scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+
+            - job_name: 'node'
+              static_configs:
+                - targets: ['localhost:9100']
         owner: "{{ prometheus_user }}"
         group: "{{ prometheus_group }}"
         mode: '0644'
-        remote_src: yes
+      notify: restart prometheus
 
-    - name: Create Prometheus systemd service file
-      template:
-        src: prometheus.service.j2
+    - name: Create Prometheus systemd service
+      copy:
         dest: /etc/systemd/system/prometheus.service
-        owner: root
-        group: root
-        mode: '0644'
+        content: |
+          [Unit]
+          Description=Prometheus
+          Wants=network-online.target
+          After=network-online.target
 
-    - name: Ensure Prometheus service is started and enabled
+          [Service]
+          User={{ prometheus_user }}
+          Group={{ prometheus_group }}
+          Type=simple
+          ExecStart=/usr/local/bin/prometheus \
+            --config.file {{ prometheus_config_dir }}/prometheus.yml \
+            --storage.tsdb.path {{ prometheus_data_dir }}/ \
+            --web.console.templates={{ prometheus_config_dir }}/consoles \
+            --web.console.libraries={{ prometheus_config_dir }}/console_libraries
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify: restart prometheus
+
+    - name: Set directory ownership
+      file:
+        path: "{{ item }}"
+        owner: "{{ prometheus_user }}"
+        group: "{{ prometheus_group }}"
+        recurse: yes
+      with_items:
+        - "{{ prometheus_config_dir }}"
+        - "{{ prometheus_data_dir }}"
+
+    - name: Start and enable Prometheus service
       systemd:
         name: prometheus
         state: started
         enabled: yes
         daemon_reload: yes
 
+    - name: Wait for Prometheus to start
+      wait_for:
+        port: 9090
+        timeout: 60
+
     - name: Clean up downloaded files
       file:
         path: "{{ item }}"
         state: absent
-      loop:
+      with_items:
         - "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
         - "/tmp/prometheus-{{ prometheus_version }}.linux-amd64"
 
-    - name: Print Prometheus installation complete message
-      debug:
-        msg: "Prometheus has been installed successfully. It should be accessible on https://{{ morpheus['server']['internalIp'] }}:9090"
-
   handlers:
-    - name: Restart Prometheus
+    - name: restart prometheus
       systemd:
         name: prometheus
         state: restarted
