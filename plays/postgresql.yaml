@@ -4,11 +4,10 @@
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    postgres_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] }}"
-    db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] }}"
-    db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] }}"
+    postgres_password: "{{ hostvars[inventory_hostname].get('morpheus', {}).get('customOptions', {}).get('dbCustomPassword', 'postgres123') }}"
+    db_user: "{{ hostvars[inventory_hostname].get('morpheus', {}).get('customOptions', {}).get('dbCustomUser', 'postgres') }}"
+    db_name: "{{ hostvars[inventory_hostname].get('morpheus', {}).get('customOptions', {}).get('dbCustomName', 'postgres') }}"
     sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
-    db_vars_provided: false
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
@@ -82,52 +81,59 @@
         enabled: yes
       when: ansible_os_family == 'RedHat'
 
-    - name: Check if database variables are provided
-      set_fact:
-        db_vars_provided: true
-      when: 
-        - db_user != ''
-        - postgres_password != ''
-        - db_name != ''
-
     - name: Set PostgreSQL password for postgres user
-      when: postgres_password is defined
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
       args:
         chdir: /tmp
       register: set_postgres_password
+      when: postgres_password != 'postgres123'
 
     - name: Create database user
-      when: db_vars_provided
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
       args:
         chdir: /tmp
       register: create_user_result
       ignore_errors: yes
+      when: db_user != 'postgres'
 
     - name: Create database
-      when: db_vars_provided
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
       args:
         chdir: /tmp
       register: create_db_result
       ignore_errors: yes
+      when: db_name != 'postgres'
 
     - name: Grant privileges
-      when: db_vars_provided
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
       args:
         chdir: /tmp
       register: grant_privileges
+      when: db_user != 'postgres' and db_name != 'postgres'
+
+    - name: Configure pg_hba.conf for md5 authentication
+      lineinfile:
+        path: /var/lib/pgsql/data/pg_hba.conf
+        regexp: '^host\s+all\s+all\s+127.0.0.1/32\s+ident'
+        line: 'host    all             all             127.0.0.1/32            md5'
+        backup: yes
+      when: ansible_os_family == 'RedHat'
+
+    - name: Restart PostgreSQL service
+      systemd:
+        name: postgresql
+        state: restarted
+      when: ansible_os_family == 'RedHat'
 
     - name: Debug database setup results
-      when: db_vars_provided
       debug:
         msg: 
-          - "User creation: {{ create_user_result.stdout | default('No output') }}"
-          - "Database creation: {{ create_db_result.stdout | default('No output') }}"
-          - "Privilege grant: {{ grant_privileges.stdout | default('No output') }}"
+          - "Database User: {{ db_user }}"
+          - "Database Name: {{ db_name }}"
+          - "User creation: {{ create_user_result.stdout | default('Using default postgres user') }}"
+          - "Database creation: {{ create_db_result.stdout | default('Using default postgres database') }}"
+          - "Privilege grant: {{ grant_privileges.stdout | default('No additional privileges granted') }}"
