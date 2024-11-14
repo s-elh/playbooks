@@ -143,10 +143,17 @@
 
     - name: Configure firewall for RHEL
       when: ansible_os_family == "RedHat"
-      firewalld:
-        port: "{{ proxy_port }}/tcp"
-        permanent: yes
-        state: enabled
+      shell: |
+        firewall-cmd --permanent --add-port={{ proxy_port }}/tcp
+        firewall-cmd --reload
+      ignore_errors: yes
+
+    - name: Configure UFW for Ubuntu
+      when: ansible_distribution == "Ubuntu"
+      ufw:
+        rule: allow
+        port: "{{ proxy_port }}"
+        proto: tcp
       ignore_errors: yes
 
     - name: Restart firewalld for RHEL
