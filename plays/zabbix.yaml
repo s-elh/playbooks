@@ -117,9 +117,15 @@
         - { regexp: '^local\s+all\s+all\s+peer', line: 'local   all             all                                     md5' }
       when: ansible_os_family == "RedHat"
 
+    - name: Get PostgreSQL version (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: ls -1 /etc/postgresql/ | sort -V | tail -n 1
+      register: pg_version
+      changed_when: false
+
     - name: Configure PostgreSQL authentication (Ubuntu)
       lineinfile:
-        path: /etc/postgresql/14/main/pg_hba.conf
+        path: "/etc/postgresql/{{ pg_version.stdout }}/main/pg_hba.conf"
         regexp: "{{ item.regexp }}"
         line: "{{ item.line }}"
         backup: yes
