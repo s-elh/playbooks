@@ -104,7 +104,35 @@
         state: present
       register: zabbix_install_rhel
 
+
     # PostgreSQL database setup for Zabbix
+    - name: Configure PostgreSQL authentication (RHEL)
+      lineinfile:
+        path: /var/lib/pgsql/data/pg_hba.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        backup: yes
+      with_items:
+        - { regexp: '^host\s+all\s+all\s+127.0.0.1/32\s+ident', line: 'host    all             all             127.0.0.1/32            md5' }
+        - { regexp: '^local\s+all\s+all\s+peer', line: 'local   all             all                                     md5' }
+      when: ansible_os_family == "RedHat"
+
+    - name: Configure PostgreSQL authentication (Ubuntu)
+      lineinfile:
+        path: /etc/postgresql/14/main/pg_hba.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        backup: yes
+      with_items:
+        - { regexp: '^host\s+all\s+all\s+127.0.0.1/32\s+peer', line: 'host    all             all             127.0.0.1/32            md5' }
+        - { regexp: '^local\s+all\s+all\s+peer', line: 'local   all             all                                     md5' }
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Restart PostgreSQL
+      systemd:
+        name: postgresql
+        state: restarted
+
     - name: Create Zabbix database user
       become: yes
       shell: |
@@ -134,7 +162,7 @@
     - name: Import Zabbix schema
       become: yes
       shell: |
-        zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | PGPASSWORD="{{ zabbix_db_password }}" psql -h localhost -U zabbix zabbix
+        cd /tmp && zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | PGPASSWORD="{{ zabbix_db_password }}" psql -h localhost -U zabbix zabbix
       register: schema_import
       changed_when: schema_import.rc == 0
       failed_when: schema_import.rc != 0
