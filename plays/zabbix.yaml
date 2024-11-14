@@ -7,6 +7,8 @@
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     zabbix_db_password: "zabbix123"
+    postgres_password: "{{ hostvars[inventory_hostname].get('morpheus', {}).get('customOptions', {}).get('dbCustomPassword', 'postgres123') }}"
+    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
     # Common proxy environment configuration
@@ -102,32 +104,89 @@
         state: present
       register: zabbix_install_rhel
 
-    # Common tasks for both distributions
+    # PostgreSQL database setup for Zabbix
     - name: Create Zabbix database user
-      become_user: postgres
-      postgresql_user:
-        name: zabbix
-        password: "{{ zabbix_db_password }}"
-        role_attr_flags: CREATEDB,LOGIN
+      become: yes
+      shell: |
+        PGPASSWORD="{{ postgres_password }}" sudo -u postgres psql -c "CREATE USER zabbix WITH PASSWORD '{{ zabbix_db_password }}';"
+      args:
+        chdir: /tmp
+      register: create_user_result
+      ignore_errors: yes
 
     - name: Create Zabbix database
-      become_user: postgres
-      postgresql_db:
-        name: zabbix
-        owner: zabbix
+      become: yes
+      shell: |
+        PGPASSWORD="{{ postgres_password }}" sudo -u postgres psql -c "CREATE DATABASE zabbix OWNER zabbix;"
+      args:
+        chdir: /tmp
+      register: create_db_result
+      ignore_errors: yes
+
+    - name: Grant privileges to Zabbix user
+      become: yes
+      shell: |
+        PGPASSWORD="{{ postgres_password }}" sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE zabbix TO zabbix;"
+      args:
+        chdir: /tmp
+      ignore_errors: yes
 
     - name: Import Zabbix schema
-      become_user: zabbix
-      shell: zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | psql zabbix
+      become: yes
+      shell: |
+        zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | PGPASSWORD="{{ zabbix_db_password }}" psql -h localhost -U zabbix zabbix
       register: schema_import
       changed_when: schema_import.rc == 0
       failed_when: schema_import.rc != 0
 
-    - name: Configure Zabbix server
+    - name: Configure Zabbix server database connection
       lineinfile:
         path: /etc/zabbix/zabbix_server.conf
-        regexp: '^DBPassword='
-        line: "DBPassword={{ zabbix_db_password }}"
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      with_items:
+        - { regexp: '^DBHost=', line: 'DBHost=localhost' }
+        - { regexp: '^DBName=', line: 'DBName=zabbix' }
+        - { regexp: '^DBUser=', line: 'DBUser=zabbix' }
+        - { regexp: '^DBPassword=', line: 'DBPassword={{ zabbix_db_password }}' }
+
+    # Configure PHP for Zabbix frontend
+    - name: Set PHP timezone (Ubuntu)
+      lineinfile:
+        path: /etc/php/8.1/apache2/php.ini
+        regexp: "^;?date.timezone ="
+        line: "date.timezone = UTC"
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Set PHP timezone (RHEL)
+      lineinfile:
+        path: /etc/php.ini
+        regexp: "^;?date.timezone ="
+        line: "date.timezone = UTC"
+      when: ansible_os_family == "RedHat"
+
+    # Configure Apache for Zabbix
+    - name: Configure Apache for Zabbix
+      copy:
+        dest: /etc/zabbix/apache.conf
+        content: |
+          Alias /zabbix /usr/share/zabbix
+          
+          <Directory "/usr/share/zabbix">
+              Options FollowSymLinks
+              AllowOverride None
+              Require all granted
+              
+              <IfModule mod_php.c>
+                  php_value max_execution_time 300
+                  php_value memory_limit 128M
+                  php_value post_max_size 16M
+                  php_value upload_max_filesize 2M
+                  php_value max_input_time 300
+                  php_value max_input_vars 10000
+                  php_value always_populate_raw_post_data -1
+              </IfModule>
+          </Directory>
 
     # Start services for Ubuntu
     - name: Start Zabbix services (Ubuntu)
@@ -177,7 +236,7 @@
       debug:
         msg: 
           - "Zabbix has been installed successfully."
-          - "Access Zabbix at https://{{ morpheus['server']['internalIp'] }}/zabbix"
+          - "Access Zabbix at http://{{ morpheus['server']['internalIp'] }}/zabbix"
           - "Default credentials:"
           - "Username: Admin"
           - "Password: zabbix"
