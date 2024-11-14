@@ -78,10 +78,10 @@
         state: present
         update_cache: yes
 
-    - name: Install wget (Ubuntu)
+    - name: Install curl (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
-        name: wget
+        name: curl
         state: present
   
     # Common tasks
@@ -99,7 +99,17 @@
         shell: /sbin/nologin
         create_home: no
   
-    - name: Download Prometheus
+    - name: Download Prometheus (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        curl -x {{ proxy_url }} -L \
+        https://dl.grafana.com/oss/prometheus/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
+        -o /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
+      args:
+        creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+
+    - name: Download Prometheus (RHEL)
+      when: ansible_os_family == "RedHat"
       shell: |
         wget --no-check-certificate --quiet \
         --proxy=on \
