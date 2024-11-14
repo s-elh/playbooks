@@ -87,7 +87,15 @@
       args:
         chdir: /tmp
       register: set_postgres_password
-      when: postgres_password != 'postgres123'
+      when: postgres_password != 'postgres123' and postgres_password != ''
+
+    - name: Check if custom user should be created
+      set_fact:
+        create_custom_user: "{{ db_user != 'postgres' and db_user != '' }}"
+
+    - name: Check if custom database should be created
+      set_fact:
+        create_custom_db: "{{ db_name != 'postgres' and db_name != '' }}"
 
     - name: Create database user
       shell: |
@@ -96,7 +104,7 @@
         chdir: /tmp
       register: create_user_result
       ignore_errors: yes
-      when: db_user != 'postgres'
+      when: create_custom_user | bool
 
     - name: Create database
       shell: |
@@ -105,7 +113,7 @@
         chdir: /tmp
       register: create_db_result
       ignore_errors: yes
-      when: db_name != 'postgres'
+      when: create_custom_user | bool and create_custom_db | bool
 
     - name: Grant privileges
       shell: |
@@ -113,7 +121,7 @@
       args:
         chdir: /tmp
       register: grant_privileges
-      when: db_user != 'postgres' and db_name != 'postgres'
+      when: create_custom_user | bool and create_custom_db | bool
 
     - name: Configure pg_hba.conf for md5 authentication
       lineinfile:
@@ -132,8 +140,10 @@
     - name: Debug database setup results
       debug:
         msg: 
-          - "Database User: {{ db_user }}"
-          - "Database Name: {{ db_name }}"
+          - "Database User: {{ db_user if create_custom_user | bool else 'postgres (default)' }}"
+          - "Database Name: {{ db_name if create_custom_db | bool else 'postgres (default)' }}"
+          - "Custom user creation required: {{ create_custom_user }}"
+          - "Custom database creation required: {{ create_custom_db }}"
           - "User creation: {{ create_user_result.stdout | default('Using default postgres user') }}"
           - "Database creation: {{ create_db_result.stdout | default('Using default postgres database') }}"
           - "Privilege grant: {{ grant_privileges.stdout | default('No additional privileges granted') }}"
