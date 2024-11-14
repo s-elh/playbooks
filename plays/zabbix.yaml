@@ -133,10 +133,12 @@
         name: postgresql
         state: restarted
 
+    # PostgreSQL database setup for Zabbix
     - name: Create Zabbix database user
       become: yes
+      become_user: postgres
       shell: |
-        PGPASSWORD="{{ postgres_password }}" sudo -u postgres psql -c "CREATE USER zabbix WITH PASSWORD '{{ zabbix_db_password }}';"
+        psql -c "CREATE USER zabbix WITH PASSWORD '{{ zabbix_db_password }}';"
       args:
         chdir: /tmp
       register: create_user_result
@@ -144,8 +146,9 @@
 
     - name: Create Zabbix database
       become: yes
+      become_user: postgres
       shell: |
-        PGPASSWORD="{{ postgres_password }}" sudo -u postgres psql -c "CREATE DATABASE zabbix OWNER zabbix;"
+        psql -c "CREATE DATABASE zabbix OWNER zabbix;"
       args:
         chdir: /tmp
       register: create_db_result
@@ -153,16 +156,19 @@
 
     - name: Grant privileges to Zabbix user
       become: yes
+      become_user: postgres
       shell: |
-        PGPASSWORD="{{ postgres_password }}" sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE zabbix TO zabbix;"
+        psql -c "GRANT ALL PRIVILEGES ON DATABASE zabbix TO zabbix;"
       args:
         chdir: /tmp
+      register: grant_privileges
       ignore_errors: yes
 
     - name: Import Zabbix schema
       become: yes
+      become_user: postgres
       shell: |
-        cd /tmp && zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | PGPASSWORD="{{ zabbix_db_password }}" psql -h localhost -U zabbix zabbix
+        zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | psql zabbix
       register: schema_import
       changed_when: schema_import.rc == 0
       failed_when: schema_import.rc != 0
