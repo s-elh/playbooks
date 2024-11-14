@@ -102,8 +102,8 @@
     - name: Download Prometheus (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} -L \
-        https://dl.grafana.com/oss/prometheus/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
+        curl -x {{ proxy_url }} -k -L \
+        https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
         -o /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
       args:
         creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
