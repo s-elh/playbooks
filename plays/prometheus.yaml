@@ -78,11 +78,11 @@
         state: present
         update_cache: yes
 
-    - name: Install wget (Ubuntu)
-          when: ansible_distribution == "Ubuntu"
-          apt:
-            name: wget
-            state: present
+  - name: Install wget (Ubuntu)
+    when: ansible_distribution == "Ubuntu"
+    apt:
+      name: wget
+      state: present
   
     # Common tasks
     - name: Create Prometheus system group
@@ -101,14 +101,14 @@
   
     - name: Download Prometheus (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      shell: |
-        wget --no-check-certificate --quiet \
-        --proxy=on \
-        --proxy-user= \
-        --proxy-password= \
-        -e http_proxy={{ proxy_url }} \
-        -e https_proxy={{ proxy_url }} \
-        https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
+      shell: >
+        wget --no-check-certificate --quiet 
+        --proxy=on 
+        --proxy-user= 
+        --proxy-password= 
+        -e http_proxy={{ proxy_url }} 
+        -e https_proxy={{ proxy_url }} 
+        https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz 
         -O /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
       args:
         creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
