@@ -42,24 +42,20 @@
 
     - name: Download InfluxData GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      get_url:
-        url: https://repos.influxdata.com/influxdata-archive_compat.key
-        dest: /tmp/influxdata-archive_compat.key
+      shell: |
+        curl -x {{ proxy_url }} https://repos.influxdata.com/influxdata-archive_compat.key -o /tmp/influxdata-archive_compat.key
+      args:
+        creates: /tmp/influxdata-archive_compat.key
 
-    - name: Verify and install GPG key (Ubuntu)
+    - name: Install GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        echo '393e8779c89ac8d958f81f942f9ad7fb82a25e133faddaf92e15b16e6ac9ce4c /tmp/influxdata-archive_compat.key' | sha256sum -c && \
-        cat /tmp/influxdata-archive_compat.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg > /dev/null
-      args:
-        creates: /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg
+        cat /tmp/influxdata-archive_compat.key | gpg --dearmor > /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg
 
     - name: Add InfluxDB repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      apt_repository:
-        repo: deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/debian stable main
-        state: present
-        filename: influxdata
+      shell: |
+        echo "deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/debian stable main" > /etc/apt/sources.list.d/influxdata.list
 
     - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu"
@@ -107,46 +103,24 @@
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
-    - name: Download InfluxDB GPG key (RHEL)
+    - name: Add InfluxDB repository (RHEL)
       when: ansible_os_family == 'RedHat'
-      shell: |
-        curl -x {{ proxy_url }} -L https://repos.influxdata.com/influxdata-archive_compat.key -o /etc/pki/rpm-gpg/influxdata-archive_compat.key
-      args:
-        creates: /etc/pki/rpm-gpg/influxdata-archive_compat.key
-
-    - name: Import InfluxDB GPG key (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: rpm --import /etc/pki/rpm-gpg/influxdata-archive_compat.key
-      args:
-        creates: /etc/pki/rpm-gpg/influxdata-archive_compat.key
-
-    - name: Create InfluxDB repository file (RHEL)
-      when: ansible_os_family == 'RedHat'
-      copy:
-        content: |
-          [influxdb]
-          name = InfluxDB Repository
-          baseurl = https://repos.influxdata.com/rhel/$releasever/$basearch/stable
-          enabled = 1
-          gpgcheck = 1
-          gpgkey = https://repos.influxdata.com/influxdata-archive_compat.key
-        dest: /etc/yum.repos.d/influxdb.repo
-        mode: '0644'
-
-    - name: Clean yum cache (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        yum clean all
-        rm -rf /var/cache/yum
-        yum makecache
+      yum_repository:
+        name: influxdb
+        description: InfluxDB Repository
+        baseurl: https://repos.influxdata.com/rhel/$releasever/$basearch/stable
+        gpgcheck: yes
+        enabled: yes
+        gpgkey: https://repos.influxdata.com/influxdata-archive_compat.key
 
     - name: Install InfluxDB packages (RHEL)
       when: ansible_os_family == 'RedHat'
-      shell: |
-        yum install -y influxdb2 influxdb2-cli --nogpgcheck
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
+      yum:
+        name: 
+          - influxdb2
+          - influxdb2-cli
+        state: present
+        update_cache: yes
 
     # Common tasks for both distributions
     - name: Enable and start InfluxDB service
