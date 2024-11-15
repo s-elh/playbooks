@@ -127,43 +127,87 @@
         state: started
         enabled: yes
 
+    # RHEL-specific MySQL configuration
     - name: Get temporary root password (RHEL)
       when: ansible_os_family == 'RedHat'
       shell: grep 'temporary password' /var/log/mysqld.log | awk '{print $NF}'
       register: mysql_temp_password
       changed_when: false
 
-    - name: Change MySQL root password (RHEL)
+    - name: Initialize MySQL root password (RHEL)
       when: ansible_os_family == 'RedHat'
       shell: |
-        mysql --user=root --password='{{ mysql_temp_password.stdout }}' --connect-expired-password -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
-      register: root_password_update
+        mysql --connect-expired-password -u root -p'{{ mysql_temp_password.stdout }}' --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
+      register: init_pwd
       ignore_errors: true
       no_log: true
 
+    - name: Update MySQL password validation policy (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        mysql -u root -p'{{ mysql_root_password }}' --connect-expired-password --execute="SET GLOBAL validate_password.policy=LOW; SET GLOBAL validate_password.length=4; FLUSH PRIVILEGES;"
+      ignore_errors: true
+      no_log: true
+
+    # Ubuntu-specific MySQL configuration
     - name: Set MySQL root password (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
         mysql --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
       ignore_errors: true
 
-    - name: Remove anonymous users
+    # Common MySQL configuration tasks
+    - name: Remove anonymous users (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       shell: |
         mysql --user=root --password="{{ mysql_root_password }}" --execute="DELETE FROM mysql.user WHERE User=''; FLUSH PRIVILEGES;"
 
-    - name: Remove test database
+    - name: Remove anonymous users (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        mysql -u root -p'{{ mysql_root_password }}' --execute="DELETE FROM mysql.user WHERE User=''; FLUSH PRIVILEGES;"
+      ignore_errors: true
+
+    - name: Remove test database (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       shell: |
         mysql --user=root --password="{{ mysql_root_password }}" --execute="DROP DATABASE IF EXISTS test; DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%'; FLUSH PRIVILEGES;"
 
-    - name: Create database if variables are provided
-      when: db_vars_provided
+    - name: Remove test database (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        mysql -u root -p'{{ mysql_root_password }}' --execute="DROP DATABASE IF EXISTS test; DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%'; FLUSH PRIVILEGES;"
+      ignore_errors: true
+
+    - name: Create database if variables are provided (Ubuntu)
+      when: 
+        - ansible_distribution == "Ubuntu"
+        - db_vars_provided
       shell: |
         mysql --user=root --password="{{ mysql_root_password }}" --execute="CREATE DATABASE IF NOT EXISTS {{ db_name }};"
 
-    - name: Create user and grant privileges if variables are provided
-      when: db_vars_provided
+    - name: Create database if variables are provided (RHEL)
+      when: 
+        - ansible_os_family == 'RedHat'
+        - db_vars_provided
+      shell: |
+        mysql -u root -p'{{ mysql_root_password }}' --execute="CREATE DATABASE IF NOT EXISTS {{ db_name }};"
+      ignore_errors: true
+
+    - name: Create user and grant privileges if variables are provided (Ubuntu)
+      when: 
+        - ansible_distribution == "Ubuntu"
+        - db_vars_provided
       shell: |
         mysql --user=root --password="{{ mysql_root_password }}" --execute="CREATE USER IF NOT EXISTS '{{ db_user }}'@'%' IDENTIFIED BY '{{ db_password }}'; GRANT ALL PRIVILEGES ON {{ db_name }}.* TO '{{ db_user }}'@'%'; FLUSH PRIVILEGES;"
+
+    - name: Create user and grant privileges if variables are provided (RHEL)
+      when: 
+        - ansible_os_family == 'RedHat'
+        - db_vars_provided
+      shell: |
+        mysql -u root -p'{{ mysql_root_password }}' --execute="CREATE USER IF NOT EXISTS '{{ db_user }}'@'%' IDENTIFIED BY '{{ db_password }}'; GRANT ALL PRIVILEGES ON {{ db_name }}.* TO '{{ db_user }}'@'%'; FLUSH PRIVILEGES;"
+      ignore_errors: true
 
     - name: Display MySQL version
       command: mysql --version
