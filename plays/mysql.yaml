@@ -134,41 +134,10 @@
       register: mysql_temp_password
       changed_when: false
 
-    - name: Stop MySQL for password reset (RHEL)
-      when: ansible_os_family == 'RedHat'
-      systemd:
-        name: mysqld
-        state: stopped
-
-    - name: Start MySQL with skip-grant-tables (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        mysqld_safe --skip-grant-tables --skip-networking &
-        sleep 5
-
     - name: Reset root password (RHEL)
       when: ansible_os_family == 'RedHat'
       shell: |
-        mysql -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mysql_root_password }}';"
-      ignore_errors: true
-
-    - name: Stop MySQL after password reset (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        pkill mysqld
-        sleep 5
-      ignore_errors: true
-
-    - name: Start MySQL normally (RHEL)
-      when: ansible_os_family == 'RedHat'
-      systemd:
-        name: mysqld
-        state: started
-
-    - name: Update MySQL password validation policy (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        mysql -u root -p'{{ mysql_root_password }}' --execute="SET GLOBAL validate_password.policy=LOW; SET GLOBAL validate_password.length=4; FLUSH PRIVILEGES;"
+        mysql --connect-expired-password -u root -p'{{ mysql_temp_password.stdout }}' --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
       ignore_errors: true
 
     # Ubuntu-specific MySQL configuration
