@@ -107,24 +107,46 @@
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
-    - name: Add InfluxDB repository (RHEL)
+    - name: Download InfluxDB GPG key (RHEL)
       when: ansible_os_family == 'RedHat'
-      yum_repository:
-        name: influxdb
-        description: InfluxDB Repository
-        baseurl: https://repos.influxdata.com/rhel/$releasever/$basearch/stable
-        gpgcheck: yes
-        enabled: yes
-        gpgkey: https://repos.influxdata.com/influxdata-archive_compat.key
+      shell: |
+        curl -x {{ proxy_url }} -L https://repos.influxdata.com/influxdata-archive_compat.key -o /etc/pki/rpm-gpg/influxdata-archive_compat.key
+      args:
+        creates: /etc/pki/rpm-gpg/influxdata-archive_compat.key
+
+    - name: Import InfluxDB GPG key (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: rpm --import /etc/pki/rpm-gpg/influxdata-archive_compat.key
+      args:
+        creates: /etc/pki/rpm-gpg/influxdata-archive_compat.key
+
+    - name: Create InfluxDB repository file (RHEL)
+      when: ansible_os_family == 'RedHat'
+      copy:
+        content: |
+          [influxdb]
+          name = InfluxDB Repository
+          baseurl = https://repos.influxdata.com/rhel/$releasever/$basearch/stable
+          enabled = 1
+          gpgcheck = 1
+          gpgkey = https://repos.influxdata.com/influxdata-archive_compat.key
+        dest: /etc/yum.repos.d/influxdb.repo
+        mode: '0644'
+
+    - name: Clean yum cache (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        yum clean all
+        rm -rf /var/cache/yum
+        yum makecache
 
     - name: Install InfluxDB packages (RHEL)
       when: ansible_os_family == 'RedHat'
-      yum:
-        name: 
-          - influxdb2
-          - influxdb2-cli
-        state: present
-        update_cache: yes
+      shell: |
+        yum install -y influxdb2 influxdb2-cli --nogpgcheck
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     # Common tasks for both distributions
     - name: Enable and start InfluxDB service
