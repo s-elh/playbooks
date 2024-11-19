@@ -100,12 +100,35 @@
         create_home: no
   
 
+    - name: Install required packages (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: 
+          - tar
+          - gzip
+          - bzip2
+          - xz-utils
+          - unzip
+          - ca-certificates
+        state: present
+        update_cache: yes
+
+    # Clean existing file if it exists
+    - name: Remove existing Prometheus archive if exists
+      file:
+        path: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        state: absent
+
+    # Download for Ubuntu
     - name: Download Prometheus (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} -L \
+        wget --no-check-certificate \
+        -e use_proxy=yes \
+        -e http_proxy={{ proxy_url }} \
+        -e https_proxy={{ proxy_url }} \
         https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
-        -o /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
+        -O /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
       args:
         creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
   
