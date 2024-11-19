@@ -51,7 +51,7 @@
 
     - name: Download Docker GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      shell: curl -fsSL -x {{ proxy_url }} https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
       args:
         creates: /etc/apt/keyrings/docker.asc
 
@@ -137,7 +137,23 @@
         state: directory
         mode: '0755'
 
-    - name: Configure Docker daemon with proxy
+    - name: Configure DNS in resolved.conf
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          [Resolve]
+          DNS=8.8.8.8 8.8.4.4
+          DNSStubListener=yes
+        dest: /etc/systemd/resolved.conf
+        mode: '0644'
+
+    - name: Restart systemd-resolved
+      when: ansible_distribution == "Ubuntu"
+      systemd:
+        name: systemd-resolved
+        state: restarted
+
+    - name: Configure Docker daemon with proxy and DNS
       copy:
         content: |
           {
@@ -145,8 +161,9 @@
             "proxies": {
               "http-proxy": "{{ proxy_url }}",
               "https-proxy": "{{ proxy_url }}",
-              "no-proxy": "localhost,127.0.0.1"
-            }
+              "no-proxy": "localhost,127.0.0.1,.local,registry-1.docker.io"
+            },
+            "registry-mirrors": ["https://mirror.gcr.io"]
           }
         dest: /etc/docker/daemon.json
         mode: '0644'
@@ -163,7 +180,7 @@
           [Service]
           Environment="HTTP_PROXY={{ proxy_url }}"
           Environment="HTTPS_PROXY={{ proxy_url }}"
-          Environment="NO_PROXY=localhost,127.0.0.1"
+          Environment="NO_PROXY=localhost,127.0.0.1,.local,registry-1.docker.io"
         dest: /etc/systemd/system/docker.service.d/http-proxy.conf
         mode: '0644'
 
@@ -171,17 +188,23 @@
       systemd:
         daemon_reload: yes
 
-    - name: Ensure Docker service is started and enabled
+    - name: Restart Docker service
       systemd:
         name: docker
-        state: started
-        enabled: yes
+        state: restarted
       when: docker_install_ubuntu is success or docker_install_rhel is success
+
+    - name: Wait for Docker service to fully start
+      wait_for:
+        timeout: 30
 
     - name: Verify Docker installation
       command: docker run hello-world
       register: hello_world_output
       changed_when: false
+      retries: 3
+      delay: 10
+      until: hello_world_output is not failed
       when: docker_install_ubuntu is success or docker_install_rhel is success
 
     - name: Display Docker verification result
