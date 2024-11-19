@@ -103,25 +103,16 @@
       when: ansible_distribution == "Ubuntu"
       shell: |
         curl -L --proxy {{ proxy_url }} \
-        --insecure \
-        --connect-timeout 10 \
-        --retry 5 \
-        --retry-delay 10 \
-        --retry-max-time 300 \
-        --max-time 600 \
-        --location \
-        --continue-at - \
-        -o /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
-        https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
-      args:
-        creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-      register: download_result
-      until: download_result.rc == 0
-      retries: 3
-      delay: 5
+          --insecure \
+          --connect-timeout 10 \
+          --retry 5 \
+          --retry-delay 10 \
+          --retry-max-time 300 \
+          --max-time 600 \
+          --location \
+          --continue-at - \
+          -o /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
+          https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
 
     - name: Download Prometheus (RHEL)
       when: ansible_os_family == "RedHat"
@@ -212,10 +203,10 @@
           Group={{ prometheus_group }}
           Type=simple
           ExecStart=/usr/local/bin/prometheus \
-            --config.file {{ prometheus_config_dir }}/prometheus.yml \
-            --storage.tsdb.path {{ prometheus_data_dir }}/ \
-            --web.console.templates={{ prometheus_config_dir }}/consoles \
-            --web.console.libraries={{ prometheus_config_dir }}/console_libraries
+              --config.file {{ prometheus_config_dir }}/prometheus.yml \
+              --storage.tsdb.path {{ prometheus_data_dir }}/ \
+              --web.console.templates={{ prometheus_config_dir }}/consoles \
+              --web.console.libraries={{ prometheus_config_dir }}/console_libraries
 
           [Install]
           WantedBy=multi-user.target
@@ -257,6 +248,10 @@
       systemd:
         name: prometheus
         state: restarted
+
+    - name: Print Prometheus installation complete message
+      debug:
+        msg: "Prometheus has been installed successfully. It should be accessible on https://{{ morpheus['server']['internalIp'] }}:9090"
   
     - name: Print Prometheus installation complete message
       debug:
