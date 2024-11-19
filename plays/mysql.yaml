@@ -134,10 +134,22 @@
       register: mysql_temp_password
       changed_when: false
 
-    - name: Reset root password (RHEL)
+    - name: Set MySQL password policy (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        mysql --connect-expired-password -u root -p'{{ mysql_temp_password.stdout }}' --execute="SET GLOBAL validate_password.policy=LOW; SET GLOBAL validate_password.length=4;"
+      ignore_errors: true
+
+    - name: Reset root password with policy (RHEL)
       when: ansible_os_family == 'RedHat'
       shell: |
         mysql --connect-expired-password -u root -p'{{ mysql_temp_password.stdout }}' --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
+      ignore_errors: true
+
+    - name: Revert MySQL password policy (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        mysql -u root -p'{{ mysql_root_password }}' --execute="SET GLOBAL validate_password.policy=MEDIUM; SET GLOBAL validate_password.length=8;"
       ignore_errors: true
 
     # Ubuntu-specific MySQL configuration
