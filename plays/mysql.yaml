@@ -91,7 +91,7 @@
       shell: |
         rpm -ivh /tmp/mysql80-community-release.rpm
       ignore_errors: yes
-      
+
     - name: Clean yum cache and enable MySQL module (RHEL)
       when: ansible_os_family == 'RedHat'
       shell: |
@@ -101,24 +101,6 @@
         dnf module disable mysql -y
         yum makecache
 
-    - name: Install MySQL packages (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        dnf install -y mysql-server
-
-    - name: Initialize MySQL data directory and start service (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        systemctl enable mysqld
-        systemctl start mysqld
-      ignore_errors: true
-
-    - name: Set root password (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        mysql -u root --execute="ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
-      ignore_errors: true
-  
     - name: Configure MySQL to skip password validation (RHEL)
       when: ansible_os_family == 'RedHat'
       copy:
@@ -130,13 +112,16 @@
         dest: /etc/my.cnf.d/disable-password-validation.cnf
         mode: '0644'
 
+    - name: Install MySQL packages (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        dnf install -y mysql-server
+
     - name: Initialize MySQL data directory and start service (RHEL)
       when: ansible_os_family == 'RedHat'
       shell: |
-        mysqld --initialize-insecure --user=mysql
+        systemctl enable mysqld
         systemctl start mysqld
-      args:
-        creates: /var/lib/mysql/mysql
       ignore_errors: true
 
     - name: Set root password (RHEL)
