@@ -8,6 +8,8 @@
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
+    squid_owner: "{{ 'proxy' if ansible_distribution == 'Ubuntu' else 'squid' }}"
+    squid_group: "{{ 'proxy' if ansible_distribution == 'Ubuntu' else 'squid' }}"
 
   tasks:
     # Common proxy environment configuration
@@ -30,7 +32,15 @@
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
-
+        
+    - name: Create cache directory
+      file:
+        path: /var/spool/squid
+        state: directory
+        owner: "{{ squid_owner }}"
+        group: "{{ squid_group }}"
+        mode: '0755'    
+      
     - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
