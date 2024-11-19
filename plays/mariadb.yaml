@@ -52,33 +52,21 @@
         state: present
         update_cache: yes
 
-    - name: Create keyrings directory (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: '0755'
-
-    - name: Download MariaDB GPG key (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      get_url:
-        url: https://mariadb.org/mariadb_release_signing_key.asc
-        dest: /tmp/mariadb_signing_key.asc
-        mode: '0644'
-
-    - name: Create MariaDB GPG keyring (Ubuntu)
+    - name: Add MariaDB Repository Key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        gpg --dearmor < /tmp/mariadb_signing_key.asc > /etc/apt/keyrings/mariadb-keyring.pgp
+        curl -x {{ proxy_url }} -fsSL https://mirror.marwan.ma/mariadb/MariaDB-Server-11.2/repo/ubuntu/dpidgpkey.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/mariadb.gpg
       args:
-        creates: /etc/apt/keyrings/mariadb-keyring.pgp
+        creates: /etc/apt/trusted.gpg.d/mariadb.gpg
 
-    - name: Add MariaDB repository (Ubuntu)
+    - name: Add MariaDB Repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.pgp] https://mirror.marwan.ma/mariadb/repo/11.2/ubuntu jammy main"
-        state: present
-        filename: mariadb
+      shell: |
+        echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/mariadb.gpg] https://mirror.marwan.ma/mariadb/repo/11.2/ubuntu jammy main" > /etc/apt/sources.list.d/mariadb.list
+
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
         update_cache: yes
 
     - name: Install MariaDB (Ubuntu)
@@ -88,7 +76,6 @@
           - mariadb-server
           - mariadb-client
         state: present
-        update_cache: yes
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
