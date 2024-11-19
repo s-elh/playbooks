@@ -105,6 +105,8 @@
         url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
         dest: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
         validate_certs: no
+        timeout: 60
+        use_proxy: yes
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
@@ -112,8 +114,6 @@
       retries: 3
       delay: 5
       until: download_result is success
-      args:
-        creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
 
     - name: Download Prometheus (RHEL)
       when: ansible_os_family == "RedHat"
