@@ -258,7 +258,3 @@
     - name: Print Prometheus installation complete message
       debug:
         msg: "Prometheus has been installed successfully. It should be accessible on https://{{ morpheus['server']['internalIp'] }}:9090"
-  
-    - name: Print Prometheus installation complete message
-      debug:
-        msg: "Prometheus has been installed successfully. It should be accessible on https://{{ morpheus['server']['internalIp'] }}:9090"
