@@ -195,9 +195,15 @@
         backup: yes
       when: ansible_os_family == 'RedHat'
 
+    - name: Find PostgreSQL version directory (Ubuntu)
+      shell: ls -d /etc/postgresql/*/main/pg_hba.conf
+      register: pg_hba_path
+      when: ansible_distribution == "Ubuntu"
+      ignore_errors: yes
+
     - name: Configure pg_hba.conf for md5 authentication (Ubuntu)
       lineinfile:
-        path: /etc/postgresql/*/main/pg_hba.conf
+        path: "{{ pg_hba_path.stdout }}"
         regexp: '^host\s+all\s+all\s+127.0.0.1/32\s+peer'
         line: 'host    all             all             127.0.0.1/32            md5'
         backup: yes
