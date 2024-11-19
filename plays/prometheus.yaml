@@ -102,17 +102,23 @@
     - name: Download Prometheus (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -L --proxy {{ proxy_url }} \
-          --insecure \
-          --connect-timeout 10 \
-          --retry 5 \
-          --retry-delay 10 \
-          --retry-max-time 300 \
-          --max-time 600 \
-          --location \
-          --continue-at - \
-          -o /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
-          https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
+        rm -f /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
+        wget --no-check-certificate \
+        --quiet \
+        --continue \
+        --retry-connrefused \
+        --waitretry=1 \
+        --retry-on-http-error=429,500,503 \
+        --timeout=300 \
+        -e use_proxy=yes \
+        -e http_proxy={{ proxy_url }} \
+        -e https_proxy={{ proxy_url }} \
+        https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
+        -O /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
+      register: download_result
+      until: download_result.rc == 0
+      retries: 3
+      delay: 30
 
     - name: Download Prometheus (RHEL)
       when: ansible_os_family == "RedHat"
