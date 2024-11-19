@@ -101,6 +101,13 @@
         dnf module disable mysql -y
         yum makecache
 
+    - name: Create MySQL configuration directory (RHEL)
+      when: ansible_os_family == 'RedHat'
+      file:
+        path: /etc/my.cnf.d
+        state: directory
+        mode: '0755'
+
     - name: Configure MySQL to skip password validation (RHEL)
       when: ansible_os_family == 'RedHat'
       copy:
