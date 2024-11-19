@@ -99,26 +99,23 @@
         shell: /sbin/nologin
         create_home: no
   
+    - name: Install axel on Ubuntu
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: axel
+        state: present
+
     - name: Download Prometheus (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        rm -f /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
-        wget --no-check-certificate \
-        --quiet \
-        --continue \
-        --retry-connrefused \
-        --waitretry=1 \
-        --retry-on-http-error=429,500,503 \
-        --timeout=300 \
-        -e use_proxy=yes \
-        -e http_proxy={{ proxy_url }} \
-        -e https_proxy={{ proxy_url }} \
+        axel -n 4 \
+        -U "Mozilla/5.0" \
+        -a \
+        --insecure \
+        -H "http_proxy: {{ proxy_url }}" \
+        -H "https_proxy: {{ proxy_url }}" \
         https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
-        -O /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
-      register: download_result
-      until: download_result.rc == 0
-      retries: 3
-      delay: 30
+        -o /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
 
     - name: Download Prometheus (RHEL)
       when: ansible_os_family == "RedHat"
