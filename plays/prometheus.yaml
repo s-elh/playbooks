@@ -99,6 +99,16 @@
         shell: /sbin/nologin
         create_home: no
   
+    - name: Install aria2 on Ubuntu
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: aria2
+        state: present
+        update_cache: yes
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
     - name: Download Prometheus (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
