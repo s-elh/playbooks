@@ -103,23 +103,11 @@
     - name: Download Prometheus (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        python3 -c '
-        import urllib.request
-        import urllib.parse
-        proxy_handler = urllib.request.ProxyHandler({
-            "http": "{{ proxy_url }}",
-            "https": "{{ proxy_url }}"
-        })
-        opener = urllib.request.build_opener(proxy_handler)
-        urllib.request.install_opener(opener)
-        url = "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
-        filename = "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
-        urllib.request.urlretrieve(url, filename)
-        '
+        curl -x {{ proxy_url }} -L \
+        https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
+        -o /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
       args:
         creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
-      environment:
-        PYTHONHTTPSVERIFY: "0"
   
     - name: Download Prometheus (RHEL)
       when: ansible_os_family == "RedHat"
