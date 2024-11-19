@@ -39,7 +39,17 @@
         state: directory
         owner: "{{ squid_owner }}"
         group: "{{ squid_group }}"
-        mode: '0755'    
+        mode: '0755'
+      when: ansible_distribution == "Ubuntu" 
+      
+    - name: Create cache directory for RHEL
+      file:
+        path: /var/spool/squid
+        state: directory
+        owner: squid
+        group: squid
+        mode: '0755'
+      when: ansible_os_family == "RedHat"
       
     - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu"
