@@ -99,43 +99,28 @@
         shell: /sbin/nologin
         create_home: no
   
-    - name: Install aria2 on Ubuntu
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        name: aria2
-        state: present
-        update_cache: yes
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
 
     - name: Download Prometheus (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        aria2c \
-        --all-proxy={{ proxy_url }} \
-        --allow-overwrite=true \
-        --auto-file-renaming=false \
-        --max-tries=5 \
-        --retry-wait=10 \
-        --split=10 \
-        --max-connection-per-server=10 \
-        --connect-timeout=60 \
-        --timeout=600 \
-        https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
-        -d /tmp \
-        -o prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
+        python3 -c '
+        import urllib.request
+        import urllib.parse
+        proxy_handler = urllib.request.ProxyHandler({
+            "http": "{{ proxy_url }}",
+            "https": "{{ proxy_url }}"
+        })
+        opener = urllib.request.build_opener(proxy_handler)
+        urllib.request.install_opener(opener)
+        url = "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        filename = "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        urllib.request.urlretrieve(url, filename)
+        '
+      args:
+        creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+      environment:
+        PYTHONHTTPSVERIFY: "0"
   
-    - name: Verify download completed
-      stat:
-        path: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
-      register: download_check
-  
-    - name: Fail if download incomplete
-      fail:
-        msg: "Prometheus download failed"
-      when: not download_check.stat.exists
-
     - name: Download Prometheus (RHEL)
       when: ansible_os_family == "RedHat"
       shell: |
