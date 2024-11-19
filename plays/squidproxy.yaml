@@ -8,8 +8,6 @@
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
-    squid_owner: "{{ 'proxy' if ansible_distribution == 'Ubuntu' else 'squid' }}"
-    squid_group: "{{ 'proxy' if ansible_distribution == 'Ubuntu' else 'squid' }}"
 
   tasks:
     # Common proxy environment configuration
@@ -32,25 +30,7 @@
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
-        
-    - name: Create cache directory
-      file:
-        path: /var/spool/squid
-        state: directory
-        owner: "{{ squid_owner }}"
-        group: "{{ squid_group }}"
-        mode: '0755'
-      when: ansible_distribution == "Ubuntu" 
-      
-    - name: Create cache directory for RHEL
-      file:
-        path: /var/spool/squid
-        state: directory
-        owner: squid
-        group: squid
-        mode: '0755'
-      when: ansible_os_family == "RedHat"
-      
+
     - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
@@ -61,6 +41,15 @@
       apt:
         name: squid
         state: present
+
+    - name: Create cache directory (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      file:
+        path: /var/spool/squid
+        state: directory
+        owner: proxy
+        group: proxy
+        mode: '0755'
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
@@ -89,6 +78,15 @@
       dnf:
         name: squid
         state: present
+
+    - name: Create cache directory (RHEL)
+      when: ansible_os_family == "RedHat"
+      file:
+        path: /var/spool/squid
+        state: directory
+        owner: squid
+        group: squid
+        mode: '0755'
 
     # Common tasks for both distributions
     - name: Create Squid configuration backup
@@ -148,14 +146,6 @@
           refresh_pattern ^gopher:        1440    0%      1440
           refresh_pattern -i (/cgi-bin/|\?) 0     0%      0
           refresh_pattern .               0       20%     4320
-
-    - name: Create cache directory
-      file:
-        path: /var/spool/squid
-        state: directory
-        owner: squid
-        group: squid
-        mode: '0755'
 
     - name: Initialize Squid cache
       command: squid -z
