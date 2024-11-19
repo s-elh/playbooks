@@ -142,10 +142,20 @@
       when: ansible_distribution == "Ubuntu"
       shell: |
         curl -x {{ proxy_url }} -L \
+        --insecure \
+        --max-time 300 \
+        --retry 3 \
+        --retry-delay 5 \
+        --retry-max-time 900 \
+        -H "Accept: application/octet-stream" \
+        -H "Cache-Control: no-cache" \
         https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz \
         -o /tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz
       args:
         creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
   
     - name: Download Prometheus (RHEL)
       when: ansible_os_family == "RedHat"
