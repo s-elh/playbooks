@@ -34,6 +34,14 @@
         create: yes
       when: ansible_os_family == 'RedHat'
 
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -60,6 +68,21 @@
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
+    # Ubuntu-specific tasks
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install PostgreSQL (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: 
+          - postgresql
+          - postgresql-contrib
+        state: present
+
     # PostgreSQL installation and configuration for RHEL
     - name: Install PostgreSQL server (RHEL)
       yum:
@@ -81,13 +104,28 @@
         enabled: yes
       when: ansible_os_family == 'RedHat'
 
-    - name: Set PostgreSQL password for postgres user
+    - name: Ensure PostgreSQL is started and enabled (Ubuntu)
+      service:
+        name: postgresql
+        state: started
+        enabled: yes
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Set PostgreSQL password for postgres user (RHEL)
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
       args:
         chdir: /tmp
       register: set_postgres_password
-      when: postgres_password != 'postgres123' and postgres_password != ''
+      when: (postgres_password != 'postgres123' and postgres_password != '') and ansible_os_family == 'RedHat'
+
+    - name: Set PostgreSQL password for postgres user (Ubuntu)
+      shell: |
+        sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
+      args:
+        chdir: /tmp
+      register: set_postgres_password_ubuntu
+      when: (postgres_password != 'postgres123' and postgres_password != '') and ansible_distribution == "Ubuntu"
 
     - name: Check if custom user should be created
       set_fact:
@@ -97,33 +135,59 @@
       set_fact:
         create_custom_db: "{{ db_name != 'postgres' and db_name != '' }}"
 
-    - name: Create database user
+    - name: Create database user (RHEL)
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
       args:
         chdir: /tmp
       register: create_user_result
       ignore_errors: yes
-      when: create_custom_user | bool
+      when: create_custom_user | bool and ansible_os_family == 'RedHat'
 
-    - name: Create database
+    - name: Create database user (Ubuntu)
+      shell: |
+        sudo -u postgres psql -c "CREATE USER {{ db_user }} WITH PASSWORD '{{ postgres_password }}';"
+      args:
+        chdir: /tmp
+      register: create_user_result_ubuntu
+      ignore_errors: yes
+      when: create_custom_user | bool and ansible_distribution == "Ubuntu"
+
+    - name: Create database (RHEL)
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
       args:
         chdir: /tmp
       register: create_db_result
       ignore_errors: yes
-      when: create_custom_user | bool and create_custom_db | bool
+      when: create_custom_user | bool and create_custom_db | bool and ansible_os_family == 'RedHat'
 
-    - name: Grant privileges
+    - name: Create database (Ubuntu)
+      shell: |
+        sudo -u postgres psql -c "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
+      args:
+        chdir: /tmp
+      register: create_db_result_ubuntu
+      ignore_errors: yes
+      when: create_custom_user | bool and create_custom_db | bool and ansible_distribution == "Ubuntu"
+
+    - name: Grant privileges (RHEL)
       shell: |
         PGPASSWORD="{{ sudo_password }}" sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
       args:
         chdir: /tmp
       register: grant_privileges
-      when: create_custom_user | bool and create_custom_db | bool
+      when: create_custom_user | bool and create_custom_db | bool and ansible_os_family == 'RedHat'
 
-    - name: Configure pg_hba.conf for md5 authentication
+    - name: Grant privileges (Ubuntu)
+      shell: |
+        sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};"
+      args:
+        chdir: /tmp
+      register: grant_privileges_ubuntu
+      when: create_custom_user | bool and create_custom_db | bool and ansible_distribution == "Ubuntu"
+
+    - name: Configure pg_hba.conf for md5 authentication (RHEL)
       lineinfile:
         path: /var/lib/pgsql/data/pg_hba.conf
         regexp: '^host\s+all\s+all\s+127.0.0.1/32\s+ident'
@@ -131,11 +195,25 @@
         backup: yes
       when: ansible_os_family == 'RedHat'
 
-    - name: Restart PostgreSQL service
+    - name: Configure pg_hba.conf for md5 authentication (Ubuntu)
+      lineinfile:
+        path: /etc/postgresql/*/main/pg_hba.conf
+        regexp: '^host\s+all\s+all\s+127.0.0.1/32\s+peer'
+        line: 'host    all             all             127.0.0.1/32            md5'
+        backup: yes
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Restart PostgreSQL service (RHEL)
       systemd:
         name: postgresql
         state: restarted
       when: ansible_os_family == 'RedHat'
+
+    - name: Restart PostgreSQL service (Ubuntu)
+      systemd:
+        name: postgresql
+        state: restarted
+      when: ansible_distribution == "Ubuntu"
 
     - name: Debug database setup results
       debug:
@@ -144,6 +222,6 @@
           - "Database Name: {{ db_name if create_custom_db | bool else 'postgres (default)' }}"
           - "Custom user creation required: {{ create_custom_user }}"
           - "Custom database creation required: {{ create_custom_db }}"
-          - "User creation: {{ create_user_result.stdout | default('Using default postgres user') }}"
-          - "Database creation: {{ create_db_result.stdout | default('Using default postgres database') }}"
-          - "Privilege grant: {{ grant_privileges.stdout | default('No additional privileges granted') }}"
+          - "User creation: {{ create_user_result.stdout | default(create_user_result_ubuntu.stdout) | default('Using default postgres user') }}"
+          - "Database creation: {{ create_db_result.stdout | default(create_db_result_ubuntu.stdout) | default('Using default postgres database') }}"
+          - "Privilege grant: {{ grant_privileges.stdout | default(grant_privileges_ubuntu.stdout) | default('No additional privileges granted') }}"
