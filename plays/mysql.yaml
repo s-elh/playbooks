@@ -120,37 +120,39 @@
       shell: |
         yum install -y mysql-community-server --nogpgcheck
 
-    # Common tasks for both distributions
-    - name: Ensure MySQL service is started and enabled
+    - name: Configure MySQL to skip password validation (RHEL)
+      when: ansible_os_family == 'RedHat'
+      copy:
+        content: |
+          [mysqld]
+          validate_password.policy=LOW
+          validate_password.length=0
+          skip-password-validation
+        dest: /etc/my.cnf.d/disable-password-validation.cnf
+        mode: '0644'
+
+    - name: Initialize MySQL data directory and start service (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        mysqld --initialize-insecure --user=mysql
+        systemctl start mysqld
+      args:
+        creates: /var/lib/mysql/mysql
+      ignore_errors: true
+
+    - name: Set root password (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        mysql -u root --execute="ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
+      ignore_errors: true
+
+    # Start MySQL service for Ubuntu
+    - name: Ensure MySQL service is started and enabled (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       systemd:
-        name: "{{ 'mysql' if ansible_distribution == 'Ubuntu' else 'mysqld' }}"
+        name: mysql
         state: started
         enabled: yes
-
-    # RHEL-specific MySQL configuration
-    - name: Get temporary root password (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: grep 'temporary password' /var/log/mysqld.log | awk '{print $NF}'
-      register: mysql_temp_password
-      changed_when: false
-
-    - name: Set MySQL password policy (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        mysql --connect-expired-password -u root -p'{{ mysql_temp_password.stdout }}' --execute="SET GLOBAL validate_password.policy=LOW; SET GLOBAL validate_password.length=4;"
-      ignore_errors: true
-
-    - name: Reset root password with policy (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        mysql --connect-expired-password -u root -p'{{ mysql_temp_password.stdout }}' --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
-      ignore_errors: true
-
-    - name: Revert MySQL password policy (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        mysql -u root -p'{{ mysql_root_password }}' --execute="SET GLOBAL validate_password.policy=MEDIUM; SET GLOBAL validate_password.length=8;"
-      ignore_errors: true
 
     # Ubuntu-specific MySQL configuration
     - name: Set MySQL root password (Ubuntu)
