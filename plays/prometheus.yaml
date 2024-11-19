@@ -12,19 +12,7 @@
     prometheus_config_dir: /etc/prometheus
     prometheus_data_dir: /var/lib/prometheus
 
-  tasks:
-    # Common proxy environment configuration
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-  
+  tasks:  
     # Ubuntu-specific pre-tasks
     - name: Configure APT to use proxy
       when: ansible_distribution == "Ubuntu"
@@ -43,6 +31,17 @@
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
+
+      - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
   
     # RHEL-specific tasks
     - name: Register and subscribe RHEL system
