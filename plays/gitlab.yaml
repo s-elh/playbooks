@@ -12,21 +12,6 @@
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
-    - name: Display all variables/facts known for a host
-      debug:
-        var: hostvars[inventory_hostname]
-      
-    - name: Ping internal IP
-      ping:
-        data: "{{ morpheus['server']['internalIp'] }}"
-      register: ping_result
-      ignore_errors: yes
-  
-    - name: Fail if ping is unsuccessful
-      fail:
-        msg: "Unable to ping {{ morpheus['server']['internalIp'] }}. Please check the network configuration."
-      when: ping_result.failed
-
     # Ubuntu-specific tasks
     - name: Configure HTTP proxy for apt (Ubuntu)
       when: ansible_distribution == "Ubuntu"
