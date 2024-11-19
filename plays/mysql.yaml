@@ -92,6 +92,11 @@
         rpm -ivh /tmp/mysql80-community-release.rpm
       ignore_errors: yes
 
+    - name: Import MySQL GPG Key (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
+
     - name: Clean yum cache and enable MySQL module (RHEL)
       when: ansible_os_family == 'RedHat'
       shell: |
@@ -101,28 +106,12 @@
         dnf module disable mysql -y
         yum makecache
 
-    - name: Create MySQL configuration directory (RHEL)
-      when: ansible_os_family == 'RedHat'
-      file:
-        path: /etc/my.cnf.d
-        state: directory
-        mode: '0755'
-
-    - name: Configure MySQL to skip password validation (RHEL)
-      when: ansible_os_family == 'RedHat'
-      copy:
-        content: |
-          [mysqld]
-          validate_password.policy=LOW
-          validate_password.length=0
-          skip-password-validation
-        dest: /etc/my.cnf.d/disable-password-validation.cnf
-        mode: '0644'
-
     - name: Install MySQL packages (RHEL)
       when: ansible_os_family == 'RedHat'
-      shell: |
-        dnf install -y mysql-server
+      dnf:
+        name: mysql-server
+        state: present
+        disable_gpg_check: yes
 
     - name: Initialize MySQL data directory and start service (RHEL)
       when: ansible_os_family == 'RedHat'
