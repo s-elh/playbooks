@@ -32,7 +32,7 @@
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-      - name: Configure HTTP proxy for the environment
+    - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
         line: '{{ item }}'
@@ -42,7 +42,7 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
-  
+
     # RHEL-specific tasks
     - name: Register and subscribe RHEL system
       when: ansible_os_family == "RedHat"
