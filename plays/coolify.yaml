@@ -6,10 +6,9 @@
     proxy_url: "http://10.1.38.2:3128"
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
-    sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
 
   tasks:
-    # Common proxy environment configuration
+    # Common proxy configuration
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -34,12 +33,7 @@
       when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
-
-    - name: Install Docker Compose (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        name: docker-compose
-        state: present
+        cache_valid_time: 3600
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
@@ -56,126 +50,34 @@
       failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
       changed_when: subscription_result.rc == 0
 
-    - name: Install Docker Compose (RHEL)
+    - name: Enable required RHEL repositories
       when: ansible_os_family == "RedHat"
-      dnf:
-        name: docker-compose
-        state: present
+      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
 
-    # Configure Docker
-    - name: Create Docker config directory
-      file:
-        path: /etc/docker
-        state: directory
-        mode: '0755'
-
-    - name: Configure Docker daemon
-      copy:
-        content: |
-          {
-            "default-address-pools": [
-              {
-                "base": "172.17.0.0/16",
-                "size": 24
-              }
-            ],
-            "dns": ["8.8.8.8", "8.8.4.4"],
-            "log-driver": "json-file",
-            "log-opts": {
-              "max-size": "10m",
-              "max-file": "3"
-            },
-            "proxies": {
-              "http-proxy": "{{ proxy_url }}",
-              "https-proxy": "{{ proxy_url }}",
-              "no-proxy": "localhost,127.0.0.1"
-            }
-          }
-        dest: /etc/docker/daemon.json
-        mode: '0644'
-
-    - name: Create Docker systemd override directory
-      file:
-        path: /etc/systemd/system/docker.service.d
-        state: directory
-        mode: '0755'
-
-    - name: Configure Docker service proxy
-      copy:
-        content: |
-          [Service]
-          Environment="HTTP_PROXY={{ proxy_url }}"
-          Environment="HTTPS_PROXY={{ proxy_url }}"
-          Environment="NO_PROXY=localhost,127.0.0.1,172.17.0.0/16"
-        dest: /etc/systemd/system/docker.service.d/http-proxy.conf
-        mode: '0644'
-
-    - name: Reload systemd daemon
-      systemd:
-        daemon_reload: yes
-
-    - name: Restart Docker service
-      systemd:
-        name: docker
-        state: restarted
-
-    # Create required directories
-    - name: Create Coolify directories
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0700'
-      with_items:
-        - /data/coolify/source
-        - /data/coolify/ssh
-        - /data/coolify/applications
-        - /data/coolify/databases
-        - /data/coolify/backups
-        - /data/coolify/services
-        - /data/coolify/proxy
-        - /data/coolify/webhooks-during-maintenance
-        - /data/coolify/sentinel
-        - /data/coolify/ssh/keys
-        - /data/coolify/ssh/mux
-        - /data/coolify/proxy/dynamic
-
-    - name: Set proper ownership
-      file:
-        path: /data/coolify
-        owner: '9999'
-        group: root
-        recurse: yes
-
-    # Download and install Coolify with sudo password
-    - name: Download Coolify install script
-      get_url:
-        url: https://cdn.coollabs.io/coolify/install.sh
-        dest: /tmp/coolify_install.sh
-        mode: '0755'
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-
-    # Execute with explicit sudo command and password
-    - name: Execute Coolify install script with sudo
+    # Common tasks for both distributions
+    - name: Download and execute Coolify install script
       shell: |
-        echo "{{ sudo_password }}" | sudo -S bash /tmp/coolify_install.sh
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-        HTTP_PROXY: "{{ proxy_url }}"
-        HTTPS_PROXY: "{{ proxy_url }}"
-      register: coolify_install
+        export http_proxy="{{ proxy_url }}"
+        export https_proxy="{{ proxy_url }}"
+        curl -x {{ proxy_url }} -fsSL https://cdn.coollabs.io/coolify/install.sh -o /tmp/coolify_install.sh
+        chmod +x /tmp/coolify_install.sh
+        bash /tmp/coolify_install.sh
+      args:
+        executable: /bin/bash
 
-    - name: Display Coolify installation output
-      debug:
-        var: coolify_install.stdout_lines
-
-    - name: Clean up installation files
+    - name: Clean up installation script
       file:
         path: /tmp/coolify_install.sh
         state: absent
 
+    - name: Wait for Coolify to start
+      wait_for:
+        port: 8000
+        timeout: 300
+
     - name: Print installation complete message
       debug:
-        msg: "Coolify has been installed successfully. Access it at http://{{ ansible_host }}:8000"
+        msg: "Coolify has been installed successfully. Access it at http://YOUR-SERVER-IP:8000"
