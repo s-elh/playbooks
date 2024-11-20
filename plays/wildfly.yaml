@@ -32,16 +32,18 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Update apt cache (Ubuntu)
+    - name: Update apt cache and upgrade (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
-        cache_valid_time: 3600
+        upgrade: yes
 
-    - name: Install OpenJDK 17 (Ubuntu)
+    - name: Install OpenJDK 17 and wget (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
-        name: openjdk-17-jdk
+        name: 
+          - openjdk-17-jdk
+          - wget
         state: present
 
     # RHEL-specific tasks
@@ -59,11 +61,21 @@
       failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
       changed_when: subscription_result.rc == 0
 
-    - name: Install OpenJDK 17 (RHEL)
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager repos --enable rhel-8-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
+
+    - name: Install OpenJDK 17 and wget (RHEL)
       when: ansible_os_family == 'RedHat'
       dnf:
-        name: java-17-openjdk-devel
+        name: 
+          - java-11-openjdk-devel
+          - wget
         state: present
+        disable_gpg_check: yes
 
     # Common tasks for both distributions
     - name: Create WildFly group
@@ -81,24 +93,18 @@
         home: /opt/wildfly
         create_home: no
 
-    - name: Download WildFly
-      get_url:
-        url: "https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz"
-        dest: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-
-    - name: Create WildFly directory
-      file:
-        path: /opt/wildfly
-        state: directory
+    - name: Download WildFly using wget
+      shell: |
+        wget -e use_proxy=yes -e http_proxy={{ proxy_url }} -e https_proxy={{ proxy_url }} \
+        https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz \
+        -O /tmp/wildfly-{{ wildfly_version }}.tar.gz
+      args:
+        creates: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
 
     - name: Extract WildFly archive
-      unarchive:
-        src: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
-        dest: /opt
-        remote_src: yes
+      shell: |
+        tar xf /tmp/wildfly-{{ wildfly_version }}.tar.gz -C /opt/
+      args:
         creates: "/opt/wildfly-{{ wildfly_version }}"
 
     - name: Create symbolic link
@@ -110,7 +116,7 @@
 
     - name: Set WildFly ownership
       file:
-        path: /opt/wildfly
+        path: "/opt/wildfly-{{ wildfly_version }}"
         owner: wildfly
         group: wildfly
         recurse: yes
@@ -121,20 +127,14 @@
         state: directory
 
     - name: Copy WildFly configuration files
-      copy:
-        src: "{{ item.src }}"
-        dest: "{{ item.dest }}"
-        remote_src: yes
-      with_items:
-        - { src: "/opt/wildfly/docs/contrib/scripts/systemd/wildfly.conf", dest: "/etc/wildfly/" }
-        - { src: "/opt/wildfly/docs/contrib/scripts/systemd/wildfly.service", dest: "/etc/systemd/system/" }
-        - { src: "/opt/wildfly/docs/contrib/scripts/systemd/launch.sh", dest: "/opt/wildfly/bin/" }
+      shell: |
+        cp /opt/wildfly/docs/contrib/scripts/systemd/wildfly.conf /etc/wildfly/
+        cp /opt/wildfly/docs/contrib/scripts/systemd/wildfly.service /etc/systemd/system/
+        cp /opt/wildfly/docs/contrib/scripts/systemd/launch.sh /opt/wildfly/bin/
 
     - name: Make scripts executable
-      file:
-        path: /opt/wildfly/bin
-        mode: '0755'
-        recurse: yes
+      shell: |
+        chmod +x /opt/wildfly/bin/*.sh
 
     - name: Reload systemd
       systemd:
