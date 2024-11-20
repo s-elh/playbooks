@@ -94,12 +94,15 @@
         create_home: no
 
     # Ubuntu-specific download task
-    - name: Download WildFly using curl (Ubuntu)
+    - name: Download WildFly using wget (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} -L \
-        "https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz" \
-        -o "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+        wget --no-check-certificate \
+        -e use_proxy=yes \
+        -e https_proxy={{ proxy_url }} \
+        --timeout=60 \
+        "https://download.jboss.org/wildfly/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz" \
+        -O "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
       args:
         creates: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
 
