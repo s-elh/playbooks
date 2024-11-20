@@ -92,4 +92,4 @@
  
     - name: Print installation complete message
       debug:
-        msg: "Nginx has been installed successfully. Access it at http://YOUR-SERVER-IP"
+        msg: "Nginx has been installed successfully. Access it at https://{{ morpheus['server']['internalIp'] }}"
