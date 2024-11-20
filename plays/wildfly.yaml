@@ -36,7 +36,6 @@
       when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
-        upgrade: yes
 
     - name: Install OpenJDK 17 and wget (Ubuntu)
       when: ansible_distribution == "Ubuntu"
