@@ -57,29 +57,59 @@
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
-    # Common tasks for both distributions
+    # Common prerequisites for both distributions
+    - name: Install Docker (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: docker.io
+        state: present
+
+    - name: Install Docker (RHEL)
+      when: ansible_os_family == "RedHat"  
+      dnf:
+        name: docker
+        state: present
+
+    - name: Create required directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      with_items:
+        - /coolify
+
     - name: Download Coolify install script
-      command: curl -x {{ proxy_url }} -fsSL https://cdn.coollabs.io/coolify/install.sh -o /tmp/coolify_install.sh
-
-    - name: Set execute permissions on install script
-      command: chmod +x /tmp/coolify_install.sh
-
-    - name: Execute Coolify install script
-      command: bash /tmp/coolify_install.sh
+      get_url:
+        url: https://cdn.coollabs.io/coolify/install.sh
+        dest: /tmp/coolify_install.sh
+        mode: '0755'
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-    - name: Clean up installation script
-      file:
-        path: /tmp/coolify_install.sh
-        state: absent
+    - name: Execute Coolify install script with timeout
+      shell: |
+        export http_proxy="{{ proxy_url }}"
+        export https_proxy="{{ proxy_url }}"
+        timeout 300 bash /tmp/coolify_install.sh
+      args:
+        executable: /bin/bash
+      register: install_result
+      ignore_errors: yes
 
-    - name: Wait for Coolify to start
+    - name: Check if Docker service is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Wait for Coolify to be available
       wait_for:
         port: 8000
         timeout: 300
+      when: install_result is success
 
     - name: Print installation complete message
       debug:
         msg: "Coolify has been installed successfully. Access it at http://YOUR-SERVER-IP:8000"
+      when: install_result is success
