@@ -97,6 +97,19 @@
         - /coolify
         - /coolify/data
 
+    # Download script using command to ensure proxy settings are used
+    - name: Download Coolify install script
+      command: curl -x {{ proxy_url }} -fsSL https://cdn.coollabs.io/coolify/install.sh -o /tmp/coolify_install.sh
+      args:
+        creates: /tmp/coolify_install.sh
+
+    # Set execute permissions
+    - name: Set execute permission on install script
+      file:
+        path: /tmp/coolify_install.sh
+        mode: '0755'
+
+    # Execute script with proper environment variables
     - name: Execute Coolify installation
       shell: |
         export http_proxy="{{ proxy_url }}"
@@ -107,8 +120,8 @@
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
-      async: 1800  # 30 minutes timeout
-      poll: 30     # Check every 30 seconds
+      async: 1800
+      poll: 30
 
     - name: Wait for Coolify to be available
       wait_for:
