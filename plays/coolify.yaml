@@ -58,15 +58,17 @@
       changed_when: repo_result.rc == 0
 
     # Common tasks for both distributions
-    - name: Download and execute Coolify install script
-      shell: |
-        export http_proxy="{{ proxy_url }}"
-        export https_proxy="{{ proxy_url }}"
-        curl -x {{ proxy_url }} -fsSL https://cdn.coollabs.io/coolify/install.sh -o /tmp/coolify_install.sh
-        chmod +x /tmp/coolify_install.sh
-        bash /tmp/coolify_install.sh
-      args:
-        executable: /bin/bash
+    - name: Download Coolify install script
+      command: curl -x {{ proxy_url }} -fsSL https://cdn.coollabs.io/coolify/install.sh -o /tmp/coolify_install.sh
+
+    - name: Set execute permissions on install script
+      command: chmod +x /tmp/coolify_install.sh
+
+    - name: Execute Coolify install script
+      command: bash /tmp/coolify_install.sh
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     - name: Clean up installation script
       file:
