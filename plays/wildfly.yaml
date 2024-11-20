@@ -1,27 +1,17 @@
 ---
-- name: Install and Configure WildFly
+- name: Install WildFly
   hosts: all
   become: true
+  gather_facts: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-    wildfly_version: "33.0.2.Final"
-    wildfly_url: "https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.zip"
-    wildfly_home: "/opt/wildfly"
-    wildfly_user: "wildfly"
-    wildfly_group: "wildfly"
-    java_package: "openjdk-11-jdk"
-    wildfly_bind_address: "0.0.0.0"
-    wildfly_management_bind_address: "127.0.0.1"
-    wildfly_port_offset: 0
+    wildfly_version: "34.0.0.Final"
+    rhel_username: "mmajnioui@powerm.ma"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
-    - name: Configure HTTP proxy for apt
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-
+    # Common proxy configuration
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -33,143 +23,141 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Update apt cache
+    # Ubuntu-specific tasks
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Install Java
+    - name: Install OpenJDK 17 (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       apt:
-        name: "{{ java_package }}"
+        name: openjdk-17-jdk
         state: present
 
-    - name: Install unzip
-      apt:
-        name: unzip
+    # RHEL-specific tasks
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == 'RedHat'
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    - name: Install OpenJDK 17 (RHEL)
+      when: ansible_os_family == 'RedHat'
+      dnf:
+        name: java-17-openjdk-devel
         state: present
 
+    # Common tasks for both distributions
     - name: Create WildFly group
       group:
-        name: "{{ wildfly_group }}"
+        name: wildfly
+        system: yes
         state: present
 
     - name: Create WildFly user
       user:
-        name: "{{ wildfly_user }}"
-        group: "{{ wildfly_group }}"
-        home: "{{ wildfly_home }}"
-        createhome: no
+        name: wildfly
+        group: wildfly
         system: yes
+        shell: /sbin/nologin
+        home: /opt/wildfly
+        create_home: no
 
-    - name: Download WildFly using wget
-      shell: |
-        wget "{{ wildfly_url }}" -O /tmp/wildfly-{{ wildfly_version }}.zip
+    - name: Download WildFly
+      get_url:
+        url: "https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz"
+        dest: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
-      register: download_result
-      retries: 3
-      delay: 5
-      until: download_result.rc == 0
 
-    - name: Create WildFly home directory
+    - name: Create WildFly directory
       file:
-        path: "{{ wildfly_home }}"
+        path: /opt/wildfly
         state: directory
-        owner: "{{ wildfly_user }}"
-        group: "{{ wildfly_group }}"
 
     - name: Extract WildFly archive
       unarchive:
-        src: "/tmp/wildfly-{{ wildfly_version }}.zip"
-        dest: "{{ wildfly_home }}"
+        src: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+        dest: /opt
         remote_src: yes
-        extra_opts: [--strip-components=1]
-        owner: "{{ wildfly_user }}"
-        group: "{{ wildfly_group }}"
+        creates: "/opt/wildfly-{{ wildfly_version }}"
+
+    - name: Create symbolic link
+      file:
+        src: "/opt/wildfly-{{ wildfly_version }}"
+        dest: /opt/wildfly
+        state: link
+        force: yes
+
+    - name: Set WildFly ownership
+      file:
+        path: /opt/wildfly
+        owner: wildfly
+        group: wildfly
+        recurse: yes
 
     - name: Create WildFly configuration directory
       file:
         path: /etc/wildfly
         state: directory
 
-    - name: Copy WildFly standalone configuration
+    - name: Copy WildFly configuration files
       copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
         remote_src: yes
-        src: "{{ wildfly_home }}/standalone/configuration/standalone.xml"
-        dest: /etc/wildfly/standalone.xml
-        owner: "{{ wildfly_user }}"
-        group: "{{ wildfly_group }}"
+      with_items:
+        - { src: "/opt/wildfly/docs/contrib/scripts/systemd/wildfly.conf", dest: "/etc/wildfly/" }
+        - { src: "/opt/wildfly/docs/contrib/scripts/systemd/wildfly.service", dest: "/etc/systemd/system/" }
+        - { src: "/opt/wildfly/docs/contrib/scripts/systemd/launch.sh", dest: "/opt/wildfly/bin/" }
 
-    - name: Configure WildFly standalone - Set public interface
-      lineinfile:
-        path: /etc/wildfly/standalone.xml
-        regexp: 'inet-address value=.*jboss.bind.address'
-        line: '<inet-address value="${jboss.bind.address:{{ wildfly_bind_address }}}"/>'
-        backrefs: yes
+    - name: Make scripts executable
+      file:
+        path: /opt/wildfly/bin
+        mode: '0755'
+        recurse: yes
 
-    - name: Configure WildFly standalone - Set management interface
-      lineinfile:
-        path: /etc/wildfly/standalone.xml
-        regexp: 'inet-address value=.*jboss.bind.address.management'
-        line: '<inet-address value="${jboss.bind.address.management:{{ wildfly_management_bind_address }}}"/>'
-        backrefs: yes
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
 
-    - name: Set port offset in WildFly configuration
-      lineinfile:
-        path: /etc/wildfly/standalone.xml
-        regexp: 'port-offset value=.*'
-        line: '<socket-binding-group name="standard-sockets" port-offset="{{ wildfly_port_offset }}">'
-        backrefs: yes
-
-    - name: Create WildFly systemd service file
-      copy:
-        content: |
-          [Unit]
-          Description=WildFly Application Server
-          After=network.target
-
-          [Service]
-          Type=simple
-          User={{ wildfly_user }}
-          Group={{ wildfly_group }}
-          ExecStart={{ wildfly_home }}/bin/standalone.sh -c standalone.xml -b {{ wildfly_bind_address }}
-          Restart=always
-
-          [Install]
-          WantedBy=multi-user.target
-        dest: /etc/systemd/system/wildfly.service
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Enable and start WildFly service
+    - name: Start and enable WildFly service
       systemd:
         name: wildfly
         state: started
         enabled: yes
-        daemon_reload: yes
 
-    - name: Open HTTP port for WildFly
-      shell: ufw allow 8080/tcp
-      register: http_firewall
-      ignore_errors: true
-
-    - name: Open Management interface port for WildFly
-      shell: ufw allow 9990/tcp
-      register: management_firewall
-      ignore_errors: true
-
-    - name: Enable UFW firewall
-      shell: ufw enable
-      when: http_firewall is succeeded and management_firewall is succeeded
-      ignore_errors: true
-
-    - name: Clean up downloaded archive
+    - name: Clean up downloaded files
       file:
-        path: "/tmp/wildfly-{{ wildfly_version }}.zip"
+        path: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
         state: absent
+      ignore_errors: yes
 
-    - name: Print WildFly installation complete message
+    - name: Wait for WildFly to start
+      wait_for:
+        port: 8080
+        delay: 10
+        timeout: 60
+
+    - name: Display WildFly installation complete message
       debug:
-        msg: "WildFly {{ wildfly_version }} has been installed successfully and is running on port 8080. Management console is available on port 9990."
+        msg: "WildFly has been installed successfully. Access it at http://localhost:8080"
