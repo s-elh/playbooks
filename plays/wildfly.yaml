@@ -140,6 +140,13 @@
       systemd:
         daemon_reload: yes
 
+    # RHEL Firewall Configuration
+    - name: Configure firewall for WildFly (RHEL)
+      when: ansible_os_family == 'RedHat'
+      shell: |
+        firewall-cmd --permanent --add-port={8080,9990}/tcp
+        firewall-cmd --reload
+  
     - name: Start and enable WildFly service
       systemd:
         name: wildfly
