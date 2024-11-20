@@ -111,7 +111,7 @@
       when: ansible_os_family == 'RedHat'
       shell: |
         wget -e use_proxy=yes -e http_proxy={{ proxy_url }} -e https_proxy={{ proxy_url }} \
-        https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz \
+        https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/{{ wildfly_version }}.tar.gz \
         -O /tmp/wildfly-{{ wildfly_version }}.tar.gz
       args:
         creates: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
