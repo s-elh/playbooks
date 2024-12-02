@@ -218,6 +218,26 @@
       args:
         creates: /etc/apt/sources.list.d/msprod.list
 
+    - name: Ensure no package manager locks (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        pkill -9 unattended-upgrades || true
+        systemctl stop unattended-upgrades
+        systemctl disable unattended-upgrades
+        pkill -9 apt.systemd.daily || true
+        rm -f /var/lib/dpkg/lock*
+        rm -f /var/cache/apt/archives/lock
+        rm -f /var/lib/apt/lists/lock
+        killall apt apt-get || true
+        dpkg --configure -a
+      ignore_errors: true
+
+    - name: Wait for package manager to be available
+      when: ansible_distribution == "Ubuntu"
+      shell: while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 5; done;
+      async: 300
+      poll: 5
+
     - name: Install MSSQL tools (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
@@ -226,6 +246,10 @@
         update_cache: yes
       environment:
         ACCEPT_EULA: "Y"
+      register: install_result
+      retries: 5
+      delay: 10
+      until: install_result is not failed
 
     # RHEL tools installation
     - name: Download EPEL RPM (RHEL)
