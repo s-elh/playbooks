@@ -54,11 +54,22 @@
       apt:
         update_cache: yes
 
+    - name: Install required dependencies (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: 
+          - libldap-2.4-2
+          - libldap-common
+          - libsss-nss-idmap0
+        state: present
+        update_cache: yes
+
     - name: Install SQL Server (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
         name: mssql-server
         state: present
+        update_cache: yes
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
