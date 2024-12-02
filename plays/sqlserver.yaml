@@ -54,14 +54,14 @@
       apt:
         update_cache: yes
 
-    - name: Install required dependencies (Ubuntu)
+    - name: Install libldap from specific source (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      apt:
-        name: 
-          - libldap-2.5-0
-          - openssl
-        state: present
-        update_cache: yes
+      shell: |
+        wget -qO /tmp/libldap-2.5-0_amd64.deb http://archive.ubuntu.com/ubuntu/pool/main/o/openldap/libldap-2.5-0_2.5.11+dfsg-1~exp1ubuntu3_amd64.deb
+        dpkg -i /tmp/libldap-2.5-0_amd64.deb
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     - name: Install SQL Server (Ubuntu)
       when: ansible_distribution == "Ubuntu"
@@ -69,6 +69,7 @@
         name: mssql-server
         state: present
         update_cache: yes
+        force: yes
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
@@ -111,7 +112,7 @@
     # Common configuration tasks
     - name: Configure SQL Server
       shell: |
-        /opt/mssql/bin/mssql-conf setup accept-eula -y
+        /opt/mssql/bin/mssql-conf setup
       environment:
         MSSQL_SA_PASSWORD: "{{ sql_password }}"
         MSSQL_PID: "Express"
