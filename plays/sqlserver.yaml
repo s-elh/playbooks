@@ -34,6 +34,20 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
+    - name: Handle package locks (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        systemctl stop unattended-upgrades
+        systemctl disable unattended-upgrades
+        killall unattended-upgrade-shutdown || true
+        sleep 5
+        rm -f /var/lib/dpkg/lock-frontend
+        rm -f /var/lib/dpkg/lock
+        rm -f /var/cache/apt/archives/lock
+        rm -f /var/lib/apt/lists/lock
+        dpkg --configure -a
+      ignore_errors: yes
+
     - name: Import Microsoft GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
@@ -53,10 +67,17 @@
     - name: Update apt cache again (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
+        apt-get clean
         apt-get update -o Acquire::https::Verify-Peer=false
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
+
+    - name: Wait for any running apt processes to finish
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        while ps aux | grep -i 'apt' | grep -v 'grep'; do sleep 5; done
+      changed_when: false
 
     - name: Install SQL Server using shell (Ubuntu)
       when: ansible_distribution == "Ubuntu"
@@ -112,6 +133,7 @@
       when: ansible_distribution == "Ubuntu"
       debug:
         var: sql_logs.stdout_lines
+
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
