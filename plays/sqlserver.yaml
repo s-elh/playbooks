@@ -90,7 +90,7 @@
     - name: Add SQL Server repository
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/mssql-server-2022.list > /etc/apt/sources.list.d/mssql-server.list
+        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list > /etc/apt/sources.list.d/mssql-server.list
 
     - name: Update apt cache
       when: ansible_distribution == "Ubuntu"
@@ -214,7 +214,7 @@
     - name: Add Microsoft tools repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list > /etc/apt/sources.list.d/msprod.list
+        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/msprod.list
       args:
         creates: /etc/apt/sources.list.d/msprod.list
 
