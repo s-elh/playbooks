@@ -97,10 +97,11 @@
       when: ansible_distribution == "Ubuntu"
       shell: |
         curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list | tee /etc/apt/sources.list.d/mssql-server-2022.list
+        curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
-
+    
     - name: Update apt cache again (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
