@@ -26,7 +26,7 @@
         - 'HTTPS_PROXY={{ proxy_url }}'
 
     # Ubuntu-specific tasks
-    - name: Configure HTTP proxy for apt (Ubuntu)
+    - name: Configure HTTP proxy for apt
       when: ansible_distribution == "Ubuntu"
       copy:
         content: |
@@ -52,7 +52,6 @@
       when: ansible_distribution == "Ubuntu"
       shell: |
         cd /tmp
-        # Download all required packages
         wget -O libasn1-8-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libasn1-8-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
         wget -O libhcrypto4-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libhcrypto4-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
         wget -O libheimntlm0-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libheimntlm0-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
@@ -60,7 +59,6 @@
         wget -O libroken18-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libroken18-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
         wget -O libgssapi3-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libgssapi3-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
         
-        # Install packages in correct order
         dpkg -i libroken18-heimdal.deb
         dpkg -i libasn1-8-heimdal.deb
         dpkg -i libhcrypto4-heimdal.deb
@@ -68,7 +66,6 @@
         dpkg -i libkrb5-26-heimdal.deb
         dpkg -i libgssapi3-heimdal.deb
         
-        # Fix any remaining dependencies
         apt-get -f install -y
       environment:
         http_proxy: "{{ proxy_url }}"
@@ -85,45 +82,25 @@
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-    - name: Import Microsoft GPG key (Ubuntu)
+    - name: Import Microsoft GPG key
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
+        curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg
 
-    - name: Add SQL Server repository (Ubuntu)
+    - name: Add SQL Server repository
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list | tee /etc/apt/sources.list.d/mssql-server-2022.list
-        curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-    
-    - name: Update apt cache again (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        apt-get clean
-        apt-get update -o Acquire::https::Verify-Peer=false
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
+        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/mssql-server-2022.list > /etc/apt/sources.list.d/mssql-server.list
 
-    - name: Wait for any running apt processes to finish
+    - name: Update apt cache
       when: ansible_distribution == "Ubuntu"
-      shell: |
-        while ps aux | grep -i 'apt' | grep -v 'grep'; do sleep 5; done
-      changed_when: false
+      apt:
+        update_cache: yes
 
-    - name: Install SQL Server using shell (Ubuntu)
+    - name: Install SQL Server
       when: ansible_distribution == "Ubuntu"
       shell: |
-        DEBIAN_FRONTEND=noninteractive apt-get install -y mssql-server
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
+        ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get install -y mssql-server
 
     - name: Configure system for SQL Server (Ubuntu)
       when: ansible_distribution == "Ubuntu"
