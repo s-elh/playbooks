@@ -48,6 +48,16 @@
         dpkg --configure -a
       ignore_errors: yes
 
+    - name: Download and install libgssapi3-heimdal package (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        cd /tmp
+        wget -O libgssapi3-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libgssapi3-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
+        dpkg -i libgssapi3-heimdal.deb
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
     - name: Download and install libldap package (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
