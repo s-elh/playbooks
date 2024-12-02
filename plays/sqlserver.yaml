@@ -34,27 +34,10 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Download libldap packages (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        cd /tmp
-        curl -O http://debian.mirror.ac.za/debian/pool/main/o/openldap/libldap-2.5-0_2.5.13+dfsg-5_amd64.deb
-        curl -O http://debian.mirror.ac.za/debian/pool/main/o/openldap/libldap-dev_2.5.13+dfsg-5_amd64.deb
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-
-    - name: Install libldap packages (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        cd /tmp
-        dpkg -i libldap-2.5-0_2.5.13+dfsg-5_amd64.deb
-        dpkg -i libldap-dev_2.5.13+dfsg-5_amd64.deb
-      ignore_errors: yes
-
     - name: Import Microsoft GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      shell: curl https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc
+      shell: |
+        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
@@ -67,17 +50,12 @@
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-    - name: Clean apt lists and update (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        rm -rf /var/lib/apt/lists/* 
-        apt update
-
-    - name: Install SQL Server (Ubuntu)
+    - name: Update apt cache and install SQL Server (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
         name: mssql-server
         state: present
+        update_cache: yes
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
