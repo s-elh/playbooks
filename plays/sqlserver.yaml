@@ -218,32 +218,28 @@
       args:
         creates: /etc/apt/sources.list.d/msprod.list
 
-    - name: Ensure no package manager locks (Ubuntu)
+    - name: Install aptitude
       when: ansible_distribution == "Ubuntu"
       shell: |
         pkill -9 unattended-upgrades || true
         systemctl stop unattended-upgrades
         systemctl disable unattended-upgrades
-        pkill -9 apt.systemd.daily || true
+        sleep 5
         rm -f /var/lib/dpkg/lock*
         rm -f /var/cache/apt/archives/lock
         rm -f /var/lib/apt/lists/lock
-        killall apt apt-get || true
-        dpkg --configure -a
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y aptitude
       ignore_errors: true
 
     - name: Install MSSQL tools (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      apt:
-        name: mssql-tools
-        state: present
-        update_cache: yes
-      environment:
-        ACCEPT_EULA: "Y"
-      register: install_result
-      retries: 5
+      shell: |
+        ACCEPT_EULA="Y" DEBIAN_FRONTEND=noninteractive aptitude install -y mssql-tools
+      retries: 3
       delay: 10
-      until: install_result is not failed
+      register: result
+      until: result is not failed
 
     # RHEL tools installation
     - name: Download EPEL RPM (RHEL)
