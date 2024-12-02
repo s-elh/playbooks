@@ -232,12 +232,6 @@
         dpkg --configure -a
       ignore_errors: true
 
-    - name: Wait for package manager to be available
-      when: ansible_distribution == "Ubuntu"
-      shell: while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 5; done;
-      async: 300
-      poll: 5
-
     - name: Install MSSQL tools (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
