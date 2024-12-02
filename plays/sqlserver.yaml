@@ -228,6 +228,27 @@
         ACCEPT_EULA: "Y"
 
     # RHEL tools installation
+    - name: Import Microsoft repository key (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: |
+        rpm --import https://packages.microsoft.com/keys/microsoft.asc
+      ignore_errors: true
+
+    - name: Install EPEL repository (RHEL)
+      when: ansible_os_family == "RedHat"
+      dnf:
+        name: epel-release
+        state: present
+        disable_gpg_check: yes
+
+    - name: Install prerequisites (RHEL)
+      when: ansible_os_family == "RedHat"
+      dnf:
+        name: 
+          - unixODBC-devel
+        state: present
+        disable_gpg_check: yes
+
     - name: Install MSSQL tools repository (RHEL)
       when: ansible_os_family == "RedHat"
       shell: |
@@ -235,9 +256,15 @@
       args:
         creates: /etc/yum.repos.d/msprod.repo
 
+    - name: Clean and refresh dnf cache (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: |
+        dnf clean all
+        dnf makecache
+
     - name: Install MSSQL tools (RHEL)
       when: ansible_os_family == "RedHat"
-      yum:
+      dnf:
         name: mssql-tools
         state: present
         disable_gpg_check: yes
