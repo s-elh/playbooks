@@ -228,18 +228,22 @@
         ACCEPT_EULA: "Y"
 
     # RHEL tools installation
+    - name: Download EPEL RPM (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: |
+        curl -x {{ proxy_url }} --insecure https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm -o /tmp/epel-release.rpm
+
+    - name: Install EPEL RPM (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: |
+        rpm -ivh /tmp/epel-release.rpm
+      ignore_errors: true
+
     - name: Import Microsoft repository key (RHEL)
       when: ansible_os_family == "RedHat"
       shell: |
         rpm --import https://packages.microsoft.com/keys/microsoft.asc
       ignore_errors: true
-
-    - name: Install EPEL repository (RHEL)
-      when: ansible_os_family == "RedHat"
-      dnf:
-        name: epel-release
-        state: present
-        disable_gpg_check: yes
 
     - name: Install prerequisites (RHEL)
       when: ansible_os_family == "RedHat"
