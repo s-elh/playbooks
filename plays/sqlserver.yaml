@@ -34,42 +34,58 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Install prerequisites (Ubuntu)
+    - name: Clean apt lists (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      apt:
-        name: 
-          - curl 
-          - gpg 
-          - apt-transport-https
-        state: present
-        update_cache: yes
+      shell: |
+        rm -rf /var/lib/apt/lists/*
+      ignore_errors: yes
+
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        apt-get clean
+        apt-get update -o Acquire::https::Verify-Peer=false
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Install prerequisites using shell (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        DEBIAN_FRONTEND=noninteractive apt-get install -y curl gpg apt-transport-https
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     - name: Import Microsoft GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
+        curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc
+      args:
+        warn: false
 
     - name: Add SQL Server repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        echo "deb [arch=amd64] https://packages.microsoft.com/ubuntu/22.04/mssql-server-2022/mssql-server-preview focal main" | tee /etc/apt/sources.list.d/mssql-server-2022.list
+        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list | tee /etc/apt/sources.list.d/mssql-server-2022.list
+      args:
+        warn: false
+
+    - name: Update apt cache again (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        apt-get update -o Acquire::https::Verify-Peer=false
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-    - name: Update apt cache (Ubuntu)
+    - name: Install SQL Server using shell (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      apt:
-        update_cache: yes
-
-    - name: Install SQL Server (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        name: mssql-server
-        state: present
+      shell: |
+        DEBIAN_FRONTEND=noninteractive apt-get install -y mssql-server
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
