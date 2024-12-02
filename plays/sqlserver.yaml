@@ -58,9 +58,8 @@
       when: ansible_distribution == "Ubuntu"
       apt:
         name: 
-          - libldap-2.4-2
-          - libldap-common
-          - libsss-nss-idmap0
+          - libldap-2.5-0
+          - openssl
         state: present
         update_cache: yes
 
@@ -112,10 +111,10 @@
     # Common configuration tasks
     - name: Configure SQL Server
       shell: |
-        /opt/mssql/bin/mssql-conf setup accept-eula -n --pid Express --sqlsysadminpasswords "{{ sql_password }}"
+        /opt/mssql/bin/mssql-conf setup accept-eula -y
       environment:
         MSSQL_SA_PASSWORD: "{{ sql_password }}"
-        MSSQL_PID: Express
+        MSSQL_PID: "Express"
         ACCEPT_EULA: "Y"
 
     - name: Start SQL Server service
