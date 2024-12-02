@@ -11,7 +11,6 @@
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
-    sql_server_edition: "Developer"
 
   tasks:
     # Common proxy configuration
@@ -26,47 +25,211 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Configure HTTP proxy for apt
+    # Ubuntu-specific tasks
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Download and add the Microsoft GPG key
+    - name: Handle package locks (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-      args:
-        creates: /usr/share/keyrings/microsoft-prod.gpg
+        systemctl stop unattended-upgrades
+        systemctl disable unattended-upgrades
+        killall unattended-upgrade-shutdown || true
+        sleep 5
+        rm -f /var/lib/dpkg/lock-frontend
+        rm -f /var/lib/dpkg/lock
+        rm -f /var/cache/apt/archives/lock
+        rm -f /var/lib/apt/lists/lock
+        dpkg --configure -a
+      ignore_errors: yes
 
-    - name: Add the Microsoft SQL Server repository
+    - name: Download and install Heimdal dependencies (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list | tee /etc/apt/sources.list.d/mssql-server-2022.list
-      args:
-        creates: /etc/apt/sources.list.d/mssql-server-2022.list
+        cd /tmp
+        # Download all required packages
+        wget -O libasn1-8-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libasn1-8-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
+        wget -O libhcrypto4-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libhcrypto4-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
+        wget -O libheimntlm0-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libheimntlm0-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
+        wget -O libkrb5-26-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libkrb5-26-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
+        wget -O libroken18-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libroken18-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
+        wget -O libgssapi3-heimdal.deb http://archive.ubuntu.com/ubuntu/pool/main/h/heimdal/libgssapi3-heimdal_7.7.0+dfsg-1ubuntu1_amd64.deb
+        
+        # Install packages in correct order
+        dpkg -i libroken18-heimdal.deb
+        dpkg -i libasn1-8-heimdal.deb
+        dpkg -i libhcrypto4-heimdal.deb
+        dpkg -i libheimntlm0-heimdal.deb
+        dpkg -i libkrb5-26-heimdal.deb
+        dpkg -i libgssapi3-heimdal.deb
+        
+        # Fix any remaining dependencies
+        apt-get -f install -y
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+      ignore_errors: yes
 
-    - name: Update apt cache
-      apt:
-        update_cache: yes
+    - name: Download and install libldap package (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        cd /tmp
+        wget -O libldap-2.4-2.deb http://archive.ubuntu.com/ubuntu/pool/main/o/openldap/libldap-2.4-2_2.4.49+dfsg-2ubuntu1.10_amd64.deb
+        dpkg -i libldap-2.4-2.deb
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
-    - name: Install Microsoft SQL Server
-      apt:
+    - name: Import Microsoft GPG key (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Add SQL Server repository (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list | tee /etc/apt/sources.list.d/mssql-server-2022.list
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Update apt cache again (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        apt-get clean
+        apt-get update -o Acquire::https::Verify-Peer=false
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Wait for any running apt processes to finish
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        while ps aux | grep -i 'apt' | grep -v 'grep'; do sleep 5; done
+      changed_when: false
+
+    - name: Install SQL Server using shell (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        DEBIAN_FRONTEND=noninteractive apt-get install -y mssql-server
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Configure system for SQL Server (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        # Stop SQL Server if running
+        systemctl stop mssql-server || true
+        
+        # Create and set permissions for SQL Server directories
+        mkdir -p /var/opt/mssql
+        chown -R mssql:mssql /var/opt/mssql
+        chmod -R 755 /var/opt/mssql
+        
+        # Configure system limits for SQL Server
+        echo "mssql soft nofile 65535" > /etc/security/limits.d/mssql.conf
+        echo "mssql hard nofile 65535" >> /etc/security/limits.d/mssql.conf
+        echo "mssql soft nproc 4096" >> /etc/security/limits.d/mssql.conf
+        echo "mssql hard nproc 4096" >> /etc/security/limits.d/mssql.conf
+        
+        # Reload system limits
+        sysctl -p
+
+    - name: Configure SQL Server
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        ACCEPT_EULA=Y MSSQL_PID=Express MSSQL_SA_PASSWORD="{{ sql_password }}" /opt/mssql/bin/mssql-conf setup
+
+    - name: Start SQL Server service with delay
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        systemctl daemon-reload
+        systemctl enable mssql-server
+        systemctl start mssql-server
+        sleep 10
+
+    - name: Check SQL Server logs
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        journalctl -u mssql-server --no-pager | tail -n 50
+      register: sql_logs
+
+    - name: Display SQL Server logs
+      when: ansible_distribution == "Ubuntu"
+      debug:
+        var: sql_logs.stdout_lines
+    # RHEL-specific tasks
+    - name: Configure HTTP proxy for yum (RHEL)
+      when: ansible_os_family == 'RedHat'
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == 'RedHat'
+      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
+
+    - name: Download SQL Server repository (RHEL)
+      when: ansible_os_family == 'RedHat'
+      get_url:
+        url: https://packages.microsoft.com/config/rhel/8/mssql-server-2019.repo
+        dest: /etc/yum.repos.d/mssql-server.repo
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Install SQL Server (RHEL)
+      when: ansible_os_family == 'RedHat'
+      yum:
         name: mssql-server
         state: present
+        disable_gpg_check: yes
 
-    - name: Configure MSSQL with password and edition
+    # Common configuration tasks
+    - name: Configure SQL Server
       shell: |
-        /opt/mssql/bin/mssql-conf setup --accept-eula \
-        --set-sa-password "{{ sql_password }}" \
-        --edition {{ sql_server_edition }}
+        /opt/mssql/bin/mssql-conf setup
       environment:
         MSSQL_SA_PASSWORD: "{{ sql_password }}"
-      register: mssql_setup
-      changed_when: mssql_setup.rc == 0
-      failed_when: mssql_setup.rc != 0
+        MSSQL_PID: "Express"
+        ACCEPT_EULA: "Y"
 
-    - name: Ensure MSSQL service is running
+    - name: Start SQL Server service
       systemd:
         name: mssql-server
         state: started
         enabled: yes
+
+    - name: Wait for SQL Server to start
+      wait_for:
+        port: 1433
+        timeout: 300
+
+    - name: Print SQL Server version
+      shell: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P "{{ sql_password }}" -Q "SELECT @@VERSION"
+      register: sqlserver_version
+      ignore_errors: yes
+
+    - name: Display SQL Server version
+      debug:
+        var: sqlserver_version.stdout_lines
