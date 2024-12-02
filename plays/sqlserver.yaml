@@ -1,0 +1,154 @@
+---
+- name: Install and Configure SQL Server
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+    sa_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] | default('SQLServer2019!') }}"
+    rhel_username: "mmajnioui@powerm.ma"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
+    accept_eula: "Y"
+    pid: "Express"
+
+  tasks:
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    # Ubuntu-specific tasks
+    - name: Configure proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        update_cache: yes
+
+    - name: Import Microsoft GPG key (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+
+    - name: Add Microsoft SQL Server repository (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/20.04/mssql-server-2019.list | tee /etc/apt/sources.list.d/mssql-server-2019.list
+
+    - name: Update apt cache again (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        update_cache: yes
+
+    - name: Install SQL Server (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: mssql-server
+        state: present
+
+    # RHEL-specific tasks
+    - name: Configure proxy for yum (RHEL)
+      when: ansible_os_family == "RedHat"
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+
+    - name: Register and subscribe RHEL system
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
+      register: subscription_result
+      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
+      changed_when: subscription_result.rc == 0
+
+    - name: Enable required RHEL repositories
+      when: ansible_os_family == "RedHat"
+      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
+      register: repo_result
+      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
+      changed_when: repo_result.rc == 0
+
+    - name: Download Microsoft SQL Server repository RPM (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: |
+        curl -x {{ proxy_url }} -o /tmp/mssql-server.rpm https://packages.microsoft.com/config/rhel/8/mssql-server-2019.repo
+
+    - name: Install Microsoft SQL Server repository (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: |
+        rpm -Uvh /tmp/mssql-server.rpm
+
+    - name: Install SQL Server (RHEL)
+      when: ansible_os_family == "RedHat"
+      dnf:
+        name: mssql-server
+        state: present
+        disable_gpg_check: yes
+
+    # Common configuration tasks
+    - name: Configure SQL Server
+      shell: |
+        /opt/mssql/bin/mssql-conf setup accept-eula --pid {{ pid }} --quiet --noprompt --sqlsysadminaccounts=sa --force
+      environment:
+        MSSQL_PID: "{{ pid }}"
+        MSSQL_SA_PASSWORD: "{{ sa_password }}"
+        ACCEPT_EULA: "{{ accept_eula }}"
+
+    - name: Enable and start SQL Server service
+      systemd:
+        name: mssql-server
+        state: started
+        enabled: yes
+
+    - name: Wait for SQL Server to start
+      wait_for:
+        port: 1433
+        timeout: 300
+
+    - name: Install SQL Server tools (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name:
+          - mssql-tools
+          - unixodbc-dev
+        state: present
+
+    - name: Install SQL Server tools (RHEL)
+      when: ansible_os_family == "RedHat"
+      dnf:
+        name:
+          - mssql-tools
+          - unixodbc-dev
+        state: present
+        disable_gpg_check: yes
+
+    - name: Add SQL Server tools to PATH
+      lineinfile:
+        path: /etc/profile.d/mssql.sh
+        line: 'export PATH="$PATH:/opt/mssql-tools/bin"'
+        create: yes
+        mode: '0755'
+
+    - name: Verify SQL Server installation
+      shell: |
+        source /etc/profile
+        sqlcmd -S localhost -U sa -P "{{ sa_password }}" -Q "SELECT @@version"
+      register: sqlserver_version
+      changed_when: false
+
+    - name: Display SQL Server version
+      debug:
+        var: sqlserver_version.stdout_lines
