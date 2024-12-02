@@ -34,9 +34,27 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
+    - name: Download libldap packages (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        cd /tmp
+        curl -O http://debian.mirror.ac.za/debian/pool/main/o/openldap/libldap-2.5-0_2.5.13+dfsg-5_amd64.deb
+        curl -O http://debian.mirror.ac.za/debian/pool/main/o/openldap/libldap-dev_2.5.13+dfsg-5_amd64.deb
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Install libldap packages (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        cd /tmp
+        dpkg -i libldap-2.5-0_2.5.13+dfsg-5_amd64.deb
+        dpkg -i libldap-dev_2.5.13+dfsg-5_amd64.deb
+      ignore_errors: yes
+
     - name: Import Microsoft GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      shell: wget -qO- https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+      shell: curl https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
@@ -44,30 +62,22 @@
     - name: Add SQL Server repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        wget -qO- https://packages.microsoft.com/config/ubuntu/20.04/mssql-server-2019.list | tee /etc/apt/sources.list.d/mssql-server.list
+        curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list | tee /etc/apt/sources.list.d/mssql-server-2022.list
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-    - name: Update apt cache (Ubuntu)
+    - name: Clean apt lists and update (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      apt:
-        update_cache: yes
-
-    - name: Install libldap2-dev (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      apt:
-        name: libldap2-dev
-        state: present
-        update_cache: yes
-        allow_unauthenticated: yes
+      shell: |
+        rm -rf /var/lib/apt/lists/* 
+        apt update
 
     - name: Install SQL Server (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
         name: mssql-server
         state: present
-        allow_unauthenticated: yes
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
