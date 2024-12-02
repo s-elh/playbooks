@@ -184,15 +184,19 @@
         disable_gpg_check: yes
 
     # Common configuration tasks
-    - name: Configure SQL Server
-      shell: |
-        /opt/mssql/bin/mssql-conf setup
-      environment:
-        MSSQL_SA_PASSWORD: "{{ sql_password }}"
-        MSSQL_PID: "Express"
-        ACCEPT_EULA: "Y"
+    - name: Stop SQL Server before configuration
+      when: ansible_distribution == "Ubuntu"
+      systemd:
+        name: mssql-server
+        state: stopped
 
-    - name: Start SQL Server service
+    - name: Configure SQL Server
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        ACCEPT_EULA=Y MSSQL_SA_PASSWORD="{{ sql_password }}" MSSQL_PID=Express /opt/mssql/bin/mssql-conf setup
+
+    - name: Start SQL Server
+      when: ansible_distribution == "Ubuntu"
       systemd:
         name: mssql-server
         state: started
