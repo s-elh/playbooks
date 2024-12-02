@@ -34,6 +34,25 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
+    - name: Wait for dpkg lock to be released (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        while lsof /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+          sleep 5
+        done
+      changed_when: false
+      timeout: 300
+
+    - name: Kill any existing package manager processes (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        pkill -9 apt-get || true
+        pkill -9 dpkg || true
+        rm -f /var/lib/dpkg/lock-frontend
+        rm -f /var/lib/dpkg/lock
+        dpkg --configure -a
+      ignore_errors: yes
+
     - name: Import Microsoft GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: wget -qO- https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
@@ -57,8 +76,9 @@
     - name: Install libldap from specific source (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        wget -qO /tmp/libldap-2.5-0_amd64.deb http://archive.ubuntu.com/ubuntu/pool/main/o/openldap/libldap-2.5-0_2.5.11+dfsg-1~exp1ubuntu3_amd64.deb
-        dpkg -i /tmp/libldap-2.5-0_amd64.deb
+        cd /tmp
+        wget -q http://archive.ubuntu.com/ubuntu/pool/main/o/openldap/libldap-2.5-0_2.5.11+dfsg-1~exp1ubuntu3_amd64.deb
+        DEBIAN_FRONTEND=noninteractive dpkg -i libldap-2.5-0_amd64.deb || apt-get install -f -y
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
