@@ -38,17 +38,26 @@
       apt:
         update_cache: yes
 
-    - name: Import Microsoft GPG key (Ubuntu)
+    - name: Install prerequisite packages (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: 
+          - wget
+          - gpg
+          - apt-transport-https
+        state: present
+
+    - name: Download Microsoft GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+        wget -qO- https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
 
-    - name: Add Microsoft SQL Server repository (Ubuntu)
+    - name: Add SQL Server Repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/20.04/mssql-server-2019.list | tee /etc/apt/sources.list.d/mssql-server-2019.list
+        wget -qO /etc/apt/sources.list.d/mssql-server.list https://packages.microsoft.com/config/ubuntu/20.04/mssql-server-2019.list
 
-    - name: Update apt cache again (Ubuntu)
+    - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
@@ -81,15 +90,14 @@
       failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
       changed_when: repo_result.rc == 0
 
-    - name: Download Microsoft SQL Server repository RPM (RHEL)
+    - name: Download Microsoft SQL Server repository (RHEL)
       when: ansible_os_family == "RedHat"
-      shell: |
-        curl -x {{ proxy_url }} -o /tmp/mssql-server.rpm https://packages.microsoft.com/config/rhel/8/mssql-server-2019.repo
-
-    - name: Install Microsoft SQL Server repository (RHEL)
-      when: ansible_os_family == "RedHat"
-      shell: |
-        rpm -Uvh /tmp/mssql-server.rpm
+      get_url:
+        url: https://packages.microsoft.com/config/rhel/8/mssql-server-2022.repo
+        dest: /etc/yum.repos.d/mssql-server.repo
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     - name: Install SQL Server (RHEL)
       when: ansible_os_family == "RedHat"
@@ -118,7 +126,7 @@
         port: 1433
         timeout: 300
 
-    - name: Install SQL Server tools (Ubuntu)
+    - name: Install SQL Server tools packages (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
         name:
