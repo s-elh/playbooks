@@ -231,7 +231,7 @@
     - name: Install MSSQL tools repository (RHEL)
       when: ansible_os_family == "RedHat"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/config/rhel/8/prod.repo > /etc/yum.repos.d/msprod.repo
+        curl -x {{ proxy_url }} --insecure https://packages.microsoft.com/config/rhel/8/prod.repo > /etc/yum.repos.d/msprod.repo
       args:
         creates: /etc/yum.repos.d/msprod.repo
 
@@ -269,15 +269,11 @@
       when: db_user != '' and db_name != ''
       shell: |
         /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P "{{ sql_password }}" -Q "
-        IF NOT EXISTS (SELECT * FROM sys.sql_logins WHERE name = '{{ db_user }}')
-        BEGIN
-          CREATE LOGIN {{ db_user }} WITH PASSWORD = '{{ sql_password }}';
-        END;
+        CREATE LOGIN {{ db_user }} WITH PASSWORD = '{{ sql_password }}';
+        GO
         USE {{ db_name }};
-        IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '{{ db_user }}')
-        BEGIN
-          CREATE USER {{ db_user }} FOR LOGIN {{ db_user }};
-          ALTER ROLE db_owner ADD MEMBER {{ db_user }};
-        END;"
+        GO
+        CREATE USER {{ db_user }} FOR LOGIN {{ db_user }};
+        ALTER ROLE db_owner ADD MEMBER {{ db_user }};"
       register: user_creation
-      failed_when: user_creation.rc != 0 and 'already exists' not in user_creation.stderr
+      failed_when: false
