@@ -122,10 +122,10 @@
         # Reload system limits
         sysctl -p
 
-    - name: Configure SQL Server
+    - name: Configure SQL Server (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        ACCEPT_EULA=Y MSSQL_PID=Express MSSQL_SA_PASSWORD="{{ sql_password }}" /opt/mssql/bin/mssql-conf setup
+        ACCEPT_EULA=Y MSSQL_SA_PASSWORD="{{ sql_password }}" MSSQL_PID=Express /opt/mssql/bin/mssql-conf setup
 
     - name: Start SQL Server service with delay
       when: ansible_distribution == "Ubuntu"
@@ -135,16 +135,6 @@
         systemctl start mssql-server
         sleep 10
 
-    - name: Check SQL Server logs
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        journalctl -u mssql-server --no-pager | tail -n 50
-      register: sql_logs
-
-    - name: Display SQL Server logs
-      when: ansible_distribution == "Ubuntu"
-      debug:
-        var: sql_logs.stdout_lines
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
       when: ansible_os_family == 'RedHat'
@@ -182,44 +172,46 @@
         name: mssql-server
         state: present
         disable_gpg_check: yes
+    
+    - name: Configure system for SQL Server (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: |
+        # Stop SQL Server if running
+        systemctl stop mssql-server || true
+        
+        # Create and set permissions for SQL Server directories
+        mkdir -p /var/opt/mssql
+        chown -R mssql:mssql /var/opt/mssql
+        chmod -R 755 /var/opt/mssql
+        
+        # Configure system limits for SQL Server
+        echo "mssql soft nofile 65535" > /etc/security/limits.d/mssql.conf
+        echo "mssql hard nofile 65535" >> /etc/security/limits.d/mssql.conf
+        echo "mssql soft nproc 4096" >> /etc/security/limits.d/mssql.conf
+        echo "mssql hard nproc 4096" >> /etc/security/limits.d/mssql.conf
+        
+        sysctl -p
 
-    # Common configuration tasks
-    - name: Stop SQL Server before configuration
-      when: ansible_distribution == "Ubuntu"
+    - name: Stop SQL Server before configuration (RHEL)
+      when: ansible_os_family == "RedHat"
       systemd:
         name: mssql-server
         state: stopped
 
-    - name: Configure SQL Server
-      when: ansible_distribution == "Ubuntu"
+    - name: Configure SQL Server (RHEL)
+      when: ansible_os_family == "RedHat"
       shell: |
         ACCEPT_EULA=Y MSSQL_SA_PASSWORD="{{ sql_password }}" MSSQL_PID=Express /opt/mssql/bin/mssql-conf setup
 
-    - name: Start SQL Server
-      when: ansible_distribution == "Ubuntu"
+    - name: Start SQL Server (RHEL)
+      when: ansible_os_family == "RedHat"
       systemd:
         name: mssql-server
         state: started
         enabled: yes
-
+      
+    # Common final check
     - name: Wait for SQL Server to start
       wait_for:
         port: 1433
         timeout: 300
-        
-    - name: Install SQL Server Tools (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | tee /etc/apt/sources.list.d/msprod.list
-        apt-get update
-        ACCEPT_EULA=Y apt-get install -y mssql-tools unixodbc-dev
-        echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bashrc
-        
-    - name: Print SQL Server version
-      shell: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P "{{ sql_password }}" -Q "SELECT @@VERSION"
-      register: sqlserver_version
-      ignore_errors: yes
-
-    - name: Display SQL Server version
-      debug:
-        var: sqlserver_version.stdout_lines
