@@ -61,15 +61,17 @@
       when: ansible_distribution == "Ubuntu"
       shell: |
         curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc
-      args:
-        warn: false
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     - name: Add SQL Server repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
         curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list | tee /etc/apt/sources.list.d/mssql-server-2022.list
-      args:
-        warn: false
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     - name: Update apt cache again (Ubuntu)
       when: ansible_distribution == "Ubuntu"
