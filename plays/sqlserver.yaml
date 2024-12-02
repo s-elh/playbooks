@@ -34,29 +34,6 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Clean apt lists (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        rm -rf /var/lib/apt/lists/*
-      ignore_errors: yes
-
-    - name: Update apt cache (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        apt-get clean
-        apt-get update -o Acquire::https::Verify-Peer=false
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-
-    - name: Install prerequisites using shell (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: |
-        DEBIAN_FRONTEND=noninteractive apt-get install -y curl gpg apt-transport-https
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-
     - name: Import Microsoft GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
@@ -88,6 +65,53 @@
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
+
+    - name: Configure system for SQL Server (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        # Stop SQL Server if running
+        systemctl stop mssql-server || true
+        
+        # Create and set permissions for SQL Server directories
+        mkdir -p /var/opt/mssql
+        chown -R mssql:mssql /var/opt/mssql
+        chmod -R 755 /var/opt/mssql
+        
+        # Configure system limits for SQL Server
+        echo "mssql soft nofile 65535" > /etc/security/limits.d/mssql.conf
+        echo "mssql hard nofile 65535" >> /etc/security/limits.d/mssql.conf
+        echo "mssql soft nproc 4096" >> /etc/security/limits.d/mssql.conf
+        echo "mssql hard nproc 4096" >> /etc/security/limits.d/mssql.conf
+        
+        # Reload system limits
+        sysctl -p
+        
+        # Fix any pending package configurations
+        dpkg --configure -a
+
+    - name: Configure SQL Server
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        ACCEPT_EULA=Y MSSQL_PID=Express MSSQL_SA_PASSWORD="{{ sql_password }}" /opt/mssql/bin/mssql-conf setup
+
+    - name: Start SQL Server service with delay
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        systemctl daemon-reload
+        systemctl enable mssql-server
+        systemctl start mssql-server
+        sleep 10
+
+    - name: Check SQL Server logs
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        journalctl -u mssql-server --no-pager | tail -n 50
+      register: sql_logs
+
+    - name: Display SQL Server logs
+      when: ansible_distribution == "Ubuntu"
+      debug:
+        var: sql_logs.stdout_lines
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
