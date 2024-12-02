@@ -209,9 +209,75 @@
         name: mssql-server
         state: started
         enabled: yes
-      
-    # Common final check
+
+    # Ubuntu tools installation
+    - name: Add Microsoft tools repository (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list > /etc/apt/sources.list.d/msprod.list
+      args:
+        creates: /etc/apt/sources.list.d/msprod.list
+
+    - name: Install MSSQL tools (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: mssql-tools
+        state: present
+        update_cache: yes
+      environment:
+        ACCEPT_EULA: "Y"
+
+    # RHEL tools installation
+    - name: Install MSSQL tools repository (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: |
+        curl -x {{ proxy_url }} https://packages.microsoft.com/config/rhel/8/prod.repo > /etc/yum.repos.d/msprod.repo
+      args:
+        creates: /etc/yum.repos.d/msprod.repo
+
+    - name: Install MSSQL tools (RHEL)
+      when: ansible_os_family == "RedHat"
+      yum:
+        name: mssql-tools
+        state: present
+        disable_gpg_check: yes
+      environment:
+        ACCEPT_EULA: "Y"
+
+    # Add to PATH for both distributions
+    - name: Add SQL tools to PATH
+      lineinfile:
+        path: /etc/profile.d/mssql-tools.sh
+        line: 'export PATH="$PATH:/opt/mssql-tools/bin"'
+        create: yes
+        mode: '0644'
+
+    # Final common tasks
     - name: Wait for SQL Server to start
       wait_for:
         port: 1433
         timeout: 300
+
+    - name: Create database if db_name is provided
+      when: db_name != ''
+      shell: |
+        /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P "{{ sql_password }}" -Q "CREATE DATABASE {{ db_name }}"
+      register: db_creation
+      failed_when: db_creation.rc != 0 and 'already exists' not in db_creation.stderr
+
+    - name: Create login and user if db_user is provided
+      when: db_user != '' and db_name != ''
+      shell: |
+        /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P "{{ sql_password }}" -Q "
+        IF NOT EXISTS (SELECT * FROM sys.sql_logins WHERE name = '{{ db_user }}')
+        BEGIN
+          CREATE LOGIN {{ db_user }} WITH PASSWORD = '{{ sql_password }}';
+        END;
+        USE {{ db_name }};
+        IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '{{ db_user }}')
+        BEGIN
+          CREATE USER {{ db_user }} FOR LOGIN {{ db_user }};
+          ALTER ROLE db_owner ADD MEMBER {{ db_user }};
+        END;"
+      register: user_creation
+      failed_when: user_creation.rc != 0 and 'already exists' not in user_creation.stderr
