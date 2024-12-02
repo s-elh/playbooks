@@ -34,10 +34,20 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
+    - name: Install prerequisites (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        name: 
+          - curl 
+          - gpg 
+          - apt-transport-https
+        state: present
+        update_cache: yes
+
     - name: Import Microsoft GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+        curl https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
@@ -45,17 +55,21 @@
     - name: Add SQL Server repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list | tee /etc/apt/sources.list.d/mssql-server-2022.list
+        echo "deb [arch=amd64] https://packages.microsoft.com/ubuntu/22.04/mssql-server-2022/mssql-server-preview focal main" | tee /etc/apt/sources.list.d/mssql-server-2022.list
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
-    - name: Update apt cache and install SQL Server (Ubuntu)
+    - name: Update apt cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
+        update_cache: yes
+
+    - name: Install SQL Server (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
         name: mssql-server
         state: present
-        update_cache: yes
 
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
