@@ -48,6 +48,16 @@
         dpkg --configure -a
       ignore_errors: yes
 
+    - name: Download and install libldap package (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: |
+        cd /tmp
+        wget -O libldap-2.4-2.deb http://ports.ubuntu.com/pool/main/o/openldap/libldap-2.4-2_2.4.49+dfsg-2ubuntu1.10_arm64.deb
+        dpkg -i libldap-2.4-2.deb
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
     - name: Import Microsoft GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
@@ -106,9 +116,6 @@
         
         # Reload system limits
         sysctl -p
-        
-        # Fix any pending package configurations
-        dpkg --configure -a
 
     - name: Configure SQL Server
       when: ansible_distribution == "Ubuntu"
@@ -133,8 +140,6 @@
       when: ansible_distribution == "Ubuntu"
       debug:
         var: sql_logs.stdout_lines
-
-
     # RHEL-specific tasks
     - name: Configure HTTP proxy for yum (RHEL)
       when: ansible_os_family == 'RedHat'
