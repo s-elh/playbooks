@@ -54,10 +54,10 @@
       apt:
         update_cache: yes
 
-    - name: Install libldap-common (Ubuntu)
+    - name: Install libldap2-dev (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
-        name: libldap-common
+        name: libldap2-dev
         state: present
         update_cache: yes
         allow_unauthenticated: yes
