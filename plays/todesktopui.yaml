@@ -59,9 +59,9 @@
         force_apt_get: yes
         cache_valid_time: 3600
 
-    - name: Install XFCE Desktop
+    - name: Install GNOME Desktop
       apt:
-        name: xfce4
+        name: gnome-session
         state: present
         force_apt_get: yes
 
