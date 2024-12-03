@@ -30,17 +30,9 @@
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Install Ubuntu Desktop and essential packages
+    - name: Install Ubuntu Desktop
       apt:
-        name:
-          - ubuntu-desktop
-          - ubuntu-gnome-desktop
-          - lightdm
-          - gnome-terminal
-          - firefox
-          - nautilus
-          - gnome-control-center
-          - gnome-tweaks
+        name: ubuntu-desktop
         state: present
 
     - name: Reboot the system
