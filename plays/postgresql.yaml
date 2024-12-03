@@ -3,6 +3,7 @@
   hosts: all
   become: true
   vars:
+    proxy_url: "http://10.1.38.2:3128"
     postgres_password: "{{ hostvars[inventory_hostname].get('morpheus', {}).get('customOptions', {}).get('dbCustomPassword', 'postgres123') }}"
     db_user: "{{ hostvars[inventory_hostname].get('morpheus', {}).get('customOptions', {}).get('dbCustomUser', 'postgres') }}"
     db_name: "{{ hostvars[inventory_hostname].get('morpheus', {}).get('customOptions', {}).get('dbCustomName', 'postgres') }}"
@@ -26,6 +27,31 @@
       set_fact:
         rhel_major_version: "{{ ansible_distribution_major_version }}"
 
+    - name: Configure HTTP proxy for yum (RHEL)
+      lineinfile:
+        path: /etc/yum.conf
+        line: 'proxy={{ proxy_url }}'
+        create: yes
+      when: ansible_os_family == 'RedHat'
+
+    - name: Configure HTTP proxy for apt (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
 
     # RHEL-specific tasks
     - name: Register and subscribe RHEL system
