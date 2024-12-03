@@ -4,34 +4,13 @@
   become: true
   gather_facts: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"
     wildfly_version: "34.0.0.Final"
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
-    # Common proxy configuration
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
     # Ubuntu-specific tasks
-    - name: Configure HTTP proxy for apt (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-
     - name: Update apt cache and upgrade (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
@@ -46,13 +25,6 @@
         state: present
 
     # RHEL-specific tasks
-    - name: Configure HTTP proxy for yum (RHEL)
-      when: ansible_os_family == 'RedHat'
-      lineinfile:
-        path: /etc/yum.conf
-        line: 'proxy={{ proxy_url }}'
-        create: yes
-
     - name: Register and subscribe RHEL system
       when: ansible_os_family == 'RedHat'
       command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
@@ -97,8 +69,6 @@
       when: ansible_distribution == "Ubuntu"
       shell: |
         wget --no-check-certificate \
-        -e use_proxy=yes \
-        -e https_proxy={{ proxy_url }} \
         --timeout=60 \
         "https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz" \
         -O "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
@@ -109,7 +79,7 @@
     - name: Download WildFly using wget
       when: ansible_os_family == 'RedHat'
       shell: |
-        wget -e use_proxy=yes -e http_proxy={{ proxy_url }} -e https_proxy={{ proxy_url }} \
+        wget \
         https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz \
         -O /tmp/wildfly-{{ wildfly_version }}.tar.gz
       args:
@@ -181,4 +151,4 @@
 
     - name: Display WildFly installation complete message
       debug:
-        msg: "WildFly has been installed successfully. Access it at http://localhost:8080"
+        msg: "WildFly has been installed successfully. Access it at http://{{ morpheus['server']['internalIp'] }}:8080"
