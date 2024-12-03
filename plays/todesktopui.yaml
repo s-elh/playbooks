@@ -1,5 +1,5 @@
 ---
-- name: Install Light Desktop Environment
+- name: Install Ubuntu Desktop Environment
   hosts: all
   become: true
   vars:
@@ -59,9 +59,9 @@
         force_apt_get: yes
         cache_valid_time: 3600
 
-    - name: Install GNOME Desktop
+    - name: Install Ubuntu Desktop
       apt:
-        name: gnome-session
+        name: ubuntu-desktop
         state: present
         force_apt_get: yes
 
