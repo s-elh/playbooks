@@ -41,7 +41,6 @@
           - nautilus
           - gnome-control-center
           - gnome-tweaks
-          - xrdp
         state: present
 
     - name: Enable and start display manager
@@ -49,26 +48,6 @@
         name: lightdm
         state: started
         enabled: yes
-
-    - name: Configure XRDP
-      copy:
-        content: |
-          [Unit]
-          Description=xrdp daemon
-          After=network.target
-          [Service]
-          Type=forking
-          ExecStart=/usr/sbin/xrdp
-          [Install]
-          WantedBy=multi-user.target
-        dest: /etc/systemd/system/xrdp.service
-
-    - name: Enable and start XRDP
-      systemd:
-        name: xrdp
-        state: started
-        enabled: yes
-        daemon_reload: yes
 
     - name: Reboot the system
       reboot:
