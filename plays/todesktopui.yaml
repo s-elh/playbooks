@@ -25,13 +25,14 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Remove dpkg lock if exists
+    - name: Remove lock files
       file:
         path: "{{ item }}"
         state: absent
       with_items:
         - /var/lib/dpkg/lock-frontend
         - /var/lib/dpkg/lock
+        - /var/cache/debconf/config.dat.lock
       ignore_errors: yes
 
     - name: Reconfigure dpkg
