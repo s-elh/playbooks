@@ -25,8 +25,10 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Kill debconf-communicate processes
-      shell: pkill -9 debconf-communicate || true
+    - name: Kill all apt and dpkg processes
+      shell: |
+        pkill -f apt
+        pkill -f dpkg
       ignore_errors: yes
 
     - name: Remove all lock files and temporary files
@@ -37,29 +39,31 @@
         - /var/lib/dpkg/lock-frontend
         - /var/lib/dpkg/lock
         - /var/cache/debconf/config.dat.lock
-        - /var/cache/debconf/config.dat
-        - /var/cache/debconf/config.dat-old
+        - /var/cache/debconf/passwords.dat.lock
+        - /var/cache/debconf/templates.dat.lock
         - /var/lib/apt/lists/lock
         - /var/lib/apt/lists/partial
       ignore_errors: yes
 
-    - name: Create new debconf database
+    - name: Fix dpkg
       shell: |
-        touch /var/cache/debconf/config.dat
+        rm -f /var/lib/dpkg/updates/*
+        rm -f /var/lib/dpkg/status-old
+        dpkg --clear-avail
+        dpkg --configure --pending
       ignore_errors: yes
-      
-    - name: Reconfigure dpkg
-      shell: dpkg --configure -a
-      
+
     - name: Update apt cache
       apt:
         update_cache: yes
+        force_apt_get: yes
         cache_valid_time: 3600
 
     - name: Install XFCE Desktop
       apt:
         name: xfce4
         state: present
+        force_apt_get: yes
 
     - name: Reboot the system
       reboot:
