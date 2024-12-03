@@ -25,6 +25,18 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
+    - name: Remove apt locks
+      shell: |
+        rm -f /var/lib/apt/lists/lock
+        rm -f /var/cache/apt/archives/lock
+        rm -f /var/lib/dpkg/lock*
+        dpkg --configure -a
+      ignore_errors: yes
+
+    - name: Kill apt processes
+      shell: killall apt apt-get
+      ignore_errors: yes
+
     - name: Update apt cache
       apt:
         update_cache: yes
