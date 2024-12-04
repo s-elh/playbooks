@@ -189,7 +189,7 @@
 
     - name: Allow external connections in pg_hba.conf (Ubuntu)
       lineinfile:
-        path: "{{ pg_hba_path.stdout }}"
+        path: /etc/postgresql/14/main/pg_hba.conf
         line: "host    all             all             0.0.0.0/0               md5"
         backup: yes
       when: ansible_distribution == "Ubuntu"
@@ -208,20 +208,6 @@
         line: "listen_addresses = '*'"
         backup: yes
       when: ansible_os_family == "RedHat"
-  
-    - name: Find PostgreSQL version directory (Ubuntu)
-      shell: ls -d /etc/postgresql/*/main/pg_hba.conf
-      register: pg_hba_path
-      when: ansible_distribution == "Ubuntu"
-      ignore_errors: yes
-
-    - name: Configure pg_hba.conf for md5 authentication (Ubuntu)
-      lineinfile:
-        path: "{{ pg_hba_path.stdout }}"
-        regexp: '^host\s+all\s+all\s+127.0.0.1/32\s+peer'
-        line: 'host    all             all             127.0.0.1/32            md5'
-        backup: yes
-      when: ansible_distribution == "Ubuntu"
 
     - name: Configure PostgreSQL listen_addresses (Ubuntu)
       lineinfile:
@@ -230,6 +216,12 @@
         line: "listen_addresses = '*'"
         backup: yes
       when: ansible_distribution == "Ubuntu"
+      
+    - name: Find PostgreSQL version directory (Ubuntu)
+      shell: ls -d /etc/postgresql/*/main/pg_hba.conf
+      register: pg_hba_path
+      when: ansible_distribution == "Ubuntu"
+      ignore_errors: yes
         
     - name: Restart PostgreSQL service (RHEL)
       systemd:
