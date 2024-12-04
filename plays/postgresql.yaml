@@ -195,6 +195,14 @@
         backup: yes
       when: ansible_os_family == 'RedHat'
 
+    - name: Configure PostgreSQL listen_addresses (RHEL)
+      lineinfile:
+        path: /var/lib/pgsql/data/postgresql.conf
+        regexp: '^#?listen_addresses\s*='
+        line: "listen_addresses = '*'"
+        backup: yes
+      when: ansible_os_family == "RedHat"
+  
     - name: Find PostgreSQL version directory (Ubuntu)
       shell: ls -d /etc/postgresql/*/main/pg_hba.conf
       register: pg_hba_path
@@ -216,7 +224,7 @@
         line: "listen_addresses = '*'"
         backup: yes
       when: ansible_distribution == "Ubuntu"
-  
+        
     - name: Restart PostgreSQL service (RHEL)
       systemd:
         name: postgresql
