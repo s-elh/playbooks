@@ -187,14 +187,20 @@
       register: grant_privileges_ubuntu
       when: create_custom_user | bool and create_custom_db | bool and ansible_distribution == "Ubuntu"
 
-    - name: Configure pg_hba.conf for md5 authentication (RHEL)
+    - name: Allow external connections in pg_hba.conf (Ubuntu)
+      lineinfile:
+        path: "{{ pg_hba_path.stdout }}"
+        line: "host    all             all             0.0.0.0/0               md5"
+        backup: yes
+      when: ansible_distribution == "Ubuntu"
+    
+    - name: Allow external connections in pg_hba.conf (RHEL)
       lineinfile:
         path: /var/lib/pgsql/data/pg_hba.conf
-        regexp: '^host\s+all\s+all\s+127.0.0.1/32\s+ident'
-        line: 'host    all             all             127.0.0.1/32            md5'
+        line: "host    all             all             0.0.0.0/0               md5"
         backup: yes
-      when: ansible_os_family == 'RedHat'
-
+      when: ansible_os_family == "RedHat"
+  
     - name: Configure PostgreSQL listen_addresses (RHEL)
       lineinfile:
         path: /var/lib/pgsql/data/postgresql.conf
