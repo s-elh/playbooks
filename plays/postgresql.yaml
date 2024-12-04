@@ -209,6 +209,14 @@
         backup: yes
       when: ansible_distribution == "Ubuntu"
 
+    - name: Configure PostgreSQL listen_addresses (Ubuntu)
+      lineinfile:
+        path: /etc/postgresql/14/main/postgresql.conf
+        regexp: '^#?listen_addresses\s*='
+        line: "listen_addresses = '*'"
+        backup: yes
+      when: ansible_distribution == "Ubuntu"
+  
     - name: Restart PostgreSQL service (RHEL)
       systemd:
         name: postgresql
