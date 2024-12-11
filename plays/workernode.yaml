@@ -1,12 +1,12 @@
 ---
 - name: Configure Kubernetes Worker Node on Ubuntu using kURL
-  hosts: workers
+  hosts: all
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
-
+  
   tasks:
-    - name: Configure HTTP proxy for apt
+    - name: Configure HTTP proxy for apt (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       copy:
         content: |
@@ -25,64 +25,111 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Ensure valid nameserver is configured
-      lineinfile:
-        path: /etc/resolv.conf
-        line: 'nameserver 8.8.8.8'
-        create: yes
-
-    - name: Update APT package index
-      ansible.builtin.apt:
+- name: Install and configure Kubernetes on Worker Nodes
+  hosts: workers
+  become: true
+  tasks:
+    - name: Ensure the system is updated
+      apt:
         update_cache: yes
-
-    - name: Install required dependencies
-      ansible.builtin.apt:
-        name: 
-          - curl 
-          - tar 
-          - socat 
-          - jq 
-          - iptables 
+      when: ansible_distribution == "Ubuntu"
+    
+    - name: Install necessary dependencies (Ubuntu)
+      apt:
+        name:
+          - curl
+          - tar
+          - socat
+          - jq
+          - iptables
         state: present
+      when: ansible_distribution == "Ubuntu"
+    
+    - name: Install necessary dependencies (CentOS/RHEL)
+      yum:
+        name:
+          - curl
+          - tar
+          - socat
+          - jq
+          - iptables
+        state: present
+      when: ansible_distribution in ['CentOS', 'RedHat']
+    
+    - name: Install Kubernetes packages (Ubuntu)
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+      when: ansible_distribution == "Ubuntu"
 
-    - name: Disable swap
-      ansible.builtin.command: swapoff -a
-
+    - name: Install Kubernetes packages (CentOS/RHEL)
+      yum:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+      when: ansible_distribution in ['CentOS', 'RedHat']
+    
+    - name: Ensure the system does not have swap enabled
+      command: swapoff -a
+      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
+    
     - name: Ensure swap is disabled permanently
-      ansible.builtin.lineinfile:
+      lineinfile:
         path: /etc/fstab
         regexp: '.*swap.*'
         state: absent
-
-    - name: Load required kernel modules
-      ansible.builtin.shell: |
+      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
+    
+    - name: Load required kernel modules (br_netfilter and overlay)
+      shell: |
         modprobe br_netfilter
         modprobe overlay
+      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
 
     - name: Ensure br_netfilter and overlay modules are loaded
-      ansible.builtin.copy:
+      copy:
         dest: /etc/modules-load.d/k8s.conf
         content: |
           br_netfilter
           overlay
+      when: ansible_distribution == "Ubuntu"
 
     - name: Set sysctl params for Kubernetes
-      ansible.builtin.copy:
+      copy:
         dest: /etc/sysctl.d/k8s.conf
         content: |
           net.bridge.bridge-nf-call-ip6tables = 1
           net.bridge.bridge-nf-call-iptables = 1
           net.ipv4.ip_forward = 1
+      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
 
     - name: Apply sysctl parameters
-      ansible.builtin.command: sysctl --system
+      command: sysctl --system
+      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
+
+    - name: Ensure kubelet is enabled and started
+      systemd:
+        name: kubelet
+        enabled: yes
+        state: started
+    
+    - name: Check kubelet status
+      command: systemctl status kubelet
+      register: kubelet_status
+      failed_when: kubelet_status.rc != 0
+      changed_when: False
 
     - name: Download kURL installer for worker node
-      ansible.builtin.shell: |
+      shell: |
         curl -fsSL https://kurl.sh/latest | sudo bash
 
     - name: Join Kubernetes cluster using token from master
-      ansible.builtin.shell: |
+      shell: |
         if [ -f /root/join-command.sh ]; then
           bash /root/join-command.sh
         else
