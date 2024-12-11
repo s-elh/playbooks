@@ -130,3 +130,4 @@
       debug:
         var: kubectl_get_nodes.stdout
       when: ansible_hostname != "master-node"
+      
