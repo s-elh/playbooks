@@ -3,93 +3,67 @@
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"
-  
-  tasks:
-    - name: Configure HTTP proxy for apt (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+    proxy_url: "http://10.1.38.2:3128"  # Set your proxy URL here, if needed
 
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
-- name: Install and configure Kubernetes on Worker Nodes
-  hosts: workers
-  become: true
   tasks:
-    - name: Ensure the system is updated
+    - name: Ensure apt is up-to-date
       apt:
         update_cache: yes
-      when: ansible_distribution == "Ubuntu"
-    
-    - name: Install necessary dependencies (Ubuntu)
-      apt:
-        name:
-          - curl
-          - tar
-          - socat
-          - jq
-          - iptables
-        state: present
-      when: ansible_distribution == "Ubuntu"
-    
-    - name: Install necessary dependencies (CentOS/RHEL)
-      yum:
-        name:
-          - curl
-          - tar
-          - socat
-          - jq
-          - iptables
-        state: present
-      when: ansible_distribution in ['CentOS', 'RedHat']
-    
-    - name: Install Kubernetes packages (Ubuntu)
-      apt:
-        name:
-          - kubelet
-          - kubeadm
-          - kubectl
-        state: present
-      when: ansible_distribution == "Ubuntu"
 
-    - name: Install Kubernetes packages (CentOS/RHEL)
-      yum:
+    - name: Install required dependencies
+      apt:
+        name:
+          - curl
+          - tar
+          - socat
+          - jq
+          - iptables
+          - apt-transport-https  # for HTTPS repositories
+        state: present
+
+    - name: Add Kubernetes APT repository
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: Add Kubernetes repository to apt sources list
+      lineinfile:
+        path: /etc/apt/sources.list.d/kubernetes.list
+        line: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
+
+    - name: Update apt cache after adding Kubernetes repo
+      apt:
+        update_cache: yes
+
+    - name: Install kubelet, kubeadm, and kubectl
+      apt:
         name:
           - kubelet
           - kubeadm
           - kubectl
         state: present
-      when: ansible_distribution in ['CentOS', 'RedHat']
-    
-    - name: Ensure the system does not have swap enabled
+
+    - name: Mark kubelet, kubeadm, and kubectl to be held at current versions
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: held
+
+    - name: Disable swap on worker node
       command: swapoff -a
-      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
-    
-    - name: Ensure swap is disabled permanently
+
+    - name: Ensure swap is permanently disabled
       lineinfile:
         path: /etc/fstab
         regexp: '.*swap.*'
         state: absent
-      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
-    
-    - name: Load required kernel modules (br_netfilter and overlay)
+
+    - name: Load required kernel modules
       shell: |
         modprobe br_netfilter
         modprobe overlay
-      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
 
     - name: Ensure br_netfilter and overlay modules are loaded
       copy:
@@ -97,7 +71,6 @@
         content: |
           br_netfilter
           overlay
-      when: ansible_distribution == "Ubuntu"
 
     - name: Set sysctl params for Kubernetes
       copy:
@@ -106,32 +79,54 @@
           net.bridge.bridge-nf-call-ip6tables = 1
           net.bridge.bridge-nf-call-iptables = 1
           net.ipv4.ip_forward = 1
-      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
 
     - name: Apply sysctl parameters
       command: sysctl --system
-      when: ansible_distribution in ['Ubuntu', 'CentOS', 'RedHat']
 
-    - name: Ensure kubelet is enabled and started
+    - name: Configure HTTP proxy for apt (if needed)
+      when: ansible_distribution == "Ubuntu" and proxy_url is defined
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for environment (if needed)
+      when: proxy_url is defined
+      lineinfile:
+        path: /etc/environment
+        line: "{{ item }}"
+        create: yes
+      loop:
+        - "http_proxy={{ proxy_url }}"
+        - "https_proxy={{ proxy_url }}"
+        - "HTTP_PROXY={{ proxy_url }}"
+        - "HTTPS_PROXY={{ proxy_url }}"
+
+    - name: Ensure kubelet service is enabled and started
       systemd:
         name: kubelet
-        enabled: yes
+        enabled: true
         state: started
-    
-    - name: Check kubelet status
-      command: systemctl status kubelet
-      register: kubelet_status
-      failed_when: kubelet_status.rc != 0
-      changed_when: False
 
-    - name: Download kURL installer for worker node
-      shell: |
-        curl -fsSL https://kurl.sh/latest | sudo bash
-
-    - name: Join Kubernetes cluster using token from master
+    - name: Join Kubernetes cluster using join command
       shell: |
         if [ -f /root/join-command.sh ]; then
           bash /root/join-command.sh
         else
           echo "Join command not found. Ensure it is created on the master."
         fi
+      when: ansible_hostname != "master-node"  # Skip join on the master node
+
+    - name: Verify that the node has joined the cluster
+      command: kubectl get nodes
+      register: kubectl_get_nodes
+      retries: 5
+      delay: 10
+      until: "'Ready' in kubectl_get_nodes.stdout"
+      when: ansible_hostname != "master-node"  # Skip this on master
+
+    - name: Debug: Print kubectl get nodes output
+      debug:
+        var: kubectl_get_nodes.stdout
+      when: ansible_hostname != "master-node"
