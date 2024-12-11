@@ -1,6 +1,6 @@
 ---
 - name: Configure Kubernetes Worker Node on Ubuntu using kURL
-  hosts: all
+  hosts: workers
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
@@ -24,6 +24,12 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
+
+    - name: Ensure valid nameserver is configured
+      lineinfile:
+        path: /etc/resolv.conf
+        line: 'nameserver 8.8.8.8'
+        create: yes
 
     - name: Update APT package index
       ansible.builtin.apt:
