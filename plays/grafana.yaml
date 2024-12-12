@@ -7,7 +7,7 @@
     grafana_version: "11.2.2"
     grafana_deb_url: "https://dl.grafana.com/enterprise/release/grafana-enterprise_{{ grafana_version }}_amd64.deb"
     rhel_username: "mmajnioui@powerm.ma"
-    rhel_password: "{{ lookup('cypher','secret/secret/rhelpw') }}"
+    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
