@@ -42,6 +42,13 @@
       changed_when: repo_result.rc == 0
 
     # Ubuntu-specific tasks
+    - name: Configure resolv.conf with Google DNS
+      when: ansible_distribution == "Ubuntu"
+      lineinfile:
+        path: /etc/resolv.conf
+        line: 'nameserver 8.8.8.8'
+        insertbefore: BOF
+        
     - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
