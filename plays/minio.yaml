@@ -4,8 +4,8 @@
   become: true
   vars:
     minio_home: /opt/minio
-    rhel_username: "mmajnioui@powerm.ma"
-    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    rhel_username: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelEmail'] | default('') }}"
+    rhel_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelPw'] | default('') }}"
     minio_user: minio
     minio_version: "20241029160148.0.0"
 
