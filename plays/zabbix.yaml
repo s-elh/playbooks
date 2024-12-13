@@ -3,7 +3,6 @@
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"
     rhel_username: "mmajnioui@powerm.ma"
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
     zabbix_db_password: "zabbix123"
@@ -11,35 +10,20 @@
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
-    # Common proxy environment configuration
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
     # Ubuntu-specific tasks
-    - name: Configure HTTP proxy for apt (Ubuntu)
+    - name: Configure resolv.conf with Google DNS
       when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+        
+    - name: Configure resolv.conf with Google DNS
+      when: ansible_distribution == "Ubuntu"
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
 
     - name: Download Zabbix release package (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       get_url:
         url: https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu22.04_all.deb
         dest: /tmp/zabbix-release.deb
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
 
     - name: Install Zabbix release package (Ubuntu)
       when: ansible_distribution == "Ubuntu"
@@ -66,13 +50,6 @@
       register: zabbix_install_ubuntu
 
     # RHEL-specific tasks
-    - name: Configure HTTP proxy for yum (RHEL)
-      when: ansible_os_family == "RedHat"
-      lineinfile:
-        path: /etc/yum.conf
-        line: 'proxy={{ proxy_url }}'
-        create: yes
-
     - name: Register and subscribe RHEL system
       when: ansible_os_family == "RedHat"
       command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
@@ -103,7 +80,6 @@
           - zabbix-agent
         state: present
       register: zabbix_install_rhel
-
 
     # PostgreSQL database setup for Zabbix
     - name: Configure PostgreSQL authentication (RHEL)
