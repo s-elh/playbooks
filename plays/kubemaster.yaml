@@ -3,29 +3,28 @@
   hosts: all
   become: yes
   vars:
-    proxy_url: "http://10.1.38.2:3128"
     bundle_path: "/tmp/473f02a.tar.gz"
     destination_dir: "/opt/kube"
     output_file: "/opt/kube/join_command.txt"
 
   tasks:
-    - name: Configure HTTP proxy for apt
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
+    # DNS configuration for both Ubuntu and RHEL
+    - name: Configure resolv.conf with Google DNS (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
+    - name: Configure resolv.conf with Google DNS (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
+    # Clear proxy settings
+    - name: Clear apt proxy settings (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+    
+    - name: Clear yum proxy settings (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: echo > /etc/yum.conf.d/90curtin-aptproxy
 
     - name: Refresh apt cache
       apt:
