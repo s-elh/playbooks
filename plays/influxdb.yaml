@@ -4,7 +4,6 @@
   become: true
   gather_facts: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"
     db_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] | default('') }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
@@ -32,18 +31,18 @@
         - db_name != ''
 
     # Ubuntu-specific tasks
-    - name: Configure HTTP proxy for apt (Ubuntu)
+    - name: Configure resolv.conf with Google DNS
       when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+        
+    - name: Configure resolv.conf with Google DNS
+      when: ansible_distribution == "Ubuntu"
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
 
     - name: Download InfluxData GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://repos.influxdata.com/influxdata-archive_compat.key -o /tmp/influxdata-archive_compat.key
+        curl https://repos.influxdata.com/influxdata-archive_compat.key -o /tmp/influxdata-archive_compat.key
       args:
         creates: /tmp/influxdata-archive_compat.key
 
@@ -71,24 +70,6 @@
         state: present
 
     # RHEL-specific tasks
-    - name: Configure HTTP proxy for yum (RHEL)
-      when: ansible_os_family == 'RedHat'
-      lineinfile:
-        path: /etc/yum.conf
-        line: 'proxy={{ proxy_url }}'
-        create: yes
-
-    - name: Configure HTTP proxy for the environment (All OS)
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
     - name: Register and subscribe RHEL system
       when: ansible_os_family == 'RedHat'
       command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
