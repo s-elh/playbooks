@@ -7,15 +7,25 @@
     rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
  
   tasks: 
-    # Ubuntu-specific tasks  
-    - name: Configure resolv.conf with Google DNS
+    # DNS configuration for both Ubuntu and RHEL
+    - name: Configure resolv.conf with Google DNS (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-        
-    - name: Configure resolv.conf with Google DNS
+    
+    - name: Configure resolv.conf with Google DNS (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
+    # Clear proxy settings
+    - name: Clear apt proxy settings (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
- 
+    
+    - name: Clear yum proxy settings (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: echo > /etc/yum.conf.d/90curtin-aptproxy
+    
+    # Ubuntu-specific tasks   
     - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu" 
       apt:
