@@ -11,7 +11,15 @@
 
   tasks:
     # Ubuntu-specific tasks
-    - name: Update apt cache and upgrade (Ubuntu)
+    - name: Configure resolv.conf with Google DNS
+      when: ansible_distribution == "Ubuntu"
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+        
+    - name: Configure resolv.conf with Google DNS
+      when: ansible_distribution == "Ubuntu"
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+  
+    - name: Update apt cache (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       apt:
         update_cache: yes
