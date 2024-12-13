@@ -6,8 +6,8 @@
   vars:
     gitlab_version: "17.2.8-ce.0"
     gitlab_domain: "{{ morpheus['server']['internalIp'] }}"
-    rhel_username: "mmajnioui@powerm.ma"
-    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    rhel_username: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelEmail'] | default('') }}"
+    rhel_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelPw'] | default('') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
