@@ -5,8 +5,8 @@
   gather_facts: true
   vars:
     wildfly_version: "34.0.0.Final"
-    rhel_username: "mmajnioui@powerm.ma"
-    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    rhel_username: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelEmail'] | default('') }}"
+    rhel_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelPw'] | default('') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
