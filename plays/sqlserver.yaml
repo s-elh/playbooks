@@ -4,7 +4,6 @@
   become: true
   gather_facts: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"
     sql_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] | default('SqlServer2019!') }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
@@ -13,26 +12,14 @@
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
-    # Common proxy configuration
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
     # Ubuntu-specific tasks
-    - name: Configure HTTP proxy for apt
+    - name: Configure resolv.conf with Google DNS
       when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+        
+    - name: Configure resolv.conf with Google DNS
+      when: ansible_distribution == "Ubuntu"
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
 
     - name: Handle package locks (Ubuntu)
       when: ansible_distribution == "Ubuntu"
@@ -67,9 +54,6 @@
         dpkg -i libgssapi3-heimdal.deb
         
         apt-get -f install -y
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
       ignore_errors: yes
 
     - name: Download and install libldap package (Ubuntu)
@@ -78,19 +62,16 @@
         cd /tmp
         wget -O libldap-2.4-2.deb http://archive.ubuntu.com/ubuntu/pool/main/o/openldap/libldap-2.4-2_2.4.49+dfsg-2ubuntu1.10_amd64.deb
         dpkg -i libldap-2.4-2.deb
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
 
     - name: Import Microsoft GPG key
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg
+        curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg
 
     - name: Add SQL Server repository
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list > /etc/apt/sources.list.d/mssql-server.list
+        curl https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list > /etc/apt/sources.list.d/mssql-server.list
 
     - name: Update apt cache
       when: ansible_distribution == "Ubuntu"
@@ -136,13 +117,6 @@
         sleep 10
 
     # RHEL-specific tasks
-    - name: Configure HTTP proxy for yum (RHEL)
-      when: ansible_os_family == 'RedHat'
-      lineinfile:
-        path: /etc/yum.conf
-        line: 'proxy={{ proxy_url }}'
-        create: yes
-
     - name: Register and subscribe RHEL system
       when: ansible_os_family == 'RedHat'
       command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
@@ -162,9 +136,6 @@
       get_url:
         url: https://packages.microsoft.com/config/rhel/8/mssql-server-2019.repo
         dest: /etc/yum.repos.d/mssql-server.repo
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
 
     - name: Install SQL Server (RHEL)
       when: ansible_os_family == 'RedHat'
@@ -214,7 +185,7 @@
     - name: Add Microsoft tools repository (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: |
-        curl -x {{ proxy_url }} https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/msprod.list
+        curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/msprod.list
       args:
         creates: /etc/apt/sources.list.d/msprod.list
 
@@ -245,7 +216,7 @@
     - name: Download EPEL RPM (RHEL)
       when: ansible_os_family == "RedHat"
       shell: |
-        curl -x {{ proxy_url }} --insecure https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm -o /tmp/epel-release.rpm
+        curl --insecure https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm -o /tmp/epel-release.rpm
 
     - name: Install EPEL RPM (RHEL)
       when: ansible_os_family == "RedHat"
@@ -270,7 +241,7 @@
     - name: Install MSSQL tools repository (RHEL)
       when: ansible_os_family == "RedHat"
       shell: |
-        curl -x {{ proxy_url }} --insecure https://packages.microsoft.com/config/rhel/8/prod.repo > /etc/yum.repos.d/msprod.repo
+        curl --insecure https://packages.microsoft.com/config/rhel/8/prod.repo > /etc/yum.repos.d/msprod.repo
       args:
         creates: /etc/yum.repos.d/msprod.repo
 
