@@ -6,7 +6,6 @@
   vars:
     mongodb_version: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['version'] | default('6.0') }}"  
     mongodb_repo_url: "https://repo.mongodb.org/yum/redhat/$releasever/mongodb-org/{{ mongodb_version }}/x86_64/"
-    proxy_url: "http://10.1.38.2:3128"
     db_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomPassword'] | default('') }}"
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
@@ -34,13 +33,13 @@
         - db_name != ''
 
     # Updated Ubuntu-specific tasks
-    - name: Configure HTTP proxy for apt (Ubuntu)
+    - name: Configure resolv.conf with Google DNS
       when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+        
+    - name: Configure resolv.conf with Google DNS
+      when: ansible_distribution == "Ubuntu"
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
 
     - name: Create directory for MongoDB keys (Ubuntu)
       when: ansible_distribution == "Ubuntu"
@@ -54,11 +53,7 @@
       get_url:
         url: "https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc"
         dest: "/tmp/mongodb-{{ mongodb_version }}.asc"
-        use_proxy: yes
         validate_certs: no
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
 
     - name: Import MongoDB GPG key (Ubuntu)
       when: ansible_distribution == "Ubuntu"
@@ -77,29 +72,8 @@
       when: ansible_distribution == "Ubuntu"
       ansible.builtin.apt:
         update_cache: yes
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
 
     # RHEL-specific tasks
-    - name: Configure HTTP proxy for yum (RHEL)
-      lineinfile:
-        path: /etc/yum.conf
-        line: 'proxy={{ proxy_url }}'
-        create: yes
-      when: ansible_os_family == 'RedHat'
-
-    - name: Configure HTTP proxy for the environment (All OS)
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
     - name: Register and subscribe RHEL system
       when: ansible_os_family == 'RedHat'
       command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
