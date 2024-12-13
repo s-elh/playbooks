@@ -2,9 +2,6 @@
 - name: Install Ubuntu Desktop Environment
   hosts: all
   become: true
-  vars:
-    proxy_url: "http://10.1.38.2:3128"
-
   tasks:
     - name: Configure resolv.conf with Google DNS
       when: ansible_distribution == "Ubuntu"
