@@ -1,3 +1,4 @@
+---
 - name: Install Elasticsearch Stack
   hosts: all
   become: true
