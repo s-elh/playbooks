@@ -7,8 +7,8 @@
     db_user: "{{ hostvars[inventory_hostname].get('morpheus', {}).get('customOptions', {}).get('dbCustomUser', 'postgres') }}"
     db_name: "{{ hostvars[inventory_hostname].get('morpheus', {}).get('customOptions', {}).get('dbCustomName', 'postgres') }}"
     sudo_password: "{{ lookup('cypher','secret=secret/pw') }}"
-    rhel_username: "mmajnioui@powerm.ma"
-    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    rhel_username: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelEmail'] | default('') }}"
+    rhel_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelPw'] | default('') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
