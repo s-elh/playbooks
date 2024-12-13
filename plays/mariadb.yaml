@@ -9,8 +9,8 @@
     db_user: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomUser'] | default('') }}"
     db_name: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['dbCustomName'] | default('') }}"
     db_vars_provided: false
-    rhel_username: "mmajnioui@powerm.ma"
-    rhel_password: "{{ lookup('cypher','secret=secret/rhelpw') }}"
+    rhel_username: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelEmail'] | default('') }}"
+    rhel_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelPw'] | default('') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
