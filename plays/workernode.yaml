@@ -52,6 +52,17 @@
         path: /etc/resolv.conf
         line: 'nameserver 8.8.8.8'
 
+    - name: Set persistent DNS via resolved.conf
+      lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^DNS='
+        line: 'DNS=8.8.8.8'
+
+    - name: Restart systemd-resolved service
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+
     - name: Verify resolv.conf contains 8.8.8.8
       command: cat /etc/resolv.conf
       register: resolv_conf_output
