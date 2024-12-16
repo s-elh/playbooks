@@ -52,6 +52,13 @@
         path: /etc/resolv.conf
         line: 'nameserver 8.8.8.8'
 
+    - name: Verify resolv.conf contains 8.8.8.8
+      command: cat /etc/resolv.conf
+      register: resolv_conf_output
+
+    - debug:
+        msg: "resolv.conf content: {{ resolv_conf_output.stdout }}"
+
     # 6️⃣ Disable Swap
     - name: Disable swap
       ansible.builtin.command: swapoff -a
@@ -87,10 +94,10 @@
     - name: Apply sysctl parameters
       ansible.builtin.command: sysctl --system
 
-    # 9️⃣ Install Kubernetes via kURL with DNS override
-    - name: Download and run the kURL installer with DNS override
+    # 9️⃣ Install Kubernetes via kURL (sans "nameserver")
+    - name: Download and run the kURL installer
       ansible.builtin.shell: |
-        curl -fsSL https://kurl.sh/latest | sudo bash -s -- nameserver=8.8.8.8
+        curl -fsSL https://kurl.sh/latest | sudo bash
 
     # 🔟 Join the Kubernetes Worker Node to the Cluster
     - name: Join the worker node to the Kubernetes cluster
