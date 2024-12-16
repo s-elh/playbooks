@@ -1,79 +1,77 @@
 ---
-- name: Configure Kubernetes Worker Node on Ubuntu using kURL
-  hosts: all
+- name: Install and Configure Kubernetes Worker Node using kURL
+  hosts: workers
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"  # Set your proxy URL here, if needed
+    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
-    - name: Ensure apt is up-to-date
-      apt:
+
+    # 1️⃣ Configure Proxy for APT (Ubuntu Only)
+    - name: Configure HTTP proxy for apt
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    # 2️⃣ Configure Proxy for System Environment
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    # 3️⃣ Update System Packages
+    - name: Update APT package index (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      ansible.builtin.apt:
         update_cache: yes
 
-    - name: Install required dependencies
-      apt:
-        name:
-          - curl
-          - tar
-          - socat
-          - jq
-          - iptables
-          - apt-transport-https  # for HTTPS repositories
+    # 4️⃣ Install Required Dependencies
+    - name: Install required dependencies for Kubernetes (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      ansible.builtin.apt:
+        name: 
+          - curl 
+          - tar 
+          - socat 
+          - jq 
+          - iptables 
         state: present
 
-    - name: Add Kubernetes APT repository
-      apt_key:
-        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-        state: present
+    # 5️⃣ Disable Swap
+    - name: Disable swap
+      ansible.builtin.command: swapoff -a
 
-    - name: Add Kubernetes repository to apt sources list
-      lineinfile:
-        path: /etc/apt/sources.list.d/kubernetes.list
-        line: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
-
-    - name: Update apt cache after adding Kubernetes repo
-      apt:
-        update_cache: yes
-
-    - name: Install kubelet, kubeadm, and kubectl
-      apt:
-        name:
-          - kubelet
-          - kubeadm
-          - kubectl
-        state: present
-
-    - name: Mark kubelet, kubeadm, and kubectl to be held at current versions
-      apt:
-        name:
-          - kubelet
-          - kubeadm
-          - kubectl
-        state: held
-
-    - name: Disable swap on worker node
-      command: swapoff -a
-
-    - name: Ensure swap is permanently disabled
-      lineinfile:
+    - name: Ensure swap is disabled permanently
+      ansible.builtin.lineinfile:
         path: /etc/fstab
         regexp: '.*swap.*'
         state: absent
 
+    # 6️⃣ Load Required Kernel Modules
     - name: Load required kernel modules
-      shell: |
+      ansible.builtin.shell: |
         modprobe br_netfilter
         modprobe overlay
 
-    - name: Ensure br_netfilter and overlay modules are loaded
-      copy:
+    - name: Ensure br_netfilter and overlay modules are loaded on system boot
+      ansible.builtin.copy:
         dest: /etc/modules-load.d/k8s.conf
         content: |
           br_netfilter
           overlay
 
-    - name: Set sysctl params for Kubernetes
-      copy:
+    # 7️⃣ Set System Configuration for Kubernetes Networking
+    - name: Set sysctl parameters for Kubernetes
+      ansible.builtin.copy:
         dest: /etc/sysctl.d/k8s.conf
         content: |
           net.bridge.bridge-nf-call-ip6tables = 1
@@ -81,52 +79,18 @@
           net.ipv4.ip_forward = 1
 
     - name: Apply sysctl parameters
-      command: sysctl --system
+      ansible.builtin.command: sysctl --system
 
-    - name: Configure HTTP proxy for apt (if needed)
-      when: ansible_distribution == "Ubuntu" and proxy_url is defined
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+    # 8️⃣ Install Kubernetes via kURL
+    - name: Download and run the kURL installer
+      ansible.builtin.shell: |
+        curl -fsSL https://kurl.sh/latest | sudo bash
 
-    - name: Configure HTTP proxy for environment (if needed)
-      when: proxy_url is defined
-      lineinfile:
-        path: /etc/environment
-        line: "{{ item }}"
-        create: yes
-      loop:
-        - "http_proxy={{ proxy_url }}"
-        - "https_proxy={{ proxy_url }}"
-        - "HTTP_PROXY={{ proxy_url }}"
-        - "HTTPS_PROXY={{ proxy_url }}"
-
-    - name: Ensure kubelet service is enabled and started
-      systemd:
-        name: kubelet
-        enabled: true
-        state: started
-
-    - name: Join Kubernetes cluster using join command
-      shell: |
+    # 9️⃣ Join the Kubernetes Worker Node to the Cluster
+    - name: Join the worker node to the Kubernetes cluster
+      ansible.builtin.shell: |
         if [ -f /root/join-command.sh ]; then
           bash /root/join-command.sh
         else
           echo "Join command not found. Ensure it is created on the master."
         fi
-      when: ansible_hostname != "master-node"  # Skip join on the master node
-
-    - name: Verify that the node has joined the cluster
-      command: kubectl get nodes
-      register: kubectl_get_nodes
-      retries: 5
-      delay: 10
-      until: "'Ready' in kubectl_get_nodes.stdout"
-      when: ansible_hostname != "master-node"  # Skip this on master
-
-    - name: Debug: Print kubectl get nodes output
-      debug:
-        var: kubectl_get_nodes.stdout
-      when: ansible_hostname != "master-node"
