@@ -105,18 +105,23 @@
     - name: Apply sysctl parameters
       ansible.builtin.command: sysctl --system
 
-    # 9️⃣ Install Kubernetes via kURL (alternative method)
-    - name: Download the kURL install script
+    # 9️⃣ Install Kubernetes via kURL (new method)
+    - name: Download kURL installer script
       ansible.builtin.get_url:
         url: https://kurl.sh/latest
-        dest: /tmp/kurl-latest.sh
+        dest: /tmp/kurl_installer.sh
         mode: '0755'
 
-    - name: Run the kURL install script
+    - name: Run the kURL installer script
       ansible.builtin.shell: |
-        bash /tmp/kurl-latest.sh
+        bash /tmp/kurl_installer.sh
       args:
-        creates: /usr/local/bin/kurl  # Prevent re-running if already installed
+        creates: /etc/kurl
+
+    - name: Clean up the kURL installer script
+      ansible.builtin.file:
+        path: /tmp/kurl_installer.sh
+        state: absent
 
     # 🔟 Join the Kubernetes Worker Node to the Cluster
     - name: Join the worker node to the Kubernetes cluster
