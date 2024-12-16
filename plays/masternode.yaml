@@ -1,0 +1,101 @@
+---
+- name: Install Kubernetes Master Node using kURL on Ubuntu 22
+  hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"  # Change this if you need a proxy
+    nameserver: "8.8.8.8"  # Google DNS or any other accessible DNS
+
+  tasks:
+    # Configure proxy for apt if needed
+    - name: Configure HTTP proxy for apt
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    # Set DNS nameserver
+    - name: Configure nameserver in /etc/resolv.conf
+      lineinfile:
+        path: /etc/resolv.conf
+        line: "nameserver {{ nameserver }}"
+        create: yes
+
+    # Disable swap on Ubuntu
+    - name: Disable swap
+      ansible.builtin.command: swapoff -a
+
+    - name: Ensure swap is disabled permanently
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '.*swap.*'
+        state: absent
+
+    # Load required kernel modules for Kubernetes
+    - name: Load required kernel modules
+      ansible.builtin.shell: |
+        modprobe br_netfilter
+        modprobe overlay
+
+    - name: Ensure br_netfilter and overlay modules are loaded
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          br_netfilter
+          overlay
+
+    # Set sysctl parameters for Kubernetes
+    - name: Set sysctl params for Kubernetes
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/k8s.conf
+        content: |
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.bridge.bridge-nf-call-iptables = 1
+          net.ipv4.ip_forward = 1
+
+    - name: Apply sysctl parameters
+      ansible.builtin.command: sysctl --system
+
+    # Install curl and other required dependencies
+    - name: Install required dependencies
+      ansible.builtin.apt:
+        name:
+          - curl
+          - tar
+          - socat
+          - jq
+          - iptables
+        state: present
+
+    # Download kURL installer for master node
+    - name: Download kURL installer for master node
+      ansible.builtin.shell: |
+        curl -fsSL https://kurl.sh/latest | sudo bash
+
+    # Run the kURL installer to set up the node (master or worker)
+    - name: Run kURL installer to set up Kubernetes
+      ansible.builtin.shell: |
+        curl -fsSL https://kurl.sh/latest | sudo bash -s -- nameserver={{ nameserver }}
+
+    # Output the installation status
+    - name: Check if the kURL installation was successful
+      command: kurl status
+      register: kurl_status
+      changed_when: false
+
+    - name: Show kURL installation status
+      debug:
+        msg: "{{ kurl_status.stdout }}"
