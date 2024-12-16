@@ -1,9 +1,10 @@
 ---
 - name: Install and Configure Kubernetes Worker Node using kURL
-  hosts: all
+  hosts: all  # Targeting worker nodes
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"
+    proxy_url: "http://10.1.38.2:3128"  # Your proxy URL (adjust as necessary)
+    k8s_version: "v1.24.6"  # Specify the Kubernetes version
 
   tasks:
 
@@ -38,12 +39,12 @@
     - name: Install required dependencies for Kubernetes (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       ansible.builtin.apt:
-        name: 
-          - curl 
-          - tar 
-          - socat 
-          - jq 
-          - iptables 
+        name:
+          - curl
+          - tar
+          - socat
+          - jq
+          - iptables
         state: present
 
     # 5️⃣ Configure DNS (nameserver)
@@ -105,23 +106,10 @@
     - name: Apply sysctl parameters
       ansible.builtin.command: sysctl --system
 
-    # 9️⃣ Install Kubernetes via kURL (new method)
-    - name: Download kURL installer script
-      ansible.builtin.get_url:
-        url: https://kurl.sh/latest
-        dest: /tmp/kurl_installer.sh
-        mode: '0755'
-
-    - name: Run the kURL installer script
+    # 9️⃣ Install Kubernetes via kURL (sans "nameserver")
+    - name: Download and run the kURL installer
       ansible.builtin.shell: |
-        bash /tmp/kurl_installer.sh
-      args:
-        creates: /etc/kurl
-
-    - name: Clean up the kURL installer script
-      ansible.builtin.file:
-        path: /tmp/kurl_installer.sh
-        state: absent
+        curl -fsSL https://kurl.sh/latest | sudo bash
 
     # 🔟 Join the Kubernetes Worker Node to the Cluster
     - name: Join the worker node to the Kubernetes cluster
