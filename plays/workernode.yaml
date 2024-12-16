@@ -1,13 +1,14 @@
 ---
 - name: Install and Configure Kubernetes Worker Node using kURL
-  hosts: all  # Targeting worker nodes
+  hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"  # Your proxy URL (adjust as necessary)
-    k8s_version: "v1.24.6"  # Specify the Kubernetes version
-
+    proxy_url: "http://10.1.38.2:3128"
+    kubernetes_repo_url: "https://apt.kubernetes.io/"
+    kubernetes_repo_name: "kubernetes-xenial"
+    
   tasks:
-
+  
     # 1️⃣ Configure Proxy for APT (Ubuntu Only)
     - name: Configure HTTP proxy for apt
       when: ansible_distribution == "Ubuntu"
@@ -29,13 +30,7 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    # 3️⃣ Update System Packages
-    - name: Update APT package index (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      ansible.builtin.apt:
-        update_cache: yes
-
-    # 4️⃣ Install Required Dependencies
+    # 3️⃣ Install Required Dependencies for Kubernetes (Ubuntu)
     - name: Install required dependencies for Kubernetes (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       ansible.builtin.apt:
@@ -45,47 +40,75 @@
           - socat
           - jq
           - iptables
+          - apt-transport-https
         state: present
 
-    # 5️⃣ Configure DNS (nameserver)
+    # 4️⃣ Add Kubernetes APT Repository and GPG Key
+    - name: Add Kubernetes GPG key
+      ansible.builtin.shell: |
+        curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+      become: true
+
+    - name: Add Kubernetes APT repository for Ubuntu
+      ansible.builtin.shell: |
+        echo "deb {{ kubernetes_repo_url }} {{ kubernetes_repo_name }} main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+      become: true
+
+    # 5️⃣ Update APT package index
+    - name: Update APT package index
+      ansible.builtin.apt:
+        update_cache: yes
+      become: true
+
+    # 6️⃣ Install Kubernetes dependencies (kubelet, kubeadm, kubectl)
+    - name: Install Kubernetes packages (kubelet, kubeadm, kubectl)
+      ansible.builtin.apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        update_cache: yes
+      become: true
+
+    # 7️⃣ Configure DNS (nameserver)
     - name: Add Google DNS to resolv.conf
       lineinfile:
         path: /etc/resolv.conf
         line: 'nameserver 8.8.8.8'
+      become: true
 
     - name: Set persistent DNS via resolved.conf
       lineinfile:
         path: /etc/systemd/resolved.conf
         regexp: '^DNS='
         line: 'DNS=8.8.8.8'
+      become: true
 
     - name: Restart systemd-resolved service
       ansible.builtin.systemd:
         name: systemd-resolved
         state: restarted
+      become: true
 
-    - name: Verify resolv.conf contains 8.8.8.8
-      command: cat /etc/resolv.conf
-      register: resolv_conf_output
-
-    - debug:
-        msg: "resolv.conf content: {{ resolv_conf_output.stdout }}"
-
-    # 6️⃣ Disable Swap
+    # 8️⃣ Disable Swap
     - name: Disable swap
       ansible.builtin.command: swapoff -a
+      become: true
 
     - name: Ensure swap is disabled permanently
       ansible.builtin.lineinfile:
         path: /etc/fstab
         regexp: '.*swap.*'
         state: absent
+      become: true
 
-    # 7️⃣ Load Required Kernel Modules
+    # 9️⃣ Load Required Kernel Modules
     - name: Load required kernel modules
       ansible.builtin.shell: |
         modprobe br_netfilter
         modprobe overlay
+      become: true
 
     - name: Ensure br_netfilter and overlay modules are loaded on system boot
       ansible.builtin.copy:
@@ -93,8 +116,9 @@
         content: |
           br_netfilter
           overlay
+      become: true
 
-    # 8️⃣ Set System Configuration for Kubernetes Networking
+    # 🔟 Set System Configuration for Kubernetes Networking
     - name: Set sysctl parameters for Kubernetes
       ansible.builtin.copy:
         dest: /etc/sysctl.d/k8s.conf
@@ -102,16 +126,19 @@
           net.bridge.bridge-nf-call-ip6tables = 1
           net.bridge.bridge-nf-call-iptables = 1
           net.ipv4.ip_forward = 1
+      become: true
 
     - name: Apply sysctl parameters
       ansible.builtin.command: sysctl --system
+      become: true
 
-    # 9️⃣ Install Kubernetes via kURL (sans "nameserver")
+    # 1️⃣1️⃣ Install Kubernetes via kURL (sans "nameserver")
     - name: Download and run the kURL installer
       ansible.builtin.shell: |
         curl -fsSL https://kurl.sh/latest | sudo bash
+      become: true
 
-    # 🔟 Join the Kubernetes Worker Node to the Cluster
+    # 1️⃣2️⃣ Join the Kubernetes Worker Node to the Cluster
     - name: Join the worker node to the Kubernetes cluster
       ansible.builtin.shell: |
         if [ -f /root/join-command.sh ]; then
@@ -119,3 +146,4 @@
         else
           echo "Join command not found. Ensure it is created on the master."
         fi
+      become: true
