@@ -6,40 +6,25 @@
     proxy_url: "http://10.1.38.2:3128"
 
   tasks:
-    # Remove existing Kubernetes APT repository if it exists
-    - name: Remove old Kubernetes repository (jammy)
+    # Remove any old Kubernetes repository files
+    - name: Remove old Kubernetes repository
       ansible.builtin.file:
         path: /etc/apt/sources.list.d/kubernetes.list
         state: absent
 
-    # Add Kubernetes APT repository (use 'focal' for Ubuntu 22.04)
+    # Add Kubernetes APT repository (use kubernetes-xenial for Ubuntu 22.04)
     - name: Add Kubernetes APT repository
       ansible.builtin.apt_repository:
-        repo: "deb https://apt.kubernetes.io/ kubernetes-focal main"
-        state: present
+        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
         filename: "kubernetes"
+        state: present
         update_cache: yes
 
-    # Configure HTTP proxy for apt
-    - name: Configure HTTP proxy for apt
-      when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-
-    # Configure HTTP proxy for the environment
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
+    # Add the GPG key for the Kubernetes APT repository
+    - name: Add GPG key for Kubernetes repository
+      ansible.builtin.shell: |
+        mkdir -p /usr/share/keyrings
+        curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
 
     # Update APT cache to reflect repository changes
     - name: Update APT cache
