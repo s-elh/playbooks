@@ -3,7 +3,7 @@
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"  # Adjust this if you have a proxy, otherwise remove it
+    proxy_url: "http://10.1.38.2:3128"  # Use your proxy URL or remove this if not needed
 
   tasks:
     - name: Remove old Kubernetes repository if it exists
@@ -18,7 +18,7 @@
 
     - name: Add Kubernetes APT repository
       ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
+        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-focal main"
         filename: "kubernetes"
         state: present
 
