@@ -1,13 +1,12 @@
 ---
-- name: Install Kubernetes Master Node using kURL on Ubuntu 22
+- name: Configure Kubernetes Master Node using kURL
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"  # Change this if you need a proxy
-    nameserver: "8.8.8.8"  # Google DNS or any other accessible DNS
+    proxy_url: "http://10.1.38.2:3128"  # Define the proxy URL
 
   tasks:
-    # Configure proxy for apt if needed
+    # Configure HTTP proxy for apt package manager
     - name: Configure HTTP proxy for apt
       when: ansible_distribution == "Ubuntu"
       copy:
@@ -16,6 +15,7 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
+    # Configure HTTP proxy for the environment
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -27,75 +27,53 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    # Set DNS nameserver
-    - name: Configure nameserver in /etc/resolv.conf
-      lineinfile:
-        path: /etc/resolv.conf
-        line: "nameserver {{ nameserver }}"
-        create: yes
-
-    # Disable swap on Ubuntu
-    - name: Disable swap
-      ansible.builtin.command: swapoff -a
-
-    - name: Ensure swap is disabled permanently
-      ansible.builtin.lineinfile:
-        path: /etc/fstab
-        regexp: '.*swap.*'
-        state: absent
-
-    # Load required kernel modules for Kubernetes
-    - name: Load required kernel modules
-      ansible.builtin.shell: |
-        modprobe br_netfilter
-        modprobe overlay
-
-    - name: Ensure br_netfilter and overlay modules are loaded
-      ansible.builtin.copy:
-        dest: /etc/modules-load.d/k8s.conf
-        content: |
-          br_netfilter
-          overlay
-
-    # Set sysctl parameters for Kubernetes
-    - name: Set sysctl params for Kubernetes
-      ansible.builtin.copy:
-        dest: /etc/sysctl.d/k8s.conf
-        content: |
-          net.bridge.bridge-nf-call-ip6tables = 1
-          net.bridge.bridge-nf-call-iptables = 1
-          net.ipv4.ip_forward = 1
-
-    - name: Apply sysctl parameters
-      ansible.builtin.command: sysctl --system
-
-    # Install curl and other required dependencies
-    - name: Install required dependencies
+    # Ensure curl is installed to download kURL script
+    - name: Install curl
       ansible.builtin.apt:
-        name:
-          - curl
-          - tar
-          - socat
-          - jq
-          - iptables
+        name: curl
         state: present
+        update_cache: yes
 
-    # Download kURL installer for master node
-    - name: Download kURL installer for master node
-      ansible.builtin.shell: |
-        curl -fsSL https://kurl.sh/latest | sudo bash
+    # Install kURL on the master node
+    - name: Install kURL to set up Kubernetes Master Node
+      ansible.builtin.shell:
+        cmd: "curl -sSL https://kurl.sh/d6c2d72 | sudo bash"
+        creates: "/usr/local/bin/kurl"
+    
+    # Apply the master node configuration using kURL
+    - name: Apply Kubernetes master node configuration using kURL
+      ansible.builtin.shell:
+        cmd: "curl -sSL https://kurl.sh/d6c2d72 | sudo bash"
+        creates: "/etc/kubernetes/manifests/kube-apiserver.yaml"
 
-    # Run the kURL installer to set up the node (master or worker)
-    - name: Run kURL installer to set up Kubernetes
-      ansible.builtin.shell: |
-        curl -fsSL https://kurl.sh/latest | sudo bash -s -- nameserver={{ nameserver }}
+    # Enable and start kubelet service
+    - name: Enable and start kubelet service
+      ansible.builtin.systemd:
+        name: kubelet
+        state: started
+        enabled: yes
 
-    # Output the installation status
-    - name: Check if the kURL installation was successful
-      command: kurl status
-      register: kurl_status
+    # Get kubeadm join command for worker nodes (to join to this master)
+    - name: Get kubeadm join command for worker nodes
+      ansible.builtin.command:
+        cmd: "kubeadm token create --print-join-command"
+      register: join_command
       changed_when: false
 
-    - name: Show kURL installation status
-      debug:
-        msg: "{{ kurl_status.stdout }}"
+    # Save the join command to a file (for joining worker nodes later)
+    - name: Save kubeadm join command to file
+      ansible.builtin.copy:
+        content: "{{ join_command.stdout }}"
+        dest: "/tmp/kubeadm_join_command.txt"
+        mode: '0644'
+    
+    # Verify Kubernetes master node installation
+    - name: Verify the master node status
+      ansible.builtin.shell:
+        cmd: "kubectl get nodes"
+      register: kubectl_output
+      failed_when: "'master' not in kubectl_output.stdout"
+
+    - name: Display nodes in the cluster
+      ansible.builtin.debug:
+        msg: "{{ kubectl_output.stdout }}"
