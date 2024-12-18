@@ -1,5 +1,5 @@
 ---
-# Ansible playbook to configure Kubernetes Worker Node using kURL
+# Ansible playbook to install Kubernetes Worker Node using kURL
 - name: Install Kubernetes Worker Node using kURL
   hosts: all
   become: yes
@@ -9,6 +9,26 @@
     join_command: "/path/to/your/join/script.sh"  # Replace this with the actual join command or token script
 
   tasks:
+    - name: Install required packages for APT
+      ansible.builtin.apt:
+        name: 
+          - apt-transport-https
+          - ca-certificates
+          - curl
+        state: present
+
+    - name: Add Kubernetes APT key
+      ansible.builtin.shell: |
+        curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+
+    - name: Add Kubernetes repository
+      ansible.builtin.shell: |
+        echo "deb https://apt.kubernetes.io/ kubernetes-{{ ansible_distribution_release }} main" > /etc/apt/sources.list.d/kubernetes.list
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+
     - name: Update and upgrade system packages
       ansible.builtin.apt:
         update_cache: yes
