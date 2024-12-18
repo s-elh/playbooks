@@ -1,21 +1,21 @@
 ---
-- name: Configure Kubernetes Master Node using kURL
+- name: Configure Kubernetes Worker Node using kURL
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"  # Optional proxy, remove if not needed
-    kurl_url: "https://kurl.sh/d6c2d72" # Your kURL link
+    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
-    - name: Configure HTTP proxy for APT (Optional)
+    - name: Configure HTTP proxy for apt
+      when: ansible_distribution == "Ubuntu"
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
-      when: proxy_url is defined
+        mode: '0644'
 
-    - name: Configure proxy for the environment (Optional)
+    - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
         line: '{{ item }}'
@@ -25,26 +25,28 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
-      when: proxy_url is defined
 
-    - name: Install curl if not already installed
-      ansible.builtin.apt:
-        name: curl
+    - name: Install required dependencies (curl, iptables, apt-transport-https)
+      apt:
+        name:
+          - curl
+          - iptables
+          - apt-transport-https
         state: present
         update_cache: yes
 
-    - name: Download and run kURL installer for Kubernetes
-      ansible.builtin.shell: |
-        curl -sSL {{ kurl_url }} | sudo bash
+    - name: Download and install Kubernetes using kURL
+      shell: curl -sSL https://kurl.sh/d6c2d72 | sudo bash
       args:
-        warn: false
+        creates: /usr/local/bin/kubelet  # Ensure the file exists before running again
 
-    - name: Wait for the kURL installer to complete
-      wait_for:
-        path: /var/lib/rancher/k3s/k3s.yaml
-        state: present
-        timeout: 1200
+    - name: Wait for Kubernetes to become ready
+      shell: kubectl get nodes
+      register: result
+      retries: 5
+      delay: 10
+      until: result.stdout|search('worker')
 
-    - name: Print success message
+    - name: Show kubectl nodes
       debug:
-        msg: "Kubernetes master node installation completed successfully using kURL."
+        var: result.stdout
