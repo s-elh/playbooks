@@ -3,10 +3,24 @@
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"  # Define the proxy URL
+    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
-    # Configure HTTP proxy for apt package manager
+    # Remove existing Kubernetes APT repository if it exists
+    - name: Remove old Kubernetes repository (jammy)
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/kubernetes.list
+        state: absent
+
+    # Add Kubernetes APT repository (use 'focal' for Ubuntu 22.04)
+    - name: Add Kubernetes APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb https://apt.kubernetes.io/ kubernetes-focal main"
+        state: present
+        filename: "kubernetes"
+        update_cache: yes
+
+    # Configure HTTP proxy for apt
     - name: Configure HTTP proxy for apt
       when: ansible_distribution == "Ubuntu"
       copy:
@@ -32,13 +46,6 @@
       ansible.builtin.apt:
         update_cache: yes
         cache_valid_time: 3600
-
-    # Add Kubernetes APT repository (using 'focal' for Ubuntu 22.04)
-    - name: Add Kubernetes APT repository
-      ansible.builtin.apt_repository:
-        repo: "deb https://apt.kubernetes.io/ kubernetes-focal main"
-        state: present
-        filename: "kubernetes"
 
     # Install curl to download kURL script
     - name: Install curl
