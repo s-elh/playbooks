@@ -33,15 +33,29 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Ensure Kubernetes kURL script is available and installed
+    - name: Add Kubernetes GPG key
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: Add Kubernetes repository (using kubernetes-xenial)
+      apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
+        filename: kubernetes
+        state: present
+
+    - name: Update apt package cache
+      apt:
+        update_cache: yes
+
+    - name: Ensure Kubernetes is installed using kURL
       shell: |
         curl -sSL https://kurl.sh/d6c2d72 | sudo bash
       args:
         creates: /usr/local/bin/kubelet  # Ensure the script runs only if kubelet is not already installed
 
-    - name: Check if Kubernetes installation was successful
-      shell: |
-        kubectl get nodes
+    - name: Wait for Kubernetes to become ready
+      shell: kubectl get nodes
       register: result
       retries: 5
       delay: 10
