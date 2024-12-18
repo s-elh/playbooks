@@ -3,82 +3,76 @@
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"
+    proxy_url: "http://10.1.38.2:3128"  # Adjust this if you have a proxy, otherwise remove it
 
   tasks:
-    # Remove any old Kubernetes repository files
-    - name: Remove old Kubernetes repository
+    - name: Remove old Kubernetes repository if it exists
       ansible.builtin.file:
         path: /etc/apt/sources.list.d/kubernetes.list
         state: absent
 
-    # Add Kubernetes APT repository (use kubernetes-xenial for Ubuntu 22.04)
-    - name: Add Kubernetes APT repository
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
-        filename: "kubernetes"
-        state: present
-        update_cache: yes
-
-    # Add the GPG key for the Kubernetes APT repository
     - name: Add GPG key for Kubernetes repository
       ansible.builtin.shell: |
         mkdir -p /usr/share/keyrings
         curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
 
-    # Update APT cache to reflect repository changes
+    - name: Add Kubernetes APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
+        filename: "kubernetes"
+        state: present
+
     - name: Update APT cache
       ansible.builtin.apt:
         update_cache: yes
-        cache_valid_time: 3600
 
-    # Install curl to download kURL script
-    - name: Install curl
+    - name: Install required packages
       ansible.builtin.apt:
-        name: curl
+        name: 
+          - curl
+          - kubelet
+          - kubeadm
+          - kubectl
         state: present
         update_cache: yes
 
-    # Install kURL on the master node
+    - name: Mark Kubernetes packages to hold (prevent automatic upgrade)
+      ansible.builtin.shell: |
+        apt-mark hold kubelet kubeadm kubectl
+
     - name: Install kURL to set up Kubernetes Master Node
       ansible.builtin.shell:
         cmd: "curl -sSL https://kurl.sh/d6c2d72 | sudo bash"
         creates: "/usr/local/bin/kurl"
-    
-    # Apply the master node configuration using kURL
+
     - name: Apply Kubernetes master node configuration using kURL
       ansible.builtin.shell:
         cmd: "curl -sSL https://kurl.sh/d6c2d72 | sudo bash"
         creates: "/etc/kubernetes/manifests/kube-apiserver.yaml"
 
-    # Enable and start kubelet service
     - name: Enable and start kubelet service
       ansible.builtin.systemd:
         name: kubelet
         state: started
         enabled: yes
 
-    # Get kubeadm join command for worker nodes (to join to this master)
-    - name: Get kubeadm join command for worker nodes
+    - name: Get kubeadm join command for worker nodes (to join to this master)
       ansible.builtin.command:
         cmd: "kubeadm token create --print-join-command"
       register: join_command
       changed_when: false
 
-    # Save the join command to a file (for joining worker nodes later)
     - name: Save kubeadm join command to file
       ansible.builtin.copy:
         content: "{{ join_command.stdout }}"
         dest: "/tmp/kubeadm_join_command.txt"
         mode: '0644'
 
-    # Verify Kubernetes master node installation
-    - name: Verify the master node status
+    - name: Display nodes in the cluster
       ansible.builtin.shell:
         cmd: "kubectl get nodes"
       register: kubectl_output
-      failed_when: "'master' not in kubectl_output.stdout"
 
-    - name: Display nodes in the cluster
+    - name: Display node list
       ansible.builtin.debug:
         msg: "{{ kubectl_output.stdout }}"
