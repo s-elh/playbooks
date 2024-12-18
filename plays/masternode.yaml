@@ -35,6 +35,22 @@
         state: present
         update_cache: yes
 
+    - name: Add Kubernetes GPG key
+      shell: |
+        curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo tee /usr/share/keyrings/kubernetes-archive-keyring.gpg > /dev/null
+      register: gpg_key_added
+      changed_when: gpg_key_added.stdout != ""
+
+    - name: Add Kubernetes repository
+      shell: |
+        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+      register: repo_added
+      changed_when: repo_added.stdout != ""
+
+    - name: Update apt package cache
+      apt:
+        update_cache: yes
+
     - name: Download and install Kubernetes using kURL
       shell: curl -sSL https://kurl.sh/d6c2d72 | sudo bash
       args:
