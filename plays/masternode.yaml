@@ -3,11 +3,11 @@
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"  # Optional Proxy
-    kurl_url: "https://kurl.sh/d6c2d72" # Use your kURL link here
+    proxy_url: "http://10.1.38.2:3128"  # Optional proxy, remove if not needed
+    kurl_url: "https://kurl.sh/d6c2d72" # Your kURL link
 
   tasks:
-    - name: Configure HTTP proxy for apt
+    - name: Configure HTTP proxy for APT (Optional)
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
@@ -15,7 +15,7 @@
         dest: /etc/apt/apt.conf.d/95proxies
       when: proxy_url is defined
 
-    - name: Configure HTTP proxy for the environment
+    - name: Configure proxy for the environment (Optional)
       lineinfile:
         path: /etc/environment
         line: '{{ item }}'
@@ -27,23 +27,9 @@
         - 'HTTPS_PROXY={{ proxy_url }}'
       when: proxy_url is defined
 
-    - name: Add Kubernetes official GPG key
-      ansible.builtin.shell: |
-        mkdir -p /usr/share/keyrings
-        curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
-
-    - name: Add Kubernetes apt repository
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
-        state: present
-        update_cache: yes
-
-    - name: Install required packages
+    - name: Install curl if not already installed
       ansible.builtin.apt:
-        name: 
-          - curl 
-          - apt-transport-https 
-          - ca-certificates
+        name: curl
         state: present
         update_cache: yes
 
@@ -57,7 +43,7 @@
       wait_for:
         path: /var/lib/rancher/k3s/k3s.yaml
         state: present
-        timeout: 600
+        timeout: 1200
 
     - name: Print success message
       debug:
