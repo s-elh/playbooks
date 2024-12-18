@@ -1,13 +1,20 @@
 ---
-- name: Configure Kubernetes Worker Node using kURL
+- name: Install Kubernetes using kURL on Generic Linux
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"
+    proxy_url: "http://10.1.38.2:3128"  # Adjust if behind a proxy
 
   tasks:
-    - name: Configure HTTP proxy for apt
-      when: ansible_distribution == "Ubuntu"
+    - name: Ensure curl and iptables are installed
+      package:
+        name:
+          - curl
+          - iptables
+        state: present
+
+    - name: Configure HTTP proxy for apt (if needed)
+      when: ansible_facts.network['interface'] == 'eth0'  # Check if the network interface is available
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
@@ -15,7 +22,7 @@
         dest: /etc/apt/apt.conf.d/95proxies
         mode: '0644'
 
-    - name: Configure HTTP proxy for the environment
+    - name: Configure HTTP proxy for environment (if needed)
       lineinfile:
         path: /etc/environment
         line: '{{ item }}'
@@ -26,41 +33,19 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Install required dependencies (curl, iptables, apt-transport-https)
-      apt:
-        name:
-          - curl
-          - iptables
-          - apt-transport-https
-        state: present
-        update_cache: yes
-
-    - name: Add Kubernetes GPG key
-      apt_key:
-        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-        state: present
-
-    - name: Add Kubernetes repository
-      apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
-        filename: kubernetes
-        state: present
-
-    - name: Update apt package cache
-      apt:
-        update_cache: yes
-
-    - name: Download and install Kubernetes using kURL
-      shell: curl -sSL https://kurl.sh/d6c2d72 | sudo bash
+    - name: Ensure Kubernetes kURL script is available and installed
+      shell: |
+        curl -sSL https://kurl.sh/d6c2d72 | sudo bash
       args:
-        creates: /usr/local/bin/kubelet  # Ensure the file exists before running again
+        creates: /usr/local/bin/kubelet  # Ensure the script runs only if kubelet is not already installed
 
-    - name: Wait for Kubernetes to become ready
-      shell: kubectl get nodes
+    - name: Check if Kubernetes installation was successful
+      shell: |
+        kubectl get nodes
       register: result
       retries: 5
       delay: 10
-      until: result.stdout|search('worker')
+      until: result.stdout|search('Ready')
 
     - name: Show kubectl nodes
       debug:
