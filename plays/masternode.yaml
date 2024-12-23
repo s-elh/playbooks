@@ -1,28 +1,22 @@
 ---
-- name: Install Kubernetes using kURL on Generic Linux
+- name: Install kURL on Ubuntu
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"  # Adjust if behind a proxy
+    proxy_url: "http://10.1.38.2:3128"
+    kurl_url: "https://kurl.sh/d6c2d72"  # Replace with your specific kURL installer link
+    kurl_installer_path: "/tmp/kurl-installer.sh"
 
   tasks:
-    - name: Ensure curl and iptables are installed
-      package:
-        name:
-          - curl
-          - iptables
-        state: present
-
-    - name: Configure HTTP proxy for apt (if needed)
-      when: ansible_facts.network['interface'] == 'eth0'  # Check if the network interface is available
+    - name: Configure HTTP proxy for apt
+      when: ansible_distribution == "Ubuntu"
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
-        mode: '0644'
 
-    - name: Configure HTTP proxy for environment (if needed)
+    - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
         line: '{{ item }}'
@@ -33,34 +27,24 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Add Kubernetes GPG key
-      apt_key:
-        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-        state: present
+    - name: Reload environment variables
+      shell: source /etc/environment
+      register: env_reload
+      ignore_errors: true
 
-    - name: Add Kubernetes repository (using kubernetes-xenial)
-      apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
-        filename: kubernetes
-        state: present
-
-    - name: Update apt package cache
+    - name: Ensure curl is installed
       apt:
+        name: curl
+        state: present
         update_cache: yes
 
-    - name: Ensure Kubernetes is installed using kURL
-      shell: |
-        curl -sSL https://kurl.sh/d6c2d72 | sudo bash
+    - name: Download the kURL installer script
+      get_url:
+        url: "{{ kurl_url }}"
+        dest: "{{ kurl_installer_path }}"
+        mode: '0755'
+
+    - name: Run the kURL installer script
+      shell: "{{ kurl_installer_path }}"
       args:
-        creates: /usr/local/bin/kubelet  # Ensure the script runs only if kubelet is not already installed
-
-    - name: Wait for Kubernetes to become ready
-      shell: kubectl get nodes
-      register: result
-      retries: 5
-      delay: 10
-      until: result.stdout|search('Ready')
-
-    - name: Show kubectl nodes
-      debug:
-        var: result.stdout
+        creates: "/etc/kubernetes/admin.conf"  # Ensure idempotency
