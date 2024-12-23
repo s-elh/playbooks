@@ -1,10 +1,11 @@
 ---
-- name: Install kURL on Ubuntu
+- name: Install kURL using custom YAML configuration
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"
-    kurl_url: "https://kurl.sh/d6c2d72"  # Replace with your specific kURL installer link
+    proxy_url: "http://10.1.38.2:3128"  # Update with your proxy if required
+    kurl_yaml_path: "/tmp/kurl-installer.yaml"
+    kurl_url: "https://kurl.sh/<unique_id>"  # Replace <unique_id> with your generated kURL link
     kurl_installer_path: "/tmp/kurl-installer.sh"
 
   tasks:
@@ -32,6 +33,11 @@
       register: env_reload
       ignore_errors: true
 
+    - name: Upload kURL YAML configuration
+      copy:
+        src: "kurl-installer.yaml"  # Ensure this file is in your Ansible working directory
+        dest: "{{ kurl_yaml_path }}"
+
     - name: Ensure curl is installed
       apt:
         name: curl
@@ -43,6 +49,17 @@
         url: "{{ kurl_url }}"
         dest: "{{ kurl_installer_path }}"
         mode: '0755'
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
+
+    - name: Verify kURL installer script content
+      shell: "cat {{ kurl_installer_path }}"
+      register: script_content
+
+    - name: Debug kURL installer script content
+      debug:
+        var: script_content.stdout
 
     - name: Run the kURL installer script
       shell: "{{ kurl_installer_path }}"
