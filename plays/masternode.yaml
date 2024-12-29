@@ -1,13 +1,11 @@
 ---
-- name: Configure kURL with Proxy and Install on Ubuntu
+- name: Configure and install Kubernetes with kURL
   hosts: all
   become: true
   vars:
-    proxy_url: "http://10.1.38.2:3128"  # Your proxy URL
-    kurl_url: "https://k8s.kurl.sh/bundle/latest.tar.gz"  # kURL URL for bundle
+    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
-    # Configure HTTP proxy for APT
     - name: Configure HTTP proxy for apt
       when: ansible_distribution == "Ubuntu"
       copy:
@@ -16,7 +14,6 @@
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
 
-    # Configure HTTP proxy for the environment
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -28,42 +25,36 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    # Ensure system is updated
-    - name: Ensure system is updated
-      apt:
-        update_cache: yes
-        upgrade: dist
-
-    # Install curl if it's not installed
-    - name: Install required dependencies (curl)
-      apt:
-        name: curl
+    - name: Add DNS entries to resolv.conf
+      lineinfile:
+        path: /etc/resolv.conf
+        line: "nameserver {{ item }}"
         state: present
+      loop:
+        - 8.8.8.8
+        - 8.8.4.4
 
-    # Download the kURL bundle
-    - name: Download kURL bundle
-      get_url:
-        url: "{{ kurl_url }}"
-        dest: "/tmp/latest.tar.gz"
-
-    # Extract the downloaded tarball
-    - name: Extract the kURL bundle
-      unarchive:
-        src: "/tmp/latest.tar.gz"
-        dest: "/tmp/kurl_bundle"
-        remote_src: yes
-
-    # Run the kURL installation script
-    - name: Run the kURL installer script
-      shell: "sudo /tmp/kurl_bundle/install.sh"
+    - name: Disable swap
+      shell: |
+        swapoff --all
+        sed -i.bak '/swap/d' /etc/fstab
       args:
-        creates: "/usr/local/bin/kurl"  # Ensures it only runs once if kURL is installed
+        warn: false
 
-    # Verify kURL installation
-    - name: Verify kURL installation
-      command: "kurl version"
-      register: kurl_version
-      ignore_errors: true
+    - name: Run kURL join script
+      shell: |
+        curl -fsSL https://kurl.sh/version/v2024.12.04-0/8eb26e2/join.sh | \
+        sudo bash -s kubernetes-master-address=10.1.38.7:6443 \
+        kubeadm-token=gz3ne6.6bl1g0blmvd28s9w \
+        kubeadm-token-ca-hash=sha256:d9bc4332b838ed28e9a354e61859fcd91047603a2378ea85f86ce418a439c9d7 \
+        kubernetes-version=1.29.11 \
+        ekco-address=10.1.38.7:31880 \
+        ekco-auth-token=LwDd3A5KmoeJIoqHZ6cFNLznN8AXmdW1oaUDp8gIlqjbcIYg3j6DAfPZvxfnoG3u \
+        docker-registry-ip=10.96.3.41 \
+        additional-no-proxy-addresses=10.96.0.0/22,10.32.0.0/20 \
+        primary-host=10.1.38.7
+      register: kurl_installation
 
-    - debug:
-        var: kurl_version.stdout
+    - name: Display output of kURL installation
+      debug:
+        var: kurl_installation.stdout_lines
