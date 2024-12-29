@@ -25,6 +25,12 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
+    - name: Update and upgrade system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+      become: true
+
     - name: Add DNS entries to resolv.conf
       lineinfile:
         path: /etc/resolv.conf
