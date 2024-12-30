@@ -71,8 +71,8 @@
             - "nameserver 8.8.8.8"
             - "nameserver 1.1.1.1"
 
-        - name: Restart networking
-          command: systemctl restart networking
+        - name: Restart NetworkManager
+          command: systemctl restart NetworkManager
 
     - name: Configure NetworkManager DNS settings
       block:
