@@ -59,6 +59,21 @@
         - 8.8.4.4
         - 1.1.1.1
 
+    - name: Disable systemd-resolved service
+      shell: |
+        sudo systemctl disable --now systemd-resolved
+
+    - name: Configure NetworkManager to disable DNS management
+      blockinfile:
+        path: /etc/NetworkManager/NetworkManager.conf
+        block: |
+          [main]
+          dns=none
+
+    - name: Restart NetworkManager
+      shell: |
+        sudo systemctl restart NetworkManager
+
     - name: Disable swap
       shell: |
         swapoff --all
