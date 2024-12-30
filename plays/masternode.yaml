@@ -74,15 +74,15 @@
         - name: Restart NetworkManager if available
           block:
             - name: Check if NetworkManager service exists
-              shell: |
-                systemctl list-unit-files --type=service | grep -qw NetworkManager
-              register: nm_service_check
+              systemd:
+                name: NetworkManager
+                state: started
               ignore_errors: true
-              changed_when: false
+              register: nm_service_check
 
             - name: Restart NetworkManager
               command: systemctl restart NetworkManager
-              when: nm_service_check.rc == 0
+              when: nm_service_check is defined and nm_service_check.status is not none
 
         - name: Restart networking as fallback
           command: systemctl restart networking
