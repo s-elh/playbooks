@@ -73,14 +73,16 @@
 
         - name: Restart NetworkManager if available
           block:
-            - name: Check if NetworkManager is installed
-              stat:
-                path: /usr/sbin/NetworkManager
-              register: nm_check
+            - name: Check if NetworkManager service exists
+              shell: |
+                systemctl list-units --type=service | grep -qw NetworkManager
+              register: nm_service_check
+              ignore_errors: true
+              changed_when: false
 
             - name: Restart NetworkManager
               command: systemctl restart NetworkManager
-              when: nm_check.stat.exists
+              when: nm_service_check.rc == 0
 
     - name: Configure NetworkManager DNS settings
       block:
