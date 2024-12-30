@@ -81,10 +81,12 @@
         - name: Restart NetworkManager if available
           command: systemctl restart NetworkManager
           when: nm_service_check.rc == 0
+          ignore_errors: true
 
         - name: Restart networking as fallback
           command: systemctl restart networking
           when: nm_service_check.rc != 0
+          ignore_errors: true
 
     - name: Configure NetworkManager DNS settings
       block:
@@ -93,9 +95,11 @@
             path: /etc/NetworkManager/NetworkManager.conf
             line: "dns=none"
             create: yes
+          ignore_errors: true
 
         - name: Restart NetworkManager
           command: systemctl restart NetworkManager
+          ignore_errors: true
 
     - name: Install firewalld
       command: apt install -y firewalld
