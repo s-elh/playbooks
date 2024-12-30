@@ -30,28 +30,26 @@
         path: /etc/apt/sources.list.d/kubernetes.list
         state: absent
 
-    - name: Clean APT cache
-      command: apt clean
-
-    - name: Update apt and upgrade packages
-      command: apt update
+    - name: Update and upgrade APT packages
+      apt:
+        update_cache: yes
+        upgrade: dist
       ignore_errors: true
 
-    - name: Upgrade packages
-      command: apt upgrade -y
-      ignore_errors: true
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - tar
+          - docker.io
+          - firewalld
+        state: present
 
-    - name: Install curl and tar
-      command: apt install -y curl tar
-
-    - name: Install Docker
-      command: apt install -y docker.io
-
-    - name: Enable Docker service
-      command: systemctl enable docker
-
-    - name: Start Docker service
-      command: systemctl start docker
+    - name: Enable and start Docker service
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
 
     - name: Unset HTTP/HTTPS proxy variables
       shell: |
@@ -80,12 +78,16 @@
           changed_when: false
 
         - name: Restart NetworkManager if available
-          command: systemctl restart NetworkManager
+          systemd:
+            name: NetworkManager
+            state: restarted
           when: nm_service_check.rc == 0
           ignore_errors: true
 
         - name: Restart networking as fallback
-          command: systemctl restart networking
+          systemd:
+            name: networking
+            state: restarted
           when: nm_service_check.rc != 0
           ignore_errors: true
 
@@ -99,23 +101,32 @@
           ignore_errors: true
 
         - name: Restart NetworkManager
-          command: systemctl restart NetworkManager
+          systemd:
+            name: NetworkManager
+            state: restarted
           ignore_errors: true
 
-    - name: Install firewalld
-      command: apt install -y firewalld
-
     - name: Install kubectl
-      shell: |
-        curl -k -v -LO https://dl.k8s.io/release/v1.24.0/bin/linux/amd64/kubectl
-        chmod +x kubectl
-        mv kubectl /usr/local/bin/
-      args:
-        creates: /usr/local/bin/kubectl
+      block:
+        - name: Download kubectl
+          get_url:
+            url: "https://dl.k8s.io/release/v1.24.0/bin/linux/amd64/kubectl"
+            dest: /usr/local/bin/kubectl
+            mode: '0755'
+            force: yes
+          register: kubectl_download
+          ignore_errors: true
+
+        - name: Verify kubectl installation
+          command: kubectl version --client
+          when: kubectl_download is succeeded
+          ignore_errors: true
 
     - name: Run kURL installation script
-      shell: |
-        curl https://kurl.sh/8eb26e2 | sudo bash
-        echo "Y" | curl https://kurl.sh/8eb26e2 | sudo bash
-      environment:
-        DEBIAN_FRONTEND: noninteractive
+      block:
+        - name: Download and execute kURL script
+          shell: |
+            curl -sSL https://kurl.sh/8eb26e2 | sudo bash
+          environment:
+            DEBIAN_FRONTEND: noninteractive
+          ignore_errors: true
