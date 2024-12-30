@@ -72,7 +72,8 @@
             - "nameserver 1.1.1.1"
 
         - name: Check if NetworkManager service exists
-          command: systemctl list-unit-files --type=service | grep -qw NetworkManager
+          shell: |
+            systemctl list-unit-files --type=service | grep -qw NetworkManager
           register: nm_service_check
           ignore_errors: true
           changed_when: false
