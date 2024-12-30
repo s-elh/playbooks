@@ -115,8 +115,7 @@
 
     - name: Run kURL installation script
       shell: |
-        curl https://kurl.sh/8eb26e2 | sudo bash << EOF
-        Y
-        EOF
+        curl https://kurl.sh/8eb26e2 | sudo bash
+        echo "Y" | curl https://kurl.sh/8eb26e2 | sudo bash
       environment:
         DEBIAN_FRONTEND: noninteractive
