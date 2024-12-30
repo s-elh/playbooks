@@ -73,7 +73,6 @@
             path: /etc/NetworkManager/NetworkManager.conf
             line: "dns=none"
             create: yes
-          section: main
 
         - name: Restart NetworkManager
           command: sudo systemctl restart NetworkManager
