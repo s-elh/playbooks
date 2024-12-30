@@ -71,8 +71,16 @@
             - "nameserver 8.8.8.8"
             - "nameserver 1.1.1.1"
 
-        - name: Restart NetworkManager
-          command: systemctl restart NetworkManager
+        - name: Restart NetworkManager if available
+          block:
+            - name: Check if NetworkManager is installed
+              stat:
+                path: /usr/sbin/NetworkManager
+              register: nm_check
+
+            - name: Restart NetworkManager
+              command: systemctl restart NetworkManager
+              when: nm_check.stat.exists
 
     - name: Configure NetworkManager DNS settings
       block:
