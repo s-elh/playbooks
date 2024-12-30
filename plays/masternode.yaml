@@ -24,25 +24,33 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
+    - name: Remove problematic Kubernetes repository
+      file:
+        path: /etc/apt/sources.list.d/kubernetes.list
+        state: absent
+
+    - name: Clean APT cache
+      command: apt clean
+
     - name: Update apt and upgrade packages
-      command: sudo apt update
+      command: apt update
       ignore_errors: true
 
     - name: Upgrade packages
-      command: sudo apt upgrade -y
+      command: apt upgrade -y
       ignore_errors: true
 
     - name: Install curl and tar
-      command: sudo apt install -y curl tar
+      command: apt install -y curl tar
 
     - name: Install Docker
-      command: sudo apt install -y docker.io
+      command: apt install -y docker.io
 
     - name: Enable Docker service
-      command: sudo systemctl enable docker
+      command: systemctl enable docker
 
     - name: Start Docker service
-      command: sudo systemctl start docker
+      command: systemctl start docker
 
     - name: Unset HTTP/HTTPS proxy variables
       shell: |
@@ -64,7 +72,7 @@
             - "nameserver 1.1.1.1"
 
         - name: Restart networking
-          command: sudo systemctl restart networking
+          command: systemctl restart networking
 
     - name: Configure NetworkManager DNS settings
       block:
@@ -75,10 +83,10 @@
             create: yes
 
         - name: Restart NetworkManager
-          command: sudo systemctl restart NetworkManager
+          command: systemctl restart NetworkManager
 
     - name: Install firewalld
-      command: sudo apt install -y firewalld
+      command: apt install -y firewalld
 
     - name: Run kURL installation script
       command: curl https://kurl.sh/8eb26e2 | sudo bash
