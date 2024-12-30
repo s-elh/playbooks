@@ -45,7 +45,7 @@
       command: sudo systemctl start docker
 
     - name: Unset HTTP/HTTPS proxy variables
-      command: |
+      shell: |
         unset http_proxy
         unset https_proxy
         unset ftp_proxy
