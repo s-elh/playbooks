@@ -71,18 +71,15 @@
             - "nameserver 8.8.8.8"
             - "nameserver 1.1.1.1"
 
-        - name: Restart NetworkManager if available
-          block:
-            - name: Check if NetworkManager service exists
-              systemd:
-                name: NetworkManager
-                state: started
-              ignore_errors: true
-              register: nm_service_check
+        - name: Check if NetworkManager service exists
+          command: systemctl list-unit-files --type=service | grep -qw NetworkManager
+          register: nm_service_check
+          ignore_errors: true
+          changed_when: false
 
-            - name: Restart NetworkManager
-              command: systemctl restart NetworkManager
-              when: nm_service_check is defined and nm_service_check.status is not none
+        - name: Restart NetworkManager if available
+          command: systemctl restart NetworkManager
+          when: nm_service_check.rc == 0
 
         - name: Restart networking as fallback
           command: systemctl restart networking
