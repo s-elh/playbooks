@@ -3,6 +3,7 @@
   become: true
   vars:
     proxy_url: "http://10.1.38.2:3128"
+    password: "ACSCloud!2021!"
 
   tasks:
     - name: Configure HTTP proxy for apt
@@ -104,5 +105,19 @@
     - name: Install firewalld
       command: apt install -y firewalld
 
+    - name: Install kubectl
+      shell: |
+        curl -LO https://dl.k8s.io/release/v1.24.0/bin/linux/amd64/kubectl
+        chmod +x kubectl
+        mv kubectl /usr/local/bin/
+      args:
+        creates: /usr/local/bin/kubectl
+
     - name: Run kURL installation script
       command: curl https://kurl.sh/8eb26e2 | sudo bash
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      expect:
+        command: curl https://kurl.sh/8eb26e2 | sudo bash
+        responses:
+          'Do you want to continue? [Y/n]': 'Y'
