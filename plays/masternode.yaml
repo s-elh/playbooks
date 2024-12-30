@@ -75,7 +75,7 @@
           block:
             - name: Check if NetworkManager service exists
               shell: |
-                systemctl list-units --type=service | grep -qw NetworkManager
+                systemctl list-unit-files --type=service | grep -qw NetworkManager
               register: nm_service_check
               ignore_errors: true
               changed_when: false
@@ -83,6 +83,10 @@
             - name: Restart NetworkManager
               command: systemctl restart NetworkManager
               when: nm_service_check.rc == 0
+
+        - name: Restart networking as fallback
+          command: systemctl restart networking
+          when: nm_service_check.rc != 0
 
     - name: Configure NetworkManager DNS settings
       block:
