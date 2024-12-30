@@ -114,10 +114,9 @@
         creates: /usr/local/bin/kubectl
 
     - name: Run kURL installation script
-      command: curl https://kurl.sh/8eb26e2 | sudo bash
+      shell: |
+        curl https://kurl.sh/8eb26e2 | sudo bash << EOF
+        Y
+        EOF
       environment:
         DEBIAN_FRONTEND: noninteractive
-      expect:
-        command: curl https://kurl.sh/8eb26e2 | sudo bash
-        responses:
-          'Do you want to continue? [Y/n]': 'Y'
