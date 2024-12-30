@@ -1,5 +1,4 @@
----
-- name: Configure and install Kubernetes with kURL
+- name: Configure kURL
   hosts: all
   become: true
   vars:
@@ -25,66 +24,62 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Wait for the lock on apt package management to be released
-      shell: |
-        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-          echo "Waiting for other apt-get process to finish...";
-          sleep 5;
-        done
-      changed_when: false
+    - name: Update apt and upgrade packages
+      command: sudo apt update
+      ignore_errors: true
 
-    - name: Update and upgrade system packages
-      apt:
-        update_cache: yes
-        upgrade: dist
-      become: true
+    - name: Upgrade packages
+      command: sudo apt upgrade -y
+      ignore_errors: true
 
-    - name: Add DNS entries to resolv.conf
-      lineinfile:
-        path: /etc/resolv.conf
-        line: "nameserver {{ item }}"
-        state: present
-      loop:
-        - 8.8.8.8
-        - 8.8.4.4
-        - 1.1.1.1
+    - name: Install curl and tar
+      command: sudo apt install -y curl tar
 
-    - name: Disable systemd-resolved service
-      shell: |
-        sudo systemctl disable --now systemd-resolved
+    - name: Install Docker
+      command: sudo apt install -y docker.io
 
-    - name: Configure NetworkManager to disable DNS management
-      blockinfile:
-        path: /etc/NetworkManager/NetworkManager.conf
-        block: |
-          [main]
-          dns=none
+    - name: Enable Docker service
+      command: sudo systemctl enable docker
 
-    - name: Restart NetworkManager
-      shell: |
-        sudo systemctl restart NetworkManager
+    - name: Start Docker service
+      command: sudo systemctl start docker
 
-    - name: Disable swap
-      shell: |
-        swapoff --all
-        sed -i.bak '/swap/d' /etc/fstab
-      args:
-        warn: false
+    - name: Unset HTTP/HTTPS proxy variables
+      command: |
+        unset http_proxy
+        unset https_proxy
+        unset ftp_proxy
+        unset all_proxy
+      ignore_errors: true
 
-    - name: Run kURL join script
-      shell: |
-        curl -fsSL https://kurl.sh/version/v2024.12.04-0/8eb26e2/join.sh | \
-        sudo bash -s kubernetes-master-address=10.1.38.7:6443 \
-        kubeadm-token=gz3ne6.6bl1g0blmvd28s9w \
-        kubeadm-token-ca-hash=sha256:d9bc4332b838ed28e9a354e61859fcd91047603a2378ea85f86ce418a439c9d7 \
-        kubernetes-version=1.29.11 \
-        ekco-address=10.1.38.7:31880 \
-        ekco-auth-token=LwDd3A5KmoeJIoqHZ6cFNLznN8AXmdW1oaUDp8gIlqjbcIYg3j6DAfPZvxfnoG3u \
-        docker-registry-ip=10.96.3.41 \
-        additional-no-proxy-addresses=10.96.0.0/22,10.32.0.0/20 \
-        primary-host=10.1.38.7
-      register: kurl_installation
+    - name: Configure DNS
+      block:
+        - name: Edit /etc/resolv.conf
+          lineinfile:
+            path: /etc/resolv.conf
+            line: "{{ item }}"
+            create: yes
+          with_items:
+            - "nameserver 8.8.8.8"
+            - "nameserver 1.1.1.1"
 
-    - name: Display output of kURL installation
-      debug:
-        var: kurl_installation.stdout_lines
+        - name: Restart networking
+          command: sudo systemctl restart networking
+
+    - name: Configure NetworkManager DNS settings
+      block:
+        - name: Edit NetworkManager.conf
+          lineinfile:
+            path: /etc/NetworkManager/NetworkManager.conf
+            line: "dns=none"
+            create: yes
+          section: main
+
+        - name: Restart NetworkManager
+          command: sudo systemctl restart NetworkManager
+
+    - name: Install firewalld
+      command: sudo apt install -y firewalld
+
+    - name: Run kURL installation script
+      command: curl https://kurl.sh/8eb26e2 | sudo bash
