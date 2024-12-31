@@ -53,7 +53,7 @@
 
     - name: Run the Kurl installation script with auto-confirmation
       shell: |
-        curl -fsSL https://kurl.sh/8eb26e2 | sudo -S bash <<EOF
+        curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
         ACSCloud!2021!
         y
         EOF
