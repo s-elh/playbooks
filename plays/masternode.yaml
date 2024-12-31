@@ -53,14 +53,10 @@
 
     - name: Run the Kurl installation script with auto-confirmation
       shell: |
-        curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
-        ACSCloud!2021!
-        y
-        EOF
+        yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash  
       args:
         executable: /bin/bash
       register: kurl_install
-
     - name: Debug Kurl installation output
       debug:
         msg: "{{ kurl_install.stdout }}"
