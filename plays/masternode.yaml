@@ -1,6 +1,6 @@
 ---
 - name: Configure kURL and Install Kubernetes
-  hosts: localhost
+  hosts: all
   become: yes
   vars:
     ansible_become_password: "ACSCloud!2021!"
