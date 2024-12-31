@@ -1,11 +1,11 @@
 ---
 - name: Configure kURL and Install Kubernetes
-  hosts: all
+  hosts: localhost
   become: yes
   vars:
     ansible_become_password: "ACSCloud!2021!"
     proxy_url: "http://10.1.38.2:3128"
-  
+
   tasks:
     - name: Remove /etc/resolv.conf if it exists
       file:
@@ -52,11 +52,12 @@
         - 'HTTPS_PROXY={{ proxy_url }}'
 
     - name: Run the Kurl installation script with auto-confirmation
-      shell: |
-        yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash  
-      args:
-        executable: /bin/bash
+      expect:
+        command: curl -fsSL https://kurl.sh/8eb26e2 | sudo -S bash
+        responses:
+          '.*(y/N).*': 'y'
       register: kurl_install
+
     - name: Debug Kurl installation output
       debug:
         msg: "{{ kurl_install.stdout }}"
