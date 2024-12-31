@@ -1,11 +1,37 @@
-- name: Configure kURL
-  hosts: all
-  become: true
+---
+- name: Configure kURL and Install Kubernetes
+  hosts: localhost
+  become: yes
   vars:
+    ansible_become_password: "ACSCloud!2021!"
     proxy_url: "http://10.1.38.2:3128"
-    password: "ACSCloud!2021!"
-
+  
   tasks:
+    - name: Remove /etc/resolv.conf if it exists
+      file:
+        path: /etc/resolv.conf
+        state: absent
+
+    - name: Create /etc/resolv.conf with Google DNS
+      copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 8.8.8.8
+
+    - name: Verify /etc/resolv.conf contains Google DNS
+      command: cat /etc/resolv.conf
+      register: resolv_check
+
+    - name: Debug resolv.conf contents
+      debug:
+        msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
+
+    - name: Disable and stop systemd-resolved
+      service:
+        name: systemd-resolved
+        state: stopped
+        enabled: no
+
     - name: Configure HTTP proxy for apt
       when: ansible_distribution == "Ubuntu"
       copy:
@@ -25,108 +51,16 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Remove problematic Kubernetes repository
-      file:
-        path: /etc/apt/sources.list.d/kubernetes.list
-        state: absent
-
-    - name: Update and upgrade APT packages
-      apt:
-        update_cache: yes
-        upgrade: dist
-      ignore_errors: true
-
-    - name: Install required packages
-      apt:
-        name:
-          - curl
-          - tar
-          - docker.io
-          - firewalld
-        state: present
-
-    - name: Enable and start Docker service
-      systemd:
-        name: docker
-        enabled: yes
-        state: started
-
-    - name: Unset HTTP/HTTPS proxy variables
+    - name: Run the Kurl installation script with auto-confirmation
       shell: |
-        unset http_proxy
-        unset https_proxy
-        unset ftp_proxy
-        unset all_proxy
-      ignore_errors: true
+        curl -fsSL https://kurl.sh/8eb26e2 | sudo -S bash <<EOF
+        ACSCloud!2021!
+        y
+        EOF
+      args:
+        executable: /bin/bash
+      register: kurl_install
 
-    - name: Configure DNS
-      block:
-        - name: Edit /etc/resolv.conf
-          lineinfile:
-            path: /etc/resolv.conf
-            line: "{{ item }}"
-            create: yes
-          with_items:
-            - "nameserver 8.8.8.8"
-            - "nameserver 1.1.1.1"
-
-        - name: Check if NetworkManager service exists
-          shell: |
-            systemctl list-unit-files --type=service | grep -qw NetworkManager
-          register: nm_service_check
-          ignore_errors: true
-          changed_when: false
-
-        - name: Restart NetworkManager if available
-          systemd:
-            name: NetworkManager
-            state: restarted
-          when: nm_service_check.rc == 0
-          ignore_errors: true
-
-        - name: Restart networking as fallback
-          systemd:
-            name: networking
-            state: restarted
-          when: nm_service_check.rc != 0
-          ignore_errors: true
-
-    - name: Configure NetworkManager DNS settings
-      block:
-        - name: Edit NetworkManager.conf
-          lineinfile:
-            path: /etc/NetworkManager/NetworkManager.conf
-            line: "dns=none"
-            create: yes
-          ignore_errors: true
-
-        - name: Restart NetworkManager
-          systemd:
-            name: NetworkManager
-            state: restarted
-          ignore_errors: true
-
-    - name: Install kubectl
-      block:
-        - name: Download kubectl
-          get_url:
-            url: "https://dl.k8s.io/release/v1.24.0/bin/linux/amd64/kubectl"
-            dest: /usr/local/bin/kubectl
-            mode: '0755'
-            force: yes
-          register: kubectl_download
-          ignore_errors: true
-
-        - name: Verify kubectl installation
-          command: kubectl version --client
-          when: kubectl_download is succeeded
-          ignore_errors: true
-
-    - name: Run kURL installation script
-      block:
-        - name: Download and execute kURL script
-          shell: |
-            curl -sSL https://kurl.sh/8eb26e2 | sudo bash
-          environment:
-            DEBIAN_FRONTEND: noninteractive
-          ignore_errors: true
+    - name: Debug Kurl installation output
+      debug:
+        msg: "{{ kurl_install.stdout }}"
