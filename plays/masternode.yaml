@@ -52,10 +52,10 @@
         - 'HTTPS_PROXY={{ proxy_url }}'
 
     - name: Run the Kurl installation script with auto-confirmation
-      expect:
-        command: curl -fsSL https://kurl.sh/8eb26e2 | sudo -S bash
-        responses:
-          '.*(y/N).*': 'y'
+      shell: |
+        yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
+      args:
+        executable: /bin/bash
       register: kurl_install
 
     - name: Debug Kurl installation output
