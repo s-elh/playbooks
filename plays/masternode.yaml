@@ -22,11 +22,20 @@
         dest: /etc/resolv.conf
         content: |
           nameserver 8.8.8.8
+          nameserver 8.8.4.4
       register: create_resolv
 
     - name: Debug resolv.conf creation
       debug:
         msg: "Created /etc/resolv.conf: {{ create_resolv }}"
+
+    - name: Verify /etc/resolv.conf content
+      command: cat /etc/resolv.conf
+      register: resolv_check
+
+    - name: Debug resolv.conf verification
+      debug:
+        msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
 
     - name: Disable and stop systemd-resolved
       service:
