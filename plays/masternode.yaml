@@ -1,15 +1,15 @@
-- name: Configure kURL and Install Kubernetes
+- name: Debug and Install kURL
   hosts: all
   become: yes
-  vars:
-    ansible_become_password: "ACSCloud!2021!"
 
   tasks:
+    # Supprimer /etc/resolv.conf s'il existe
     - name: Remove /etc/resolv.conf if it exists
       file:
         path: /etc/resolv.conf
         state: absent
 
+    # Créer /etc/resolv.conf avec les serveurs DNS Google
     - name: Create /etc/resolv.conf with Google DNS
       copy:
         dest: /etc/resolv.conf
@@ -17,19 +17,67 @@
           nameserver 8.8.8.8
           nameserver 8.8.4.4
 
+    # Vérifier le contenu de /etc/resolv.conf
+    - name: Verify /etc/resolv.conf contains Google DNS
+      command: cat /etc/resolv.conf
+      register: resolv_check
+
+    - name: Debug resolv.conf contents
+      debug:
+        msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
+
+    # Désactiver et arrêter systemd-resolved
     - name: Disable and stop systemd-resolved
       service:
         name: systemd-resolved
         state: stopped
         enabled: no
 
-    - name: Run the Kurl installation script
+    # Tester la connectivité Internet
+    - name: Test Internet connectivity
       shell: |
-        yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
-      args:
-        executable: /bin/bash
+        curl -fsSL https://kurl.sh/8eb26e2
+      register: connectivity_check
+      ignore_errors: yes
+
+    - name: Debug connectivity check
+      debug:
+        msg: >
+          Connectivity test result:
+          Exit Code: {{ connectivity_check.rc }}
+          Stdout: {{ connectivity_check.stdout }}
+          Stderr: {{ connectivity_check.stderr }}
+
+    # Installer Expect pour gérer les confirmations automatiques
+    - name: Install Expect package
+      apt:
+        name: expect
+        state: present
+
+    # Exécuter le script Kurl avec gestion des confirmations
+    - name: Run Kurl installation script with Expect
+      expect:
+        command: curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
+        responses:
+          'Press y to continue': 'y'
       register: kurl_install
+      ignore_errors: yes
 
     - name: Debug Kurl installation output
       debug:
-        msg: "{{ kurl_install.stdout }}"
+        msg: >
+          Kurl installation result:
+          Exit Code: {{ kurl_install.rc }}
+          Stdout: {{ kurl_install.stdout }}
+          Stderr: {{ kurl_install.stderr }}
+
+    # Vérifier l'installation de Kubernetes
+    - name: Verify Kubernetes installation
+      shell: |
+        kubectl version --client
+      register: kubectl_check
+      ignore_errors: yes
+
+    - name: Debug Kubernetes version
+      debug:
+        msg: "Kubernetes version: {{ kubectl_check.stdout }}"
