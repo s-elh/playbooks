@@ -3,7 +3,7 @@
   become: yes
   vars:
     ansible_become_password: "ACSCloud!2021!"
-    proxy_url: "http://10.1.38.12:3128"
+    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
     # Supprimer /etc/resolv.conf s'il existe
