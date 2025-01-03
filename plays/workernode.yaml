@@ -1,192 +1,33 @@
 ---
-- name: Full System Update and Install kURL on Ubuntu ---
-- name: Install kURL on Ubuntu Server
+- name: Installer kURL sur Ubuntu 22
   hosts: all
   become: yes
   vars:
     kurl_url: "https://kurl.sh/3e386c9"
-    kurl_path: "/usr/local/bin/kurl"
-    proxy_url: "http://10.1.38.2:3128"
-    nameservers:
-      - "8.8.8.8"
-      - "8.8.4.4"
 
   tasks:
-    - name: Install necessary packages (curl, wget, etc.)
-      apt:
-        name:
-          - curl
-          - wget
-        state: present
-        update_cache: yes
-
-    - name: Configure DNS nameservers
-      copy:
-        content: |
-          nameserver {{ item }}
-        dest: /etc/resolv.conf
-        owner: root
-        group: root
-        mode: '0644'
-      with_items: "{{ nameservers }}"
-
-    - name: Configure HTTP proxy for apt
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-        mode: '0644'
-
-    - name: Configure HTTP proxy for environment variables
-      lineinfile:
-        path: /etc/environment
-        line: "{{ item }}"
-        create: yes
-      with_items:
-        - "http_proxy={{ proxy_url }}"
-        - "https_proxy={{ proxy_url }}"
-        - "HTTP_PROXY={{ proxy_url }}"
-        - "HTTPS_PROXY={{ proxy_url }}"
-
-    - name: Download kURL installation script
-      get_url:
-        url: "{{ kurl_url }}"
-        dest: /tmp/kurl.sh
-        mode: '0755'
-        force: yes
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-
-    - name: Run kURL installation script with auto confirmation
-      shell: "yes | bash /tmp/kurl.sh"
-      args:
-        creates: "{{ kurl_path }}"
-
-    - name: Check if kURL is installed
-      command: kurl --version
-      register: kurl_version
-      ignore_errors: yes
-
-    - name: Show kURL version if installed
-      debug:
-        var: kurl_version.stdout
-
-    - name: Check if kURL binary exists
-      stat:
-        path: "{{ kurl_path }}"
-      register: kurl_binary
-
-    - name: Display kURL binary status
-      debug:
-        var: kurl_binary.stat.exists
-
-  hosts: all
-  become: yes
-  vars:
-    kurl_url: "https://kurl.sh/3e386c9"
-    kurl_path: "/usr/local/bin/kurl"
-    proxy_url: "http://10.1.38.2:3128"
-    nameservers:
-      - "8.8.8.8"
-      - "8.8.4.4"
-
-  tasks:
-    - name: Remove invalid Kubernetes repository (if exists)
-      file:
-        path: /etc/apt/sources.list.d/kubernetes.list
-        state: absent
-      ignore_errors: yes
-
-    - name: Clean APT cache
-      command: sudo apt-get clean
-
-    - name: Update APT package list
+    - name: Mettre à jour les paquets APT
       apt:
         update_cache: yes
-
-    - name: Upgrade all installed packages
-      apt:
         upgrade: yes
-        update_cache: yes
 
-    - name: Install required dependencies (curl, apt-transport-https)
+    - name: Installer curl
       apt:
-        name:
-          - curl
-          - apt-transport-https
+        name: curl
         state: present
 
-    - name: Configure DNS nameservers
-      copy:
-        content: |
-          nameserver {{ item }}
-        dest: /etc/resolv.conf
-        owner: root
-        group: root
-        mode: '0644'
-      with_items: "{{ nameservers }}"
-
-    - name: Configure HTTP proxy for apt
-      when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
-    - name: Download kURL script with proxy settings
-      get_url:
-        url: "{{ kurl_url }}"
-        dest: /tmp/kurl.sh
-        mode: '0755'
-      environment:
-        http_proxy: "{{ proxy_url }}"
-        https_proxy: "{{ proxy_url }}"
-
-    - name: Ensure kURL script is executable
-      file:
-        path: /tmp/kurl.sh
-        mode: '0755'
-
-    - name: Run the kURL installation script with automatic confirmation
+    - name: Télécharger et installer kURL
       shell: |
-        yes | sudo bash /tmp/kurl.sh
+        yes | curl -sSL {{ kurl_url }} | sudo bash
       args:
-        creates: "{{ kurl_path }}"
-      register: kurl_install_output
-      ignore_errors: yes
+        chdir: /tmp
+        creates: /usr/local/bin/kurl
 
-    - name: Display the kURL installation script output
-      debug:
-        var: kurl_install_output.stdout
-
-    - name: Check if kURL is installed
+    - name: Vérifier si kURL est installé
       command: kurl --version
       register: kurl_version
       ignore_errors: yes
 
-    - name: Display kURL version
+    - name: Afficher la version de kURL
       debug:
         var: kurl_version.stdout
-
-    - name: Check if kURL binary exists
-      stat:
-        path: "{{ kurl_path }}"
-      register: kurl_binary
-
-    - name: Display kURL binary existence status
-      debug:
-        var: kurl_binary.stat.exists
