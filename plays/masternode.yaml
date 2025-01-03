@@ -24,11 +24,7 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
-- name: Configure kURL and Install Kubernetes
-  hosts: all
-  become: yes
 
-  tasks:
     - name: Remove /etc/resolv.conf if it exists
       file:
         path: /etc/resolv.conf
