@@ -1,24 +1,38 @@
-- name: Debug and Install kURL
+---
+- name: Configure kURL and Install Kubernetes
   hosts: all
   become: yes
+  vars:
+    ansible_become_password: "ACSCloud!2021!"
+    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
-    # Supprimer /etc/resolv.conf s'il existe
+    # Supprimer le fichier resolv.conf s'il existe
     - name: Remove /etc/resolv.conf if it exists
       file:
         path: /etc/resolv.conf
         state: absent
+      register: resolv_remove_status
 
-    # Créer /etc/resolv.conf avec les serveurs DNS Google
+    - name: Debug resolv.conf removal
+      debug:
+        msg: "Result of resolv.conf removal: {{ resolv_remove_status }}"
+
+    # Créer le fichier resolv.conf avec les serveurs DNS
     - name: Create /etc/resolv.conf with Google DNS
       copy:
         dest: /etc/resolv.conf
         content: |
           nameserver 8.8.8.8
           nameserver 8.8.4.4
+      register: resolv_create_status
 
-    # Vérifier le contenu de /etc/resolv.conf
-    - name: Verify /etc/resolv.conf contains Google DNS
+    - name: Debug resolv.conf creation
+      debug:
+        msg: "Result of resolv.conf creation: {{ resolv_create_status }}"
+
+    # Vérifier le contenu de resolv.conf
+    - name: Verify /etc/resolv.conf contents
       command: cat /etc/resolv.conf
       register: resolv_check
 
@@ -26,58 +40,68 @@
       debug:
         msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
 
-    # Désactiver et arrêter systemd-resolved
+    # Désactiver et stopper systemd-resolved
     - name: Disable and stop systemd-resolved
       service:
         name: systemd-resolved
         state: stopped
         enabled: no
+      register: resolved_status
 
-    # Tester la connectivité Internet
-    - name: Test Internet connectivity
-      shell: |
-        curl -fsSL https://kurl.sh/8eb26e2
-      register: connectivity_check
-      ignore_errors: yes
-
-    - name: Debug connectivity check
+    - name: Debug systemd-resolved status
       debug:
-        msg: >
-          Connectivity test result:
-          Exit Code: {{ connectivity_check.rc }}
-          Stdout: {{ connectivity_check.stdout }}
-          Stderr: {{ connectivity_check.stderr }}
+        msg: "Systemd-resolved service status: {{ resolved_status }}"
 
-    # Installer Expect pour gérer les confirmations automatiques
-    - name: Install Expect package
-      apt:
-        name: expect
-        state: present
+    # Configurer le proxy pour apt (si Ubuntu)
+    - name: Configure HTTP proxy for apt
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+      register: apt_proxy_status
 
-    # Exécuter le script Kurl avec gestion des confirmations
-    - name: Run Kurl installation script with Expect
-      expect:
-        command: curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
-        responses:
-          'Press y to continue': 'y'
+    - name: Debug apt proxy configuration
+      debug:
+        msg: "APT proxy configuration: {{ apt_proxy_status }}"
+
+    # Configurer le proxy pour l'environnement
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+      register: env_proxy_status
+
+    - name: Debug environment proxy configuration
+      debug:
+        msg: "Environment proxy configuration: {{ env_proxy_status }}"
+
+    # Exécuter le script Kurl avec confirmation automatique
+    - name: Run the Kurl installation script with auto-confirmation
+      shell: |
+        yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
+      args:
+        executable: /bin/bash
       register: kurl_install
-      ignore_errors: yes
 
     - name: Debug Kurl installation output
       debug:
-        msg: >
-          Kurl installation result:
-          Exit Code: {{ kurl_install.rc }}
-          Stdout: {{ kurl_install.stdout }}
-          Stderr: {{ kurl_install.stderr }}
+        msg: "Kurl installation script output: {{ kurl_install.stdout }}"
 
-    # Vérifier l'installation de Kubernetes
-    - name: Verify Kubernetes installation
-      shell: |
-        kubectl version --client
-      register: kubectl_check
+    # Vérifier si Kubernetes est installé
+    - name: Verify Kubernetes client installation
+      command: kubectl version --client
+      register: kubectl_version
       ignore_errors: yes
 
-    - name: Debug Kubernetes version
+    - name: Debug Kubernetes client version
       debug:
-        msg: "Kubernetes version: {{ kubectl_check.stdout }}"
+        msg: "kubectl version output: {{ kubectl_version.stdout }}"
+
