@@ -1,5 +1,5 @@
 ---
-- name: Configure proxy, DNS, and install unzip using expect
+- name: Configure kURL with proxy and DNS
   hosts: all
   become: true
   vars:
@@ -7,6 +7,7 @@
 
   tasks:
     - name: Configure HTTP proxy for apt
+      when: ansible_distribution == "Ubuntu"
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
@@ -44,14 +45,18 @@
       debug:
         msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
 
-    - name: Update apt cache using expect
+    - name: Disable and stop systemd-resolved
+      service:
+        name: systemd-resolved
+        state: stopped
+        enabled: no
+
+    - name: Run the Kurl installation script with auto-confirmation
       expect:
-        command: apt-get update
+        command: curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
         responses:
           'Do you want to continue?': 'y'
 
-    - name: Install unzip using expect
-      expect:
-        command: apt-get install unzip
-        responses:
-          'Do you want to continue?': 'y'
+    - name: Debug Kurl installation completion
+      debug:
+        msg: "Kurl installation script executed successfully."
