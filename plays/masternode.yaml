@@ -1,5 +1,5 @@
 ---
-- name: Install kURL using curl with Proxy configuration
+- name: Install kURL and Configure Proxy
   hosts: all
   become: true
   vars:
@@ -25,35 +25,9 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Remove /etc/resolv.conf if it exists
-      file:
-        path: /etc/resolv.conf
-        state: absent
-
-    - name: Create /etc/resolv.conf with Google DNS
-      copy:
-        dest: /etc/resolv.conf
-        content: |
-          nameserver 8.8.8.8
-          nameserver 8.8.4.4
-
-    - name: Verify /etc/resolv.conf content
-      command: cat /etc/resolv.conf
-      register: resolv_check
-
-    - name: Debug resolv.conf content
-      debug:
-        msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
-
-    - name: Disable and stop systemd-resolved
-      service:
-        name: systemd-resolved
-        state: stopped
-        enabled: no
-
-    - name: Run kURL installation script
+    - name: Run the kURL installation script with auto-confirmation
       shell: |
-        curl -fsSL https://kurl.sh/3e386c9 | sudo bash
+        yes | curl -fsSL https://kurl.sh/3e386c9 | sudo bash
       args:
         executable: /bin/bash
       register: kurl_install
@@ -65,12 +39,3 @@
           Exit Code: {{ kurl_install.rc }}
           Stdout: {{ kurl_install.stdout }}
           Stderr: {{ kurl_install.stderr }}
-
-    - name: Verify Kubernetes installation
-      command: kubectl version --client
-      register: kubectl_version
-      ignore_errors: yes
-
-    - name: Debug Kubernetes installation check
-      debug:
-        msg: "Kubernetes version output: {{ kubectl_version.stdout }}"
