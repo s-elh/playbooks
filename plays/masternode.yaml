@@ -1,5 +1,5 @@
 ---
-- name: Configure kURL
+- name: Configure  kURL
   hosts: all
   become: true
   vars:
@@ -35,7 +35,7 @@
         dest: /etc/resolv.conf
         content: |
           nameserver 8.8.8.8
-          nameserver 8.8.1.1
+          nameserver 8.8.4.4
 
     - name: Verify /etc/resolv.conf content
       command: cat /etc/resolv.conf
@@ -51,8 +51,14 @@
         state: stopped
         enabled: no
 
-    - name: Run the kURL installation script with auto-confirmation
-      shell: |
-        yes | curl -fsSL --noproxy "*" https://kurl.sh/3e386c9 | sudo bash
-      args:
-        executable: /bin/bash
+    - name: Run the Kurl installation script with auto-confirmation
+      command: "yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash"
+
+    - name: Verify Kurl installation success
+      command: kubectl version --client
+      register: kubectl_version
+      ignore_errors: yes
+
+    - name: Debug kubectl version check
+      debug:
+        msg: "kubectl version output: {{ kubectl_version.stdout }}"
