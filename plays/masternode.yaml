@@ -1,5 +1,5 @@
 ---
-- name: Configure kURL
+- name: Install kURL using curl with Proxy configuration
   hosts: all
   become: true
   vars:
@@ -41,7 +41,7 @@
       command: cat /etc/resolv.conf
       register: resolv_check
 
-    - name: Debug resolv.conf verification
+    - name: Debug resolv.conf content
       debug:
         msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
 
@@ -51,22 +51,26 @@
         state: stopped
         enabled: no
 
-    - name: Run the Kurl installation script with auto-confirmation
+    - name: Run kURL installation script
       shell: |
-        yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
+        curl -fsSL https://kurl.sh/3e386c9 | sudo bash
       args:
         executable: /bin/bash
       register: kurl_install
 
-    - name: Debug Kurl installation output
+    - name: Debug kURL installation output
       debug:
-        msg: "{{ kurl_install.stdout }}"
+        msg: >
+          Installation result:
+          Exit Code: {{ kurl_install.rc }}
+          Stdout: {{ kurl_install.stdout }}
+          Stderr: {{ kurl_install.stderr }}
 
-    - name: Verify Kurl installation success
+    - name: Verify Kubernetes installation
       command: kubectl version --client
       register: kubectl_version
       ignore_errors: yes
 
-    - name: Debug kubectl version check
+    - name: Debug Kubernetes installation check
       debug:
-        msg: "kubectl version output: {{ kubectl_version.stdout }}"
+        msg: "Kubernetes version output: {{ kubectl_version.stdout }}"
