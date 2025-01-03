@@ -1,5 +1,5 @@
 ---
-- name: Configure  kURL
+- name: Configure proxy, DNS, and install unzip using yes
   hosts: all
   become: true
   vars:
@@ -7,7 +7,6 @@
 
   tasks:
     - name: Configure HTTP proxy for apt
-      when: ansible_distribution == "Ubuntu"
       copy:
         content: |
           Acquire::http::Proxy "{{ proxy_url }}";
@@ -45,20 +44,8 @@
       debug:
         msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
 
-    - name: Disable and stop systemd-resolved
-      service:
-        name: systemd-resolved
-        state: stopped
-        enabled: no
+    - name: Update apt cache
+      command: yes | apt-get update
 
-    - name: Run the Kurl installation script with auto-confirmation
-      command: "yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash"
-
-    - name: Verify Kurl installation success
-      command: kubectl version --client
-      register: kubectl_version
-      ignore_errors: yes
-
-    - name: Debug kubectl version check
-      debug:
-        msg: "kubectl version output: {{ kubectl_version.stdout }}"
+    - name: Install unzip using yes
+      command: yes | apt-get install unzip
