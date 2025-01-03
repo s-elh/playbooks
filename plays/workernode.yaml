@@ -1,93 +1,33 @@
 ---
-# Ansible playbook to install Kubernetes Worker Node using kURL
-- name: Install Kubernetes Worker Node using kURL
+- name: Install kURL on Ubuntu 22
   hosts: all
   become: yes
-
   vars:
-    proxy_url: "http://10.1.38.2:3128"
-    join_command: "/path/to/your/join/script.sh"  # Replace this with the actual join command or token script
+    kurl_url: "https://kurl.sh/3e386c9"
 
   tasks:
-    - name: Install required packages for APT
-      ansible.builtin.apt:
-        name: 
-          - apt-transport-https
-          - ca-certificates
-          - curl
+    - name: Update APT packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+
+    - name: Install curl
+      apt:
+        name: curl
         state: present
 
-    - name: Add Kubernetes APT key
-      ansible.builtin.shell: |
-        curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+    - name: Download and install kURL
+      shell: |
+        yes | curl -sSL {{ kurl_url }} | sudo bash
+      args:
+        chdir: /tmp
+        creates: /usr/local/bin/kurl
 
-    - name: Add Kubernetes repository
-      ansible.builtin.shell: |
-        echo "deb https://apt.kubernetes.io/ kubernetes-{{ ansible_distribution_release }} main" > /etc/apt/sources.list.d/kubernetes.list
+    - name: Check if kURL is installed
+      command: kurl --version
+      register: kurl_version
+      ignore_errors: yes
 
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: yes
-
-    - name: Update and upgrade system packages
-      ansible.builtin.apt:
-        update_cache: yes
-        upgrade: dist
-      when: ansible_os_family == "Debian"
-
-    - name: Configure HTTP proxy for apt
-      when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
-    - name: Install required dependencies
-      ansible.builtin.apt:
-        name:
-          - curl
-          - tar
-        state: present
-
-    - name: Download kURL join script
-      ansible.builtin.get_url:
-        url: https://kurl.sh/d6c2d72
-        dest: /tmp/kurl-join.sh
-        mode: '0755'
-
-    - name: Run the kURL join script
-      ansible.builtin.shell: |
-        /tmp/kurl-join.sh
-      register: join_output
-
-    - name: Join the Kubernetes cluster
-      ansible.builtin.shell: |
-        {{ join_command }}
-      register: join_command_output
-
-    - name: Wait for worker node to connect to Kubernetes API
-      ansible.builtin.wait_for:
-        port: 6443
-        host: localhost
-        timeout: 600
-        state: started
-
-    - name: Verify kubectl is installed
-      ansible.builtin.command: kubectl version --client
-      register: kubectl_version
-
-    - name: Debug kubectl version
-      ansible.builtin.debug:
-        msg: "KubeCTL version: {{ kubectl_version.stdout }}"
+    - name: Display kURL version
+      debug:
+        var: kurl_version.stdout
