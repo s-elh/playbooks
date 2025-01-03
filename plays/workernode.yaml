@@ -4,6 +4,7 @@
   become: yes
   vars:
     kurl_url: "https://kurl.sh/3e386c9"
+    kurl_path: "/usr/local/bin/kurl"
 
   tasks:
     - name: Remove invalid Kubernetes repository (if exists)
@@ -31,13 +32,18 @@
           - apt-transport-https
         state: present
 
-    - name: Download and install kURL
-      shell: |
-        yes | curl -sSL {{ kurl_url }} | sudo bash
-      args:
-        chdir: /tmp
-        creates: /usr/local/bin/kurl
+    - name: Download kURL script
+      get_url:
+        url: "{{ kurl_url }}"
+        dest: /tmp/kurl.sh
+        mode: '0755'
 
+    - name: Run the kURL installation script with automatic confirmation
+      shell: |
+        yes | sudo bash /tmp/kurl.sh
+      args:
+        creates: "{{ kurl_path }}"
+        
     - name: Check if kURL is installed
       command: kurl --version
       register: kurl_version
