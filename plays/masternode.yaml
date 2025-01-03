@@ -1,5 +1,5 @@
 ---
-- name: Configure proxy, DNS, and install unzip using yes
+- name: Configure proxy, DNS, and install unzip using expect
   hosts: all
   become: true
   vars:
@@ -44,12 +44,14 @@
       debug:
         msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
 
-    - name: Update apt cache
-      command: apt-get update
-      
+    - name: Update apt cache using expect
+      expect:
+        command: apt-get update
+        responses:
+          'Do you want to continue?': 'y'
 
-    - name: Install unzip using yes
-      command: apt-get install unzip
-      responses:
-      'First Question in the prompt' : 'y'
-      'Second Question in the prompt' : 'y'
+    - name: Install unzip using expect
+      expect:
+        command: apt-get install unzip
+        responses:
+          'Do you want to continue?': 'y'
