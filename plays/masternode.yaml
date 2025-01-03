@@ -1,21 +1,12 @@
----
 - name: Configure kURL and Install Kubernetes
   hosts: all
   become: yes
-  vars:
-    ansible_become_password: "ACSCloud!2021!"
-    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
     - name: Remove /etc/resolv.conf if it exists
       file:
         path: /etc/resolv.conf
         state: absent
-      register: remove_resolv
-
-    - name: Debug resolv.conf removal
-      debug:
-        msg: "Removed /etc/resolv.conf: {{ remove_resolv }}"
 
     - name: Create /etc/resolv.conf with Google DNS
       copy:
@@ -23,11 +14,6 @@
         content: |
           nameserver 8.8.8.8
           nameserver 8.8.4.4
-      register: create_resolv
-
-    - name: Debug resolv.conf creation
-      debug:
-        msg: "Created /etc/resolv.conf: {{ create_resolv }}"
 
     - name: Verify /etc/resolv.conf content
       command: cat /etc/resolv.conf
@@ -42,40 +28,6 @@
         name: systemd-resolved
         state: stopped
         enabled: no
-      register: disable_resolved
-
-    - name: Debug systemd-resolved status
-      debug:
-        msg: "Systemd-resolved stopped and disabled: {{ disable_resolved }}"
-
-    - name: Configure HTTP proxy for apt
-      when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
-      register: proxy_apt
-
-    - name: Debug apt proxy configuration
-      debug:
-        msg: "Proxy for apt configured: {{ proxy_apt }}"
-
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-      register: proxy_env
-
-    - name: Debug environment proxy configuration
-      debug:
-        msg: "Proxy for environment configured: {{ proxy_env }}"
 
     - name: Run the Kurl installation script with auto-confirmation
       shell: |
