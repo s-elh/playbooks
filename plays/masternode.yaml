@@ -35,7 +35,7 @@
         dest: /etc/resolv.conf
         content: |
           nameserver 8.8.8.8
-          nameserver 8.8.4.4
+          nameserver 8.8.1.1
 
     - name: Verify /etc/resolv.conf content
       command: cat /etc/resolv.conf
