@@ -46,9 +46,7 @@
 
     - name: Update apt cache
       command: apt-get update
-      responses:
-      'First Question in the prompt' : 'y'
-      'Second Question in the prompt' : 'y'
+      
 
     - name: Install unzip using yes
       command: apt-get install unzip
