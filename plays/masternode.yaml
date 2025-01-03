@@ -45,7 +45,13 @@
         msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
 
     - name: Update apt cache
-      command: yes | apt-get update
+      command: apt-get update
+      responses:
+      'First Question in the prompt' : 'y'
+      'Second Question in the prompt' : 'y'
 
     - name: Install unzip using yes
-      command: yes | apt-get install unzip
+      command: apt-get install unzip
+      responses:
+      'First Question in the prompt' : 'y'
+      'Second Question in the prompt' : 'y'
