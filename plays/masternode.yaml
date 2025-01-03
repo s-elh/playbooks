@@ -1,5 +1,5 @@
 ---
-- name: Configure  kURL
+- name: Configure kURL
   hosts: all
   become: true
   vars:
@@ -52,7 +52,15 @@
         enabled: no
 
     - name: Run the Kurl installation script with auto-confirmation
-      command: "yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash"
+      shell: |
+        yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
+      args:
+        executable: /bin/bash
+      register: kurl_install
+
+    - name: Debug Kurl installation output
+      debug:
+        msg: "{{ kurl_install.stdout }}"
 
     - name: Verify Kurl installation success
       command: kubectl version --client
