@@ -1,9 +1,13 @@
 ---
-- name: Installer kURL sur Ubuntu 22
+- name: Installer kURL sur Ubuntu 22 avec configuration du proxy et DNS
   hosts: all
   become: yes
   vars:
     kurl_url: "https://kurl.sh/3e386c9"
+    proxy_url: "http://10.1.38.2:3128"
+    nameservers:
+      - "8.8.8.8"
+      - "8.8.4.4"
 
   tasks:
     - name: Mettre à jour les paquets APT
@@ -16,9 +20,47 @@
         name: curl
         state: present
 
+    - name: Configurer les serveurs DNS
+      copy:
+        content: |
+          nameserver {{ item }}
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: '0644'
+      with_items: "{{ nameservers }}"
+
+    - name: Configurer le proxy HTTP pour apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+        mode: '0644'
+
+    - name: Configurer le proxy HTTP pour les variables d'environnement
+      lineinfile:
+        path: /etc/environment
+        line: "{{ item }}"
+        create: yes
+      with_items:
+        - "http_proxy={{ proxy_url }}"
+        - "https_proxy={{ proxy_url }}"
+        - "HTTP_PROXY={{ proxy_url }}"
+        - "HTTPS_PROXY={{ proxy_url }}"
+
+    - name: Tester la connexion avec le proxy
+      shell: "curl -x {{ proxy_url }} http://www.google.com"
+      register: curl_test
+      ignore_errors: yes
+
+    - name: Afficher le résultat du test de proxy
+      debug:
+        var: curl_test.stdout
+
     - name: Télécharger et installer kURL
       shell: |
-        curl -sSL {{ kurl_url }} | sudo bash
+        curl -x {{ proxy_url }} -sSL {{ kurl_url }} | sudo bash
       args:
         chdir: /tmp
         creates: /usr/local/bin/kurl
@@ -31,3 +73,12 @@
     - name: Afficher la version de kURL
       debug:
         var: kurl_version.stdout
+
+    - name: Vérifier si le binaire kURL existe
+      stat:
+        path: /usr/local/bin/kurl
+      register: kurl_binary
+
+    - name: Afficher le statut du binaire kURL
+      debug:
+        var: kurl_binary.stat.exists
