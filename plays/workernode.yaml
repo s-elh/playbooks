@@ -1,5 +1,5 @@
 ---
-- name: Installer kURL sur Ubuntu 22 avec proxy
+- name: Installer kURL sur Ubuntu 22 avec configuration du proxy et DNS
   hosts: all
   become: yes
   vars:
@@ -14,6 +14,15 @@
       apt:
         update_cache: yes
         upgrade: yes
+      ignore_errors: yes
+
+    - name: Corriger les dépendances cassées
+      apt:
+        upgrade: "yes"
+        state: latest
+        force_apt_get: yes
+        dpkg_options: "force-confdef,force-confold"
+      when: ansible_facts.packages['docker.io'] is defined
 
     - name: Installer curl
       apt:
