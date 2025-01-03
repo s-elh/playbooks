@@ -5,6 +5,7 @@
   vars:
     kurl_url: "https://kurl.sh/3e386c9"
     kurl_path: "/usr/local/bin/kurl"
+    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
     - name: Remove invalid Kubernetes repository (if exists)
@@ -32,18 +33,35 @@
           - apt-transport-https
         state: present
 
-    - name: Download kURL script
+    - name: Configure HTTP proxy for curl
+      lineinfile:
+        path: /etc/environment
+        line: "http_proxy={{ proxy_url }}"
+        create: yes
+
+    - name: Configure HTTPS proxy for curl
+      lineinfile:
+        path: /etc/environment
+        line: "https_proxy={{ proxy_url }}"
+        create: yes
+
+    - name: Download kURL script with proxy settings
       get_url:
         url: "{{ kurl_url }}"
         dest: /tmp/kurl.sh
         mode: '0755'
+        headers:
+          "Proxy-Authorization": "Basic <encoded_proxy_credentials>"
+      environment:
+        http_proxy: "{{ proxy_url }}"
+        https_proxy: "{{ proxy_url }}"
 
     - name: Run the kURL installation script with automatic confirmation
       shell: |
         yes | sudo bash /tmp/kurl.sh
       args:
         creates: "{{ kurl_path }}"
-        
+
     - name: Check if kURL is installed
       command: kurl --version
       register: kurl_version
