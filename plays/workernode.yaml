@@ -6,6 +6,9 @@
     kurl_url: "https://kurl.sh/3e386c9"
     kurl_path: "/usr/local/bin/kurl"
     proxy_url: "http://10.1.38.2:3128"
+    nameservers:
+      - "8.8.8.8"
+      - "8.8.4.4"
 
   tasks:
     - name: Remove invalid Kubernetes repository (if exists)
@@ -33,25 +36,40 @@
           - apt-transport-https
         state: present
 
-    - name: Configure HTTP proxy for curl
-      lineinfile:
-        path: /etc/environment
-        line: "http_proxy={{ proxy_url }}"
-        create: yes
+    - name: Configure DNS nameservers
+      copy:
+        content: |
+          nameserver {{ item }}
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: '0644'
+      with_items: "{{ nameservers }}"
 
-    - name: Configure HTTPS proxy for curl
+    - name: Configure HTTP proxy for apt
+      when: ansible_distribution == "Ubuntu"
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
-        line: "https_proxy={{ proxy_url }}"
+        line: '{{ item }}'
         create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
 
     - name: Download kURL script with proxy settings
       get_url:
         url: "{{ kurl_url }}"
         dest: /tmp/kurl.sh
         mode: '0755'
-        headers:
-          "Proxy-Authorization": "Basic <encoded_proxy_credentials>"
       environment:
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
