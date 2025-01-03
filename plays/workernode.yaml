@@ -1,19 +1,34 @@
 ---
-- name: Install kURL on Ubuntu 22
+- name: Full System Update and Install kURL on Ubuntu 22
   hosts: all
   become: yes
   vars:
     kurl_url: "https://kurl.sh/3e386c9"
 
   tasks:
-    - name: Update APT packages
+    - name: Remove invalid Kubernetes repository (if exists)
+      file:
+        path: /etc/apt/sources.list.d/kubernetes.list
+        state: absent
+      ignore_errors: yes
+
+    - name: Clean APT cache
+      command: sudo apt-get clean
+
+    - name: Update APT package list
       apt:
         update_cache: yes
-        upgrade: yes
 
-    - name: Install curl
+    - name: Upgrade all installed packages
       apt:
-        name: curl
+        upgrade: yes
+        update_cache: yes
+
+    - name: Install required dependencies (curl, apt-transport-https)
+      apt:
+        name:
+          - curl
+          - apt-transport-https
         state: present
 
     - name: Download and install kURL
