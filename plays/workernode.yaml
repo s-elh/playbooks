@@ -74,6 +74,11 @@
         http_proxy: "{{ proxy_url }}"
         https_proxy: "{{ proxy_url }}"
 
+    - name: Ensure kURL script is executable
+      file:
+        path: /tmp/kurl.sh
+        mode: '0755'
+
     - name: Run the kURL installation script with automatic confirmation
       shell: |
         yes | sudo bash /tmp/kurl.sh
@@ -94,3 +99,12 @@
     - name: Display kURL version
       debug:
         var: kurl_version.stdout
+
+    - name: Check if kURL binary exists
+      stat:
+        path: "{{ kurl_path }}"
+      register: kurl_binary
+
+    - name: Display kURL binary existence status
+      debug:
+        var: kurl_binary.stat.exists
