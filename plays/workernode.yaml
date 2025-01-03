@@ -79,6 +79,12 @@
         yes | sudo bash /tmp/kurl.sh
       args:
         creates: "{{ kurl_path }}"
+      register: kurl_install_output
+      ignore_errors: yes
+
+    - name: Display the kURL installation script output
+      debug:
+        var: kurl_install_output.stdout
 
     - name: Check if kURL is installed
       command: kurl --version
