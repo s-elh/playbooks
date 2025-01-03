@@ -7,52 +7,47 @@
     proxy_url: "http://10.1.38.2:3128"
 
   tasks:
-    # Supprimer le fichier resolv.conf s'il existe
     - name: Remove /etc/resolv.conf if it exists
       file:
         path: /etc/resolv.conf
         state: absent
-      register: resolv_remove_status
+      register: remove_resolv
 
     - name: Debug resolv.conf removal
       debug:
-        msg: "Result of resolv.conf removal: {{ resolv_remove_status }}"
+        msg: "Removed /etc/resolv.conf: {{ remove_resolv }}"
 
-    # Créer le fichier resolv.conf avec les serveurs DNS
     - name: Create /etc/resolv.conf with Google DNS
       copy:
         dest: /etc/resolv.conf
         content: |
           nameserver 8.8.8.8
           nameserver 8.8.4.4
-      register: resolv_create_status
+      register: create_resolv
 
     - name: Debug resolv.conf creation
       debug:
-        msg: "Result of resolv.conf creation: {{ resolv_create_status }}"
+        msg: "Created /etc/resolv.conf: {{ create_resolv }}"
 
-    # Vérifier le contenu de resolv.conf
-    - name: Verify /etc/resolv.conf contents
+    - name: Verify /etc/resolv.conf content
       command: cat /etc/resolv.conf
       register: resolv_check
 
-    - name: Debug resolv.conf contents
+    - name: Debug resolv.conf verification
       debug:
         msg: "Contents of /etc/resolv.conf: {{ resolv_check.stdout }}"
 
-    # Désactiver et stopper systemd-resolved
     - name: Disable and stop systemd-resolved
       service:
         name: systemd-resolved
         state: stopped
         enabled: no
-      register: resolved_status
+      register: disable_resolved
 
     - name: Debug systemd-resolved status
       debug:
-        msg: "Systemd-resolved service status: {{ resolved_status }}"
+        msg: "Systemd-resolved stopped and disabled: {{ disable_resolved }}"
 
-    # Configurer le proxy pour apt (si Ubuntu)
     - name: Configure HTTP proxy for apt
       when: ansible_distribution == "Ubuntu"
       copy:
@@ -60,13 +55,12 @@
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
-      register: apt_proxy_status
+      register: proxy_apt
 
     - name: Debug apt proxy configuration
       debug:
-        msg: "APT proxy configuration: {{ apt_proxy_status }}"
+        msg: "Proxy for apt configured: {{ proxy_apt }}"
 
-    # Configurer le proxy pour l'environnement
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -77,13 +71,12 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
-      register: env_proxy_status
+      register: proxy_env
 
     - name: Debug environment proxy configuration
       debug:
-        msg: "Environment proxy configuration: {{ env_proxy_status }}"
+        msg: "Proxy for environment configured: {{ proxy_env }}"
 
-    # Exécuter le script Kurl avec confirmation automatique
     - name: Run the Kurl installation script with auto-confirmation
       shell: |
         yes | curl -fsSL https://kurl.sh/8eb26e2 | sudo bash
@@ -93,15 +86,13 @@
 
     - name: Debug Kurl installation output
       debug:
-        msg: "Kurl installation script output: {{ kurl_install.stdout }}"
+        msg: "{{ kurl_install.stdout }}"
 
-    # Vérifier si Kubernetes est installé
-    - name: Verify Kubernetes client installation
+    - name: Verify Kurl installation success
       command: kubectl version --client
       register: kubectl_version
       ignore_errors: yes
 
-    - name: Debug Kubernetes client version
+    - name: Debug kubectl version check
       debug:
         msg: "kubectl version output: {{ kubectl_version.stdout }}"
-
