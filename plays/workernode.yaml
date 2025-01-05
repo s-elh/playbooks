@@ -1,5 +1,5 @@
 ---
-- name: Installer kURL sur Ubuntu 22 avec mot de passe sudo
+- name: Installer kURL sur Ubuntu 22 et corriger les dépendances
   hosts: all
   become: yes
   vars:
@@ -7,17 +7,32 @@
     sudo_password: "ACSCloud!2021!"
 
   tasks:
-    - name: Mettre à jour les paquets APT
+    - name: Mettre à jour la liste des paquets
       apt:
         update_cache: yes
-        upgrade: yes
+
+    - name: Corriger les dépendances cassées
+      shell: |
+        echo "{{ sudo_password }}" | sudo -S apt --fix-broken install -y
+      register: fix_broken_output
+      ignore_errors: yes
+
+    - name: Afficher la sortie de la correction des dépendances
+      debug:
+        var: fix_broken_output.stdout_lines
+
+    - name: Mettre à jour et upgrader les paquets APT
+      apt:
+        upgrade: dist
+        state: latest
+      ignore_errors: yes
 
     - name: Installer curl
       apt:
         name: curl
         state: present
 
-    - name: Télécharger et installer kURL avec confirmation automatique
+    - name: Télécharger et installer kURL
       shell: |
         echo "{{ sudo_password }}" | sudo -S bash -c "yes | curl -sSL {{ kurl_url }} | bash"
       args:
