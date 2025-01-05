@@ -1,59 +1,29 @@
 ---
-- name: Installer kURL sur Ubuntu 22 avec diagnostic
+- name: Installer kURL sur Ubuntu
   hosts: all
   become: yes
   vars:
     kurl_url: "https://kurl.sh/3e386c9"
-    script_path: "/tmp/kurl_install.sh"
     sudo_password: "ACSCloud!2021!"
 
   tasks:
-    - name: Mettre à jour la liste des paquets APT
+    - name: Mettre à jour les paquets APT
       apt:
         update_cache: yes
 
-    - name: Installer curl si non présent
+    - name: Installer curl
       apt:
         name: curl
         state: present
 
-    - name: Télécharger le script d'installation de kURL
-      get_url:
-        url: "{{ kurl_url }}"
-        dest: "{{ script_path }}"
-        mode: '0755'
-
-    - name: Exécuter le script d'installation de kURL avec débogage
+    - name: Télécharger et exécuter le script d'installation kURL
       shell: |
-        echo "{{ sudo_password }}" | sudo -S bash -c "{{ script_path }}" > /tmp/kurl_install.log 2>&1
+        echo "{{ sudo_password }}" | sudo -S bash -c "curl -sSL {{ kurl_url }} | bash"
       args:
         executable: /bin/bash
       register: install_result
       ignore_errors: yes
 
-    - name: Vérifier l'exécution du script
+    - name: Vérifier le résultat de l'installation
       debug:
-        msg: "Le résultat de l'installation : {{ install_result }}"
-
-    - name: Vérifier si kURL est installé
-      command: kurl --version
-      register: kurl_version
-      ignore_errors: yes
-
-    - name: Afficher la version de kURL si elle est installée
-      debug:
-        var: kurl_version.stdout
-
-    - name: Afficher les logs d'installation
-      shell: cat /tmp/kurl_install.log
-      register: install_logs
-      changed_when: false
-
-    - name: Afficher les logs dans la sortie Ansible
-      debug:
-        var: install_logs.stdout
-
-    - name: Nettoyer le fichier script téléchargé
-      file:
-        path: "{{ script_path }}"
-        state: absent
+        var: install_result.stdout
