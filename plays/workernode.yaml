@@ -1,49 +1,44 @@
 ---
-- name: Installer kURL sur Ubuntu 22 et corriger les dépendances
+- name: Installer kURL sur Ubuntu 22 de manière robuste
   hosts: all
   become: yes
   vars:
     kurl_url: "https://kurl.sh/3e386c9"
+    script_path: "/tmp/kurl_install.sh"
     sudo_password: "ACSCloud!2021!"
 
   tasks:
-    - name: Mettre à jour la liste des paquets
+    - name: Mettre à jour la liste des paquets APT
       apt:
         update_cache: yes
 
-    - name: Corriger les dépendances cassées
-      shell: |
-        echo "{{ sudo_password }}" | sudo -S apt --fix-broken install -y
-      register: fix_broken_output
-      ignore_errors: yes
-
-    - name: Afficher la sortie de la correction des dépendances
-      debug:
-        var: fix_broken_output.stdout_lines
-
-    - name: Mettre à jour et upgrader les paquets APT
-      apt:
-        upgrade: dist
-        state: latest
-      ignore_errors: yes
-
-    - name: Installer curl
+    - name: Installer curl si non présent
       apt:
         name: curl
         state: present
 
-    - name: Télécharger et installer kURL
+    - name: Télécharger le script d'installation de kURL
+      get_url:
+        url: "{{ kurl_url }}"
+        dest: "{{ script_path }}"
+        mode: '0755'
+
+    - name: Exécuter le script d'installation de kURL
       shell: |
-        echo "{{ sudo_password }}" | sudo -S bash -c "yes | curl -sSL {{ kurl_url }} | bash"
+        echo "{{ sudo_password }}" | sudo -S bash -c "yes | {{ script_path }}"
       args:
-        chdir: /tmp
-        creates: /usr/local/bin/kurl
+        executable: /bin/bash
 
     - name: Vérifier si kURL est installé
       command: kurl --version
       register: kurl_version
       ignore_errors: yes
 
-    - name: Afficher la version de kURL
+    - name: Afficher la version de kURL si elle est installée
       debug:
         var: kurl_version.stdout
+
+    - name: Nettoyer le fichier script téléchargé
+      file:
+        path: "{{ script_path }}"
+        state: absent
