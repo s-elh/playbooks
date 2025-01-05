@@ -1,5 +1,5 @@
 ---
-- name: Installer kURL sur Ubuntu 22 de manière robuste
+- name: Installer kURL sur Ubuntu 22 avec diagnostic
   hosts: all
   become: yes
   vars:
@@ -23,11 +23,17 @@
         dest: "{{ script_path }}"
         mode: '0755'
 
-    - name: Exécuter le script d'installation de kURL
+    - name: Exécuter le script d'installation de kURL avec débogage
       shell: |
-        echo "{{ sudo_password }}" | sudo -S bash -c "yes | {{ script_path }}"
+        echo "{{ sudo_password }}" | sudo -S bash -c "{{ script_path }}" > /tmp/kurl_install.log 2>&1
       args:
         executable: /bin/bash
+      register: install_result
+      ignore_errors: yes
+
+    - name: Vérifier l'exécution du script
+      debug:
+        msg: "Le résultat de l'installation : {{ install_result }}"
 
     - name: Vérifier si kURL est installé
       command: kurl --version
@@ -37,6 +43,15 @@
     - name: Afficher la version de kURL si elle est installée
       debug:
         var: kurl_version.stdout
+
+    - name: Afficher les logs d'installation
+      shell: cat /tmp/kurl_install.log
+      register: install_logs
+      changed_when: false
+
+    - name: Afficher les logs dans la sortie Ansible
+      debug:
+        var: install_logs.stdout
 
     - name: Nettoyer le fichier script téléchargé
       file:
