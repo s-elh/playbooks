@@ -8,13 +8,16 @@
 
   tasks:
     - name: Mettre à jour les paquets APT
-      apt:
-        update_cache: yes
+      shell: |
+        echo "{{ sudo_password }}" | sudo -S apt update && sudo -S apt upgrade -y
+      args:
+        executable: /bin/bash
 
-    - name: Installer curl
-      apt:
-        name: curl
-        state: present
+    - name: Installer curl et wget
+      shell: |
+        echo "{{ sudo_password }}" | sudo -S apt install -y curl wget
+      args:
+        executable: /bin/bash
 
     - name: Télécharger et exécuter le script d'installation kURL
       shell: |
