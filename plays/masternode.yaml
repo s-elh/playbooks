@@ -1,5 +1,5 @@
 ---
-- name: Installer kURL sur Ubuntu avec gestion interactive
+- name: Installer kURL sur Ubuntu
   hosts: all
   become: yes
   vars:
@@ -7,6 +7,30 @@
     sudo_password: "ACSCloud!2021!"
 
   tasks:
+    - name: Mettre à jour les paquets du système
+      apt:
+        update_cache: yes
+        upgrade: yes
+
+    - name: Configurer le proxy pour apt
+      copy:
+        content: |
+          Acquire::http::Proxy "http://10.1.38.12:3128";
+          Acquire::https::Proxy "http://10.1.38.12:3128";
+        dest: /etc/apt/apt.conf.d/95proxies
+        mode: '0644'
+
+    - name: Configurer le proxy pour l'environnement
+      lineinfile:
+        path: /etc/environment
+        line: "{{ item }}"
+        create: yes
+      with_items:
+        - 'http_proxy=http://10.1.38.12:3128'
+        - 'https_proxy=http://10.1.38.12:3128'
+        - 'HTTP_PROXY=http://10.1.38.12:3128'
+        - 'HTTPS_PROXY=http://10.1.38.12:3128'
+
     - name: Installer curl et wget
       apt:
         name:
@@ -14,18 +38,11 @@
           - wget
         state: present
 
-    - name: Télécharger le script d'installation kURL
+    - name: Télécharger et exécuter le script d'installation kURL
       shell: |
-        curl -sSL {{ kurl_url }} -o /tmp/kurl_install.sh
+        echo "{{ sudo_password }}" | sudo -S bash -c "curl -sSL {{ kurl_url }} | bash"
       args:
         executable: /bin/bash
-
-    - name: Exécuter le script d'installation kURL avec gestion interactive
-      expect:
-        command: bash /tmp/kurl_install.sh
-        responses:
-          'Would you like to continue? [Y/n]': 'y'  # Automatiser la réponse 'y' pour continuer
-          'Enter your password': "{{ sudo_password }}"  # Automatiser la saisie du mot de passe
       register: install_result
       ignore_errors: yes
 
