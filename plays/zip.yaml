@@ -1,10 +1,7 @@
 ---
-- name: update
-  - hosts: all
-  become: true
+- name: Télécharger un fichier avec curl
+  hosts: all
+  become: yes
   tasks:
-  - name: Update and upgrade apt packages
-    apt:
-      upgrade: yes
-      update_cache: yes
-      cache_valid_time: 86400
+    - name: Télécharger le fichier bundle avec curl
+      command: curl -LO https://k8s.kurl.sh/bundle/254c595.tar.gz
