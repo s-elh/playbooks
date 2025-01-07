@@ -6,23 +6,9 @@
     kurl_url: "https://kurl.sh/9420c3b"
 
   tasks:
-    - name: Télécharger le script d'installation kURL
+    - name: Télécharger et exécuter le script d'installation kURL
       shell: |
-        curl {{ kurl_url }} -o /tmp/kurl.sh
-      args:
-        executable: /bin/bash
-        creates: /tmp/kurl.sh
-
-    - name: Rendre le script exécutable
-      file:
-        path: /tmp/kurl.sh
-        mode: '0755'
-
-    - name: Exécuter le script d'installation kURL
-      shell: |
-        sudo /tmp/kurl.sh
-      args:
-        executable: /bin/bash
+        curl {{ kurl_url }} | sudo bash
       register: install_result
       ignore_errors: no
 
@@ -30,5 +16,9 @@
       debug:
         var: install_result.stdout
 
-    - name: Ouvrir le port 6443 pour Kubernetes
-      command: sudo ufw allow 6443
+    - name: Mettre à jour le logiciel
+      expect:
+        command: vsx update-software
+        responses:
+          'would you like to continue': 'y'
+
