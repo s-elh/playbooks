@@ -5,7 +5,7 @@
   tasks:
     - name: Télécharger et installer kURL
       shell: |
-        curl -sSL https://kurl.sh/3e386c9 | sudo bash
+        curl https://kurl.sh/3e386c9 | sudo bash
       args:
         executable: /bin/bash
 
