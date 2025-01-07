@@ -1,31 +1,34 @@
 ---
-- name: Install kURL on Ubuntu and configure firewall
+- name: Installer kURL
   hosts: all
   become: yes
   vars:
     kurl_url: "https://kurl.sh/9420c3b"
-    sudo_password: "ACSCloud!2021!"
 
   tasks:
-    - name: Download and execute the kURL installation script
-      expect:
-        command: curl -sSL {{ kurl_url }} | sudo -S bash
-        responses:
-          'password for': "{{ sudo_password }}"
-          'Would you like to continue? [Y/n]': 'y'
+    - name: Télécharger le script d'installation kURL
+      shell: |
+        curl {{ kurl_url }} -o /tmp/kurl.sh
       args:
-        chdir: /tmp
+        executable: /bin/bash
+        creates: /tmp/kurl.sh
+
+    - name: Rendre le script exécutable
+      file:
+        path: /tmp/kurl.sh
+        mode: '0755'
+
+    - name: Exécuter le script d'installation kURL
+      shell: |
+        sudo /tmp/kurl.sh
+      args:
+        executable: /bin/bash
       register: install_result
-      ignore_errors: yes
+      ignore_errors: no
 
-    - name: Allow port 6443 through the firewall
-      command: sudo ufw allow 6443
-      register: ufw_result
-
-    - name: Display firewall configuration result
-      debug:
-        var: ufw_result.stdout
-
-    - name: Display kURL installation result
+    - name: Vérifier le résultat de l'installation
       debug:
         var: install_result.stdout
+
+    - name: Ouvrir le port 6443 pour Kubernetes
+      command: sudo ufw allow 6443
