@@ -1,32 +1,31 @@
 ---
-- name: Installer kURL sur Ubuntu
+- name: Install kURL on Ubuntu and configure firewall
   hosts: all
   become: yes
   vars:
-    kurl_url: "https://kurl.sh/3e386c9"
+    kurl_url: "https://kurl.sh/9420c3b"
     sudo_password: "ACSCloud!2021!"
 
   tasks:
-    - name: Mettre à jour les paquets APT
-      shell: |
-        echo "{{ sudo_password }}" | sudo -S apt update && sudo -S apt upgrade -y
+    - name: Download and execute the kURL installation script
+      expect:
+        command: curl -sSL {{ kurl_url }} | sudo -S bash
+        responses:
+          'password for': "{{ sudo_password }}"
+          'Would you like to continue? [Y/n]': 'y'
       args:
-        executable: /bin/bash
-
-    - name: Installer curl et wget
-      shell: |
-        echo "{{ sudo_password }}" | sudo -S apt install -y curl wget
-      args:
-        executable: /bin/bash
-
-    - name: Télécharger et exécuter le script d'installation kURL
-      shell: |
-        echo "{{ sudo_password }}" | sudo -S bash -c "curl -sSL {{ kurl_url }} | bash"
-      args:
-        executable: /bin/bash
+        chdir: /tmp
       register: install_result
       ignore_errors: yes
 
-    - name: Vérifier le résultat de l'installation
+    - name: Allow port 6443 through the firewall
+      command: sudo ufw allow 6443
+      register: ufw_result
+
+    - name: Display firewall configuration result
+      debug:
+        var: ufw_result.stdout
+
+    - name: Display kURL installation result
       debug:
         var: install_result.stdout
