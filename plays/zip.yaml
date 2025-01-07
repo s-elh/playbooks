@@ -1,9 +1,12 @@
 ---
-- name: Installer zip
+- name: Installer curl et exécuter le script kURL
   hosts: all
   become: yes
   tasks:
-    - name: Installer le paquet zip
+    - name: Installer le paquet curl
       package:
-        name: zip
+        name: curl
         state: present
+
+    - name: Exécuter le script kURL
+      command: curl -L https://kurl.sh/8eb26e2 | sudo bash
