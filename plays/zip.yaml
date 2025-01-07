@@ -1,12 +1,10 @@
 ---
-- name: Installer curl et exécuter le script kURL
+- name: Installer zip
   hosts: all
   become: yes
   tasks:
-    - name: Installer le paquet curl
-      package:
-        name: curl
-        state: present
-
-    - name: Exécuter le script kURL
-      command: curl -L https://kurl.sh/8eb26e2 | sudo bash
+   - name: install purge
+  expect:
+    command: sudo apt install purge 
+    responses:
+      would you like to continue ? [Y/n]' : 'y' 
