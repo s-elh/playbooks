@@ -3,11 +3,7 @@
   hosts: all
   become: yes
   tasks:
-    - name: Installer le paquet zip
-      package:
-        name: zip
-        state: present
-
+    
     - name: Mettre à jour le logiciel
       expect:
         command: sudo apt install zip 
