@@ -1,0 +1,15 @@
+---
+- name: Installer zip et mettre à jour le logiciel
+  hosts: all
+  become: yes
+  tasks:
+    - name: Installer le paquet zip
+      package:
+        name: zip
+        state: present
+
+    - name: Mettre à jour le logiciel
+      expect:
+        command: vsx update-software
+        responses:
+          'would you like to continue': 'y'
