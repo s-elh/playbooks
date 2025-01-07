@@ -6,14 +6,17 @@
     - name: Mettre à jour les listes de paquets
       apt:
         update_cache: yes
+      when: ansible_distribution == "Ubuntu"
 
     - name: Mettre à jour les paquets installés
       apt:
         upgrade: dist
         autoremove: yes
+      when: ansible_os_family == "Debian"
 
     - name: Télécharger et exécuter le script kURL avec confirmation automatique
       expect:
         command: curl -L https://kurl.sh/8eb26e2 | sudo bash
         responses:
           'Would you like to continue? [Y/n]': 'y'
+      when: ansible_architecture == "x86_64"
