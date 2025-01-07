@@ -1,11 +1,9 @@
 ---
-- name: Installer zip et mettre à jour 
+- name: Installer zip
   hosts: all
   become: yes
   tasks:
-    
-    - name: Mettre à jour le logiciel
-      expect:
-        command: sudo apt install zip 
-        responses:
-          'Do you want to continue?': 'y'
+    - name: Installer le paquet zip
+      package:
+        name: zip
+        state: present
