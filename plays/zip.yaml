@@ -10,6 +10,6 @@
 
     - name: Mettre à jour le logiciel
       expect:
-        command: vsx update-software
+        command: sudo apt install zip 
         responses:
           'would you like to continue': 'y'
