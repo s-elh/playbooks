@@ -2,9 +2,9 @@
 - name: Installer kURL
   hosts: all
   become: yes
-   tasks:
-- name: Exécuter le script kURL
-  expect:
-    command: curl  https://kurl.sh/8eb26e2 | sudo bash 
-    responses:
-      'would you want to continue? [Y/n]': 'y' 
+  tasks:
+    - name: Télécharger et exécuter le script kURL avec confirmation automatique
+      expect:
+        command: curl -L https://kurl.sh/8eb26e2 | sudo bash
+        responses:
+          'Would you like to continue? [Y/n]': 'y'
