@@ -8,4 +8,4 @@
       expect:
         command: sudo apt install zip 
         responses:
-          'Do you want to continue? [Y/n]': 'y'
+          'Do you want to continue?': 'y'
