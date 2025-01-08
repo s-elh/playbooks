@@ -5,3 +5,4 @@
   tasks:
     - name: Télécharger le fichier bundle avec curl
       command: curl -LO https://k8s.kurl.sh/bundle/254c595.tar.gz
+      
