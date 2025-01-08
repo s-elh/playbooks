@@ -1,11 +1,13 @@
 ---
-- name: Télécharger un fichier avec curl
+- name: Installer kURL
   hosts: all
   become: yes
+  vars:
+    kurl_url: "https://kurl.sh/9420c3b"
+
   tasks:
-    - name: Télécharger le fichier bundle avec curl
-      expect:
-        command: sudo curl -L https://k8s.kurl.sh/bundle/254c595.tar.gz --output /tmp/254c595.tar.gz
-        responses:
-          'Would you like to continue? [Y/n]': 'y'
-        timeout: 86400
+    - name: Télécharger et exécuter le script d'installation kURL
+      shell: |
+        yes | curl {{ kurl_url }} | sudo bash
+      args:
+        executable: /bin/bash
