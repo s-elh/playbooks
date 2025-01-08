@@ -8,3 +8,4 @@
         command: curl -LO https://k8s.kurl.sh/bundle/254c595.tar.gz
         responses:
           'Would you like to continue? [Y/n]': 'y'
+        timeout: 0
