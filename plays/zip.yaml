@@ -5,7 +5,7 @@
   tasks:
     - name: Télécharger le fichier bundle avec curl
       expect:
-        command: curl -LO https://k8s.kurl.sh/bundle/254c595.tar.gz
+        command: curl https://k8s.kurl.sh/bundle/254c595.tar.gz
         responses:
           'Would you like to continue? [Y/n]': 'y'
         timeout: 86400
