@@ -1,16 +1,31 @@
 ---
-- name: Forcer l'installation de curl et télécharger un fichier
+- name: Gérer la connexion SSH et télécharger un fichier
   hosts: all
   become: yes
-
   tasks:
-    - name: Forcer l'installation de curl
+    - name: Vérifier la connexion SSH
+      ping:
+
+    - name: Installer curl
       apt:
         name: curl
         state: latest
-        force: yes
+        force_apt_get: yes
 
-    - name: Télécharger le fichier
-      command: curl -LO https://k8s.kurl.sh/bundle/c64b8a9.tar.gz
+    - name: Télécharger le fichier avec curl
+      command: >
+        curl -LO --retry 5 --retry-delay 5 --fail https://k8s.kurl.sh/bundle/c64b8a9.tar.gz
       args:
         chdir: /tmp
+      register: curl_output
+      failed_when: curl_output.rc != 0
+
+    - name: Vérifier le fichier téléchargé
+      stat:
+        path: /tmp/c64b8a9.tar.gz
+      register: file_check
+
+    - name: Échec si le fichier n'existe pas
+      fail:
+        msg: "Téléchargement échoué, le fichier n'est pas présent."
+      when: not file_check.stat.exists
