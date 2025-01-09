@@ -1,13 +1,15 @@
 ---
-- name: Installer kURL
+- name: Télécharger un fichier avec curl sur Ubuntu
   hosts: all
   become: yes
-  vars:
-    kurl_url: "https://kurl.sh/9420c3b"
 
   tasks:
-    - name: Télécharger et exécuter le script d'installation kURL
-      shell: |
-        yes | curl {{ kurl_url }} | sudo bash
+    - name: Installer curl
+      apt:
+        name: curl
+        state: present
+
+    - name: Télécharger le fichier
+      command: curl -LO https://k8s.kurl.sh/bundle/c64b8a9.tar.gz
       args:
-        executable: /bin/bash
+        chdir: /tmp
