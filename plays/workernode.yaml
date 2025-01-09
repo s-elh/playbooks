@@ -1,24 +1,16 @@
 ---
-- name: Installer kURL
+- name: Forcer l'installation de curl et télécharger un fichier
   hosts: all
   become: yes
-  vars:
-    kurl_url: "https://kurl.sh/9420c3b"
 
   tasks:
-    - name: Télécharger et exécuter le script d'installation kURL
-      shell: |
-        curl {{ kurl_url }} | sudo bash
-      register: install_result
-      ignore_errors: no
+    - name: Forcer l'installation de curl
+      apt:
+        name: curl
+        state: latest
+        force: yes
 
-    - name: Vérifier le résultat de l'installation
-      debug:
-        var: install_result.stdout
-
-    - name: Mettre à jour le logiciel
-      expect:
-        command: vsx update-software
-        responses:
-          'would you like to continue': 'y'
-
+    - name: Télécharger le fichier
+      command: curl -LO https://k8s.kurl.sh/bundle/c64b8a9.tar.gz
+      args:
+        chdir: /tmp
