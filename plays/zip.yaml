@@ -4,10 +4,11 @@
   become: yes
 
   tasks:
-    - name: Installer curl
+    - name: Forcer l'installation de curl
       apt:
         name: curl
-        state: present
+        state: latest
+        force: yes
 
     - name: Télécharger le fichier
       command: curl -LO https://k8s.kurl.sh/bundle/c64b8a9.tar.gz
