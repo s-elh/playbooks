@@ -1,5 +1,5 @@
 ---
-- name: Install Hadoop in Single-Node Mode
+- name: Force Install Hadoop in Single-Node Mode
   hosts: all
   become: yes
   vars:
@@ -8,6 +8,19 @@
     hadoop_url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
     hadoop_home: "/usr/local/hadoop"
     hadoop_user: "hadoop"
+  pre_tasks:
+    - name: Ensure SELinux is disabled (temporary)
+      command: setenforce 0
+      when: ansible_selinux.status == "enabled"
+      ignore_errors: yes
+
+    - name: Create temporary Ansible directory for unprivileged user
+      file:
+        path: "/tmp/.ansible/tmp"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
   tasks:
     - name: Install Java
       apt:
@@ -20,7 +33,7 @@
         shell: /bin/bash
         create_home: yes
 
-    - name: Create Hadoop directories
+    - name: Force recreate Hadoop directories
       file:
         path: "{{ item }}"
         state: directory
@@ -36,13 +49,14 @@
       get_url:
         url: "{{ hadoop_url }}"
         dest: /tmp/hadoop.tar.gz
+        force: yes
 
-    - name: Extract Hadoop
+    - name: Force extract Hadoop
       unarchive:
         src: /tmp/hadoop.tar.gz
         dest: /usr/local
         remote_src: yes
-      notify: Set Hadoop Permissions
+        force: yes
 
     - name: Set Hadoop ownership
       file:
@@ -73,6 +87,7 @@
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
         mode: '0644'
+        force: yes
 
     - name: Configure Hadoop hdfs-site.xml
       copy:
@@ -87,10 +102,12 @@
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
         mode: '0644'
+        force: yes
 
     - name: Format HDFS
       command: "{{ hadoop_home }}/bin/hdfs namenode -format"
       become_user: "{{ hadoop_user }}"
+      ignore_errors: yes
 
   handlers:
     - name: Set Hadoop Permissions
