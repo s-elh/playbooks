@@ -61,7 +61,6 @@
         src: /tmp/hadoop.tar.gz
         dest: /usr/local
         remote_src: yes
-        copy: no
 
     - name: Set Hadoop ownership
       file:
