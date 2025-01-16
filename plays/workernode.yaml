@@ -1,6 +1,6 @@
 ---
 - name: Install Hadoop in Single-Node Mode
-  hosts: all
+  hosts: hadoop-node
   become: yes
   vars:
     java_package: "openjdk-11-jdk"
@@ -52,15 +52,13 @@
         group: "{{ hadoop_user }}"
         recurse: yes
 
-    - name: Configure Hadoop environment variables
-      lineinfile:
-        path: /home/{{ hadoop_user }}/.bashrc
-        line: "{{ item }}"
-        create: yes
-      loop:
-        - 'export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64'
-        - 'export HADOOP_HOME={{ hadoop_home }}'
-        - 'export PATH=$PATH:{{ hadoop_home }}/bin:{{ hadoop_home }}/sbin'
+    - name: Create Hadoop configuration directory
+      file:
+        path: "{{ hadoop_home }}/etc/hadoop"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+        mode: "0755"
 
     - name: Configure Hadoop core-site.xml
       copy:
