@@ -1,6 +1,6 @@
 ---
 - name: Install Hadoop in Single-Node Mode
-  hosts: hadoop-node
+  hosts: all
   become: yes
   vars:
     java_package: "openjdk-11-jdk"
