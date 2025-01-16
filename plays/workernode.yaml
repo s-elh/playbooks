@@ -1,5 +1,5 @@
 ---
-- name: Force Install Hadoop in Single-Node Mode
+- name: Install Hadoop in Single-Node Mode
   hosts: all
   become: yes
   vars:
@@ -21,6 +21,7 @@
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: "0755"
+
   tasks:
     - name: Install Java
       apt:
@@ -33,7 +34,7 @@
         shell: /bin/bash
         create_home: yes
 
-    - name: Force recreate Hadoop directories
+    - name: Create required directories for Hadoop
       file:
         path: "{{ item }}"
         state: directory
@@ -49,14 +50,18 @@
       get_url:
         url: "{{ hadoop_url }}"
         dest: /tmp/hadoop.tar.gz
-        force: yes
 
-    - name: Force extract Hadoop
+    - name: Clean up existing Hadoop directory
+      file:
+        path: "{{ hadoop_home }}"
+        state: absent
+
+    - name: Extract Hadoop
       unarchive:
         src: /tmp/hadoop.tar.gz
         dest: /usr/local
         remote_src: yes
-        force: yes
+        copy: no
 
     - name: Set Hadoop ownership
       file:
@@ -87,7 +92,6 @@
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
         mode: '0644'
-        force: yes
 
     - name: Configure Hadoop hdfs-site.xml
       copy:
@@ -102,7 +106,6 @@
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
         mode: '0644'
-        force: yes
 
     - name: Format HDFS
       command: "{{ hadoop_home }}/bin/hdfs namenode -format"
