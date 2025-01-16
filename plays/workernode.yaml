@@ -1,31 +1,99 @@
 ---
-- name: Gérer la connexion SSH et télécharger un fichier
-  hosts: all
+- name: Install Hadoop in Single-Node Mode
+  hosts: hadoop-node
   become: yes
+  vars:
+    java_package: "openjdk-11-jdk"
+    hadoop_version: "3.3.6"
+    hadoop_url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+    hadoop_home: "/usr/local/hadoop"
+    hadoop_user: "hadoop"
   tasks:
-    - name: Vérifier la connexion SSH
-      ping:
-
-    - name: Installer curl
+    - name: Install Java
       apt:
-        name: curl
-        state: latest
-        force_apt_get: yes
+        name: "{{ java_package }}"
+        state: present
 
-    - name: Télécharger le fichier avec curl
-      command: >
-        curl -LO --retry 5 --retry-delay 5 --fail https://k8s.kurl.sh/bundle/c64b8a9.tar.gz
-      args:
-        chdir: /tmp
-      register: curl_output
-      failed_when: curl_output.rc != 0
+    - name: Create Hadoop user
+      user:
+        name: "{{ hadoop_user }}"
+        shell: /bin/bash
+        create_home: yes
 
-    - name: Vérifier le fichier téléchargé
-      stat:
-        path: /tmp/c64b8a9.tar.gz
-      register: file_check
+    - name: Create Hadoop directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+        mode: '0755'
+      loop:
+        - "{{ hadoop_home }}"
+        - "/data/hadoop"
+        - "/tmp/hadoop"
 
-    - name: Échec si le fichier n'existe pas
-      fail:
-        msg: "Téléchargement échoué, le fichier n'est pas présent."
-      when: not file_check.stat.exists
+    - name: Download Hadoop
+      get_url:
+        url: "{{ hadoop_url }}"
+        dest: /tmp/hadoop.tar.gz
+
+    - name: Extract Hadoop
+      unarchive:
+        src: /tmp/hadoop.tar.gz
+        dest: /usr/local
+        remote_src: yes
+      notify: Set Hadoop Permissions
+
+    - name: Set Hadoop ownership
+      file:
+        path: "{{ hadoop_home }}"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+        recurse: yes
+
+    - name: Configure Hadoop environment variables
+      lineinfile:
+        path: /home/{{ hadoop_user }}/.bashrc
+        line: "{{ item }}"
+        create: yes
+      loop:
+        - 'export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64'
+        - 'export HADOOP_HOME={{ hadoop_home }}'
+        - 'export PATH=$PATH:{{ hadoop_home }}/bin:{{ hadoop_home }}/sbin'
+
+    - name: Configure Hadoop core-site.xml
+      copy:
+        dest: "{{ hadoop_home }}/etc/hadoop/core-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://localhost:9000</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+        mode: '0644'
+
+    - name: Configure Hadoop hdfs-site.xml
+      copy:
+        dest: "{{ hadoop_home }}/etc/hadoop/hdfs-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>dfs.replication</name>
+              <value>1</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+        mode: '0644'
+
+    - name: Format HDFS
+      command: "{{ hadoop_home }}/bin/hdfs namenode -format"
+      become_user: "{{ hadoop_user }}"
+
+  handlers:
+    - name: Set Hadoop Permissions
+      command: chown -R "{{ hadoop_user }}:{{ hadoop_user }}" "{{ hadoop_home }}"
