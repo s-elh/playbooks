@@ -71,7 +71,7 @@
 
     # cPanel installation
     - name: Install cPanel
-      shell: "cd /home && curl -x {{ proxy_url }} -o latest -L --insecure {{ cpanel_url }} && sh latest"
+      shell: "cd /home && wget -e use_proxy=yes -e http_proxy={{ proxy_url }} -e https_proxy={{ proxy_url }} --no-check-certificate -O latest {{ cpanel_url }} && sh latest"
       args:
         creates: /usr/local/cpanel
       register: cpanel_install
