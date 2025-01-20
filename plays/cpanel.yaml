@@ -75,7 +75,6 @@
       args:
         creates: /usr/local/cpanel
       register: cpanel_install
-
     - name: Print cPanel installation complete message
       debug:
         msg: |
