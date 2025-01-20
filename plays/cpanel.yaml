@@ -81,25 +81,23 @@
 
     # cPanel installation
     - name: Download cPanel installation script
-      when: not cpanel_check.stat.exists
       shell: |
         wget --no-check-certificate \
         --timeout=60 \
         --tries=3 \
         "{{ cpanel_url }}" \
-        -O /home/latest && \
-        chmod 755 /home/latest
+        -O /tmp/latest && \
+        chmod 755 /tmp/latest
       args:
-        creates: /home/latest
-
+        creates: /tmp/latest
+    
     - name: Start cPanel installation
-      when: not cpanel_check.stat.exists
       shell: |
-        cd /home && nohup ./latest --allow-unreachable-update > /var/log/cpanel_install.log 2>&1 &
+        cd /tmp && nohup ./latest --allow-unreachable-update > /var/log/cpanel_install.log 2>&1 &
         echo $! > /var/run/cpanel_install.pid
       args:
         creates: /usr/local/cpanel
-        
+
     - name: Wait for cPanel installation to complete
       when: not cpanel_check.stat.exists
       shell: |
