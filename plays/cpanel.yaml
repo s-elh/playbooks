@@ -70,22 +70,11 @@
         state: present
 
     # cPanel installation
-    - name: Download cPanel installation script
+    - name: Install cPanel
       shell: |
-        wget --no-check-certificate \
-        --timeout=60 \
-        --tries=3 \
-        "{{ cpanel_url }}" \
-        -O /tmp/latest && \
-        chmod 755 /tmp/latest
+        curl -o latest -L https://securedownloads.cpanel.net/latest && sh latest
       args:
-        creates: /tmp/latest
-    
-    - name: Start cPanel installation
-      shell: |
-        cd /tmp && nohup ./latest --allow-unreachable-update > /var/log/cpanel_install.log 2>&1 &
-        echo $! > /var/run/cpanel_install.pid
-      args:
+        chdir: /home
         creates: /usr/local/cpanel
 
     - name: Print cPanel installation complete message
