@@ -5,18 +5,10 @@
   gather_facts: true
   vars:
     cpanel_url: "https://securedownloads.cpanel.net/latest"
-    rhel_username: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelEmail'] | default('') }}"
-    rhel_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelPw'] | default('') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
     proxy_url: "http://10.1.38.2:3128"
-
   tasks:
-    - name: Configure HTTP proxy for yum (RHEL)
-      lineinfile:
-        path: /etc/yum.conf
-        line: 'proxy={{ proxy_url }}'
-        create: yes
-      when: ansible_os_family == 'RedHat'
+    # Proxy configuration (your existing tasks)
     - name: Configure HTTP proxy for apt (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       copy:
@@ -24,6 +16,7 @@
           Acquire::http::Proxy "{{ proxy_url }}";
           Acquire::https::Proxy "{{ proxy_url }}";
         dest: /etc/apt/apt.conf.d/95proxies
+
     - name: Configure HTTP proxy for the environment
       lineinfile:
         path: /etc/environment
@@ -34,40 +27,33 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
-        
-    # RHEL-specific tasks
-    - name: Register and subscribe RHEL system
-      when: ansible_os_family == 'RedHat'
-      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
-      register: subscription_result
-      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
-      changed_when: subscription_result.rc == 0
 
-    - name: Enable required RHEL repositories
-      when: ansible_os_family == 'RedHat'
-      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
-      register: repo_result
-      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
-      changed_when: repo_result.rc == 0
-
-    # System prerequisites
-    - name: Update package cache (RHEL)
-      when: ansible_os_family == "RedHat"
-      dnf:
+    # Ubuntu-specific tasks
+    - name: Update package cache (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
         update_cache: yes
+        upgrade: yes
 
-    - name: Install prerequisites (RHEL)
-      when: ansible_os_family == "RedHat"
-      dnf:
+    - name: Install prerequisites (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      apt:
         name:
           - perl
-          - gcc
-          - gcc-c++
-          - kernel-devel
-          - make
-          - wget
-          - tar
+          - curl
         state: present
+
+    - name: Disable NetworkManager (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      systemd:
+        name: NetworkManager
+        state: stopped
+        enabled: no
+
+    - name: Set hostname
+      hostname:
+        name: "{{ inventory_hostname }}"
+      when: ansible_distribution == "Ubuntu"
 
     # cPanel installation
     - name: Install cPanel
@@ -75,6 +61,7 @@
       args:
         creates: /usr/local/cpanel
       register: cpanel_install
+
     - name: Print cPanel installation complete message
       debug:
         msg: |
