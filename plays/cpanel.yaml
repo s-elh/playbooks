@@ -71,10 +71,8 @@
 
     # cPanel installation
     - name: Install cPanel
-      shell: |
-        curl -o latest -L https://securedownloads.cpanel.net/latest && sh latest
+      shell: "cd /home && curl -o latest -L {{ cpanel_url }} && sh latest"
       args:
-        chdir: /home
         creates: /usr/local/cpanel
 
     - name: Print cPanel installation complete message
