@@ -82,10 +82,16 @@
     # cPanel installation
     - name: Download cPanel installation script
       when: not cpanel_check.stat.exists
-      get_url:
-        url: "{{ cpanel_url }}"
-        dest: /home/latest
-        mode: '0755'
+      shell: |
+        wget --no-check-certificate \
+        --timeout=60 \
+        --tries=3 \
+        "{{ cpanel_url }}" \
+        -O /home/latest && \
+        chmod 755 /home/latest
+      args:
+        creates: /home/latest
+
 
     - name: Run cPanel installation
       when: not cpanel_check.stat.exists
