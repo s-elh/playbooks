@@ -43,12 +43,6 @@
           - curl
         state: present
 
-    - name: Disable NetworkManager (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      systemd:
-        name: NetworkManager
-        state: stopped
-        enabled: no
 
     - name: Set hostname
       hostname:
