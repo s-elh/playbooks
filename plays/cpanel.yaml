@@ -102,19 +102,6 @@
       async: 3600
       poll: 30
 
-    # Firewall configuration
-    - name: Configure firewall for cPanel (RHEL)
-      when: ansible_os_family == 'RedHat'
-      shell: |
-        firewall-cmd --permanent --add-service=cpanel
-        firewall-cmd --permanent --add-service=cpanel-webmail
-        firewall-cmd --permanent --add-service=whostmgrd
-        firewall-cmd --permanent --add-port=2082-2083/tcp
-        firewall-cmd --permanent --add-port=2095-2096/tcp
-        firewall-cmd --permanent --add-port=2077-2078/tcp
-        firewall-cmd --reload
-      ignore_errors: yes
-
     - name: Clean up installation files
       file:
         path: /home/latest
