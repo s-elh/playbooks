@@ -69,16 +69,6 @@
           - tar
         state: present
 
-    # Common preparation tasks
-    - name: Check if cPanel is already installed
-      stat:
-        path: /usr/local/cpanel
-      register: cpanel_check
-
-    - name: Set hostname
-      hostname:
-        name: "{{ inventory_hostname }}"
-
     # cPanel installation
     - name: Download cPanel installation script
       shell: |
@@ -97,44 +87,6 @@
         echo $! > /var/run/cpanel_install.pid
       args:
         creates: /usr/local/cpanel
-
-    - name: Wait for cPanel installation to complete
-      when: not cpanel_check.stat.exists
-      shell: |
-        PID=$(cat /var/run/cpanel_install.pid)
-        if ps -p $PID > /dev/null; then
-          tail -1 /var/log/cpanel_install.log
-          exit 1
-        else
-          if [ -d "/usr/local/cpanel" ]; then
-            echo "Installation completed"
-            exit 0
-          else
-            echo "Installation failed"
-            exit 2
-          fi
-        fi
-      register: install_status
-      until: install_status.rc == 0
-      retries: 180  # 3 hours (with 60s delay)
-      delay: 60
-      ignore_errors: yes
-      
-    - name: Clean up installation files
-      file:
-        path: "{{ item }}"
-        state: absent
-      with_items:
-        - /home/latest
-        - /var/run/cpanel_install.pid
-        - /var/log/cpanel_install.log
-      ignore_errors: yes
-
-    - name: Wait for cPanel to be accessible
-      wait_for:
-        port: 2082
-        timeout: 300
-      ignore_errors: yes
 
     - name: Print cPanel installation complete message
       debug:
