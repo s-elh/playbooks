@@ -79,13 +79,6 @@
       hostname:
         name: "{{ inventory_hostname }}"
 
-    - name: Update hosts file
-      lineinfile:
-        path: /etc/hosts
-        line: "{{ ansible_default_ipv4.address }} {{ inventory_hostname }}"
-        regexp: "^{{ ansible_default_ipv4.address }}"
-        state: present
-
     # cPanel installation
     - name: Download cPanel installation script
       when: not cpanel_check.stat.exists
