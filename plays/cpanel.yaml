@@ -3,8 +3,17 @@
   hosts: all
   become: true
   vars:
-    domain_suffix: "domain.com" # Update with your domain suffix
+    domain_suffix: "atlascs.ma" 
   tasks:
+    - name: Ensure /etc/resolv.conf contains the required nameserver
+      copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 8.8.8.8
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Save current iptables rules
       shell: iptables-save > ~/firewall.rules
 
