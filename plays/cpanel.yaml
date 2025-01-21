@@ -38,6 +38,7 @@
 
     - name: Run the cPanel installer
       command: sh /home/latest
+      ignore_errors: yes
 
     - name: Create the EasyApache 4 marker file
       file:
