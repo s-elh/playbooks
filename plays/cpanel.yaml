@@ -1,64 +1,59 @@
 ---
-- name: Install cPanel
+- name: Configure system and install cPanel
   hosts: all
   become: true
-  gather_facts: true
   vars:
-    cpanel_url: "https://securedownloads.cpanel.net/latest"
-    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
-    proxy_url: "http://10.1.38.2:3128"
+    domain_suffix: "domain.com" # Update with your domain suffix
   tasks:
-    # Proxy configuration (your existing tasks)
-    - name: Configure HTTP proxy for apt (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+    - name: Save current iptables rules
+      shell: iptables-save > ~/firewall.rules
 
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
+    - name: Stop UFW service
+      service:
+        name: ufw
+        state: stopped
 
-    # Ubuntu-specific tasks
-    - name: Update package cache (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
+    - name: Disable UFW service
+      service:
+        name: ufw
+        enabled: no
+
+    - name: Update APT package index
       apt:
         update_cache: yes
-        upgrade: yes
 
-    - name: Install prerequisites (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
+    - name: Upgrade APT packages
       apt:
-        name:
-          - perl
-          - curl
+        upgrade: dist
+
+    - name: Set system hostname
+      hostname:
+        name: "{{ inventory_hostname }}.{{ domain_suffix }}"
+
+    - name: Download the latest cPanel installer
+      get_url:
+        url: https://securedownloads.cpanel.net/latest
+        dest: /home/latest
+        mode: '0755'
+
+    - name: Run the cPanel installer
+      command: sh /home/latest
+
+    - name: Create the EasyApache 4 marker file
+      file:
+        path: /etc/cpanel/ea4/is_ea4
+        state: touch
+
+    - name: Export CPANEL_BASE_INSTALL environment variable
+      lineinfile:
+        path: /etc/environment
+        line: 'CPANEL_BASE_INSTALL=1'
         state: present
 
-
-    - name: Set hostname
-      hostname:
-        name: "{{ inventory_hostname }}"
-      when: ansible_distribution == "Ubuntu"
-
-    # cPanel installation
-    - name: Install cPanel
-      shell: "cd /home && wget -e use_proxy=yes -e http_proxy={{ proxy_url }} -e https_proxy={{ proxy_url }} --no-check-certificate -O latest {{ cpanel_url }} && sh latest"
+    - name: Load CPANEL_BASE_INSTALL variable into current environment
+      shell: export CPANEL_BASE_INSTALL=1
       args:
-        creates: /usr/local/cpanel
-      register: cpanel_install
+        executable: /bin/bash
 
-    - name: Print cPanel installation complete message
-      debug:
-        msg: |
-          cPanel has been installed successfully.
-          WHM (WebHost Manager) can be accessed at: https://{{ morpheus['server']['internalIp'] }}:2087
-          cPanel can be accessed at: https://{{ morpheus['server']['internalIp'] }}:2083
+    - name: Run the cPanel initial install script
+      command: /usr/local/cpanel/scripts/cpanel_initial_install
