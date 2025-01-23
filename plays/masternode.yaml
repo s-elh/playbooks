@@ -1,10 +1,10 @@
----
 - name: Installer kURL et mettre à jour le logiciel
   hosts: all
- tasks:
-сору:
-src: "{{ item }"
-dest: "/root/Downloads/"
-Loop:
-- /root/Downloads/jdk-8171-linux-x64. rpm
-- / root/Downloads/hadoop-1.2.1-1.x86_64. rpm
+  tasks:
+    - name: Copier les fichiers RPM vers le répertoire cible
+      copy:
+        src: "{{ item }}"
+        dest: "/root/Downloads/"
+      loop:
+        - "/root/Downloads/jdk-8171-linux-x64.rpm"
+        - "/root/Downloads/hadoop-1.2.1-1.x86_64.rpm"
