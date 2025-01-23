@@ -1,6 +1,6 @@
 ---
 - name: Install and Configure Hadoop 3.4.0
-  hosts: hadoop_nodes
+  hosts: all
   become: true
   vars:
     hadoop_version: "3.4.0"
