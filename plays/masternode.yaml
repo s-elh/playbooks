@@ -1,10 +1,11 @@
 - name: Installer kURL et mettre à jour le logiciel
   hosts: all
   tasks:
-    - name: Copier les fichiers RPM vers le répertoire cible
+    - name: Copier les fichiers RPM (déjà présents sur la machine distante)
       copy:
         src: "{{ item }}"
         dest: "/root/Downloads/"
+        remote_src: yes
       loop:
         - "/root/Downloads/jdk-8171-linux-x64.rpm"
         - "/root/Downloads/hadoop-1.2.1-1.x86_64.rpm"
