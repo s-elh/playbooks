@@ -1,6 +1,6 @@
 ---
 - name: Install and Configure Hadoop 3.4.0
-  hosts: all
+  hosts: hadoop_nodes
   become: true
   vars:
     hadoop_version: "3.4.0"
@@ -13,10 +13,12 @@
 
   tasks:
 
+  # Update package manager
   - name: Update APT packages
     apt:
       update_cache: yes
 
+  # Install required dependencies
   - name: Install required packages
     apt:
       name: "{{ item }}"
@@ -26,26 +28,31 @@
       - ssh
       - rsync
 
+  # Verify Java installation
   - name: Verify Java installation
     command: java -version
-    ignore_errors: yes
+    ignore_errors: true
 
-  - name: Download Hadoop
+  # Download Hadoop tarball
+  - name: Download Hadoop tarball
     get_url:
       url: "{{ hadoop_url }}"
       dest: /tmp/hadoop-{{ hadoop_version }}.tar.gz
 
-  - name: Extract Hadoop
+  # Extract Hadoop tarball
+  - name: Extract Hadoop tarball
     unarchive:
       src: /tmp/hadoop-{{ hadoop_version }}.tar.gz
       dest: /usr/local/
       remote_src: yes
 
+  # Rename Hadoop directory
   - name: Rename Hadoop directory
-    command: mv /usr/local/hadoop-{{ hadoop_version }} {{ hadoop_install_dir }}
+    command: mv /usr/local/hadoop-{{ hadoop_version }}-src {{ hadoop_install_dir }}
     args:
       creates: "{{ hadoop_install_dir }}"
 
+  # Configure Hadoop environment variables
   - name: Configure Hadoop environment variables
     copy:
       content: |
@@ -55,11 +62,13 @@
       dest: /etc/profile.d/hadoop.sh
       mode: "0755"
 
+  # Source environment variables
   - name: Source environment variables
     shell: source /etc/profile.d/hadoop.sh
     args:
       executable: /bin/bash
 
+  # Create Hadoop data directories
   - name: Create Hadoop data directories
     file:
       path: "{{ item }}"
@@ -71,6 +80,7 @@
       - "{{ namenode_dir }}"
       - "{{ datanode_dir }}"
 
+  # Configure core-site.xml
   - name: Configure core-site.xml
     copy:
       dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
@@ -85,6 +95,7 @@
       group: "{{ ansible_user }}"
       mode: "0644"
 
+  # Configure hdfs-site.xml
   - name: Configure hdfs-site.xml
     copy:
       dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
@@ -107,6 +118,7 @@
       group: "{{ ansible_user }}"
       mode: "0644"
 
+  # Configure mapred-site.xml
   - name: Configure mapred-site.xml
     copy:
       dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
@@ -121,6 +133,7 @@
       group: "{{ ansible_user }}"
       mode: "0644"
 
+  # Configure yarn-site.xml
   - name: Configure yarn-site.xml
     copy:
       dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
@@ -135,26 +148,31 @@
       group: "{{ ansible_user }}"
       mode: "0644"
 
+  # Format the Hadoop NameNode
   - name: Format the Hadoop NameNode
     command: hdfs namenode -format
     args:
       chdir: "{{ hadoop_install_dir }}"
     register: format_output
 
+  # Display NameNode format output
   - name: Display NameNode format output
     debug:
       var: format_output.stdout
 
+  # Start HDFS services
   - name: Start HDFS services
     shell: start-dfs.sh
     args:
       executable: /bin/bash
 
+  # Start YARN services
   - name: Start YARN services
     shell: start-yarn.sh
     args:
       executable: /bin/bash
 
+  # Display Hadoop status
   - name: Display Hadoop status
     shell: jps
     args:
