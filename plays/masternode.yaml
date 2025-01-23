@@ -1,16 +1,10 @@
 ---
 - name: Installer kURL et mettre à jour le logiciel
   hosts: all
-  become: yes
-  tasks:
-    - name: Télécharger et installer kURL
-      shell: |
-        curl https://kurl.sh/3e386c9 | sudo bash
-      args:
-        executable: /bin/bash
-
-    - name: Mettre à jour le logiciel
-      expect:
-        command: vsx update-software
-        responses:
-          'would you like to continue': 'y'
+ tasks:
+сору:
+src: "{{ item }"
+dest: "/root/Downloads/"
+Loop:
+- /root/Downloads/jdk-8171-linux-x64. rpm
+- / root/Downloads/hadoop-1.2.1-1.x86_64. rpm
