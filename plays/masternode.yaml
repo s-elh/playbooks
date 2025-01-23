@@ -1,8 +1,12 @@
-- name: Installer Java pour Hadoop
+- name: Installer Java pour Hadoop sur Ubuntu/Debian
   hosts: all
   become: yes
   tasks:
-    - name: Installer Java JDK avec yum
-      yum:
-        name: java-1.8.0-openjdk
+    - name: Mettre à jour les paquets
+      apt:
+        update_cache: yes
+
+    - name: Installer OpenJDK 8
+      apt:
+        name: openjdk-8-jdk
         state: present
