@@ -1,11 +1,8 @@
-- name: Installer kURL et mettre à jour le logiciel
+- name: Installer Java pour Hadoop
   hosts: all
+  become: yes
   tasks:
-    - name: Copier les fichiers RPM (déjà présents sur la machine distante)
-      copy:
-        src: "{{ item }}"
-        dest: "/root/Downloads/"
-        remote_src: yes
-      loop:
-        - "/root/Downloads/jdk-8171-linux-x64.rpm"
-        - "/root/Downloads/hadoop-1.2.1-1.x86_64.rpm"
+    - name: Installer Java JDK avec yum
+      yum:
+        name: java-1.8.0-openjdk
+        state: present
