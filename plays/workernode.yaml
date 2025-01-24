@@ -1,179 +1,25 @@
 ---
-- name: Install and Configure Hadoop 3.4.0
+- name: Install Java for Hadoop
   hosts: all
-  become: true
-  vars:
-    hadoop_version: "3.4.0"
-    java_package: "openjdk-11-jdk"
-    hadoop_install_dir: "/usr/local/hadoop"
-    hadoop_data_dir: "/usr/local/hadoop_data"
-    namenode_dir: "{{ hadoop_data_dir }}/hdfs/namenode"
-    datanode_dir: "{{ hadoop_data_dir }}/hdfs/datanode"
-    hadoop_url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}-src.tar.gz"
-
+  become: yes
   tasks:
+    - name: Update APT package index
+      apt:
+        update_cache: yes
 
-  # Update package manager
-  - name: Update APT packages
-    apt:
-      update_cache: yes
+    - name: Install OpenJDK 8
+      apt:
+        name: openjdk-8-jdk
+        state: present
 
-  # Install required dependencies
-  - name: Install required packages
-    apt:
-      name: "{{ item }}"
-      state: present
-    with_items:
-      - "{{ java_package }}"
-      - ssh
-      - rsync
+    - name: Set JAVA_HOME in /etc/environment
+      lineinfile:
+        path: /etc/environment
+        regexp: '^JAVA_HOME='
+        line: 'JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64'
+        state: present
 
-  # Verify Java installation
-  - name: Verify Java installation
-    command: java -version
-    ignore_errors: true
-
-  # Download Hadoop tarball
-  - name: Download Hadoop tarball
-    get_url:
-      url: "{{ hadoop_url }}"
-      dest: /tmp/hadoop-{{ hadoop_version }}.tar.gz
-
-  # Extract Hadoop tarball
-  - name: Extract Hadoop tarball
-    unarchive:
-      src: /tmp/hadoop-{{ hadoop_version }}.tar.gz
-      dest: /usr/local/
-      remote_src: yes
-
-  # Rename Hadoop directory
-  - name: Rename Hadoop directory
-    command: mv /usr/local/hadoop-{{ hadoop_version }}-src {{ hadoop_install_dir }}
-    args:
-      creates: "{{ hadoop_install_dir }}"
-
-  # Configure Hadoop environment variables
-  - name: Configure Hadoop environment variables
-    copy:
-      content: |
-        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-        export HADOOP_HOME={{ hadoop_install_dir }}
-        export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
-      dest: /etc/profile.d/hadoop.sh
-      mode: "0755"
-
-  # Source environment variables
-  - name: Source environment variables
-    shell: source /etc/profile.d/hadoop.sh
-    args:
-      executable: /bin/bash
-
-  # Create Hadoop data directories
-  - name: Create Hadoop data directories
-    file:
-      path: "{{ item }}"
-      state: directory
-      owner: "{{ ansible_user }}"
-      group: "{{ ansible_user }}"
-      mode: "0755"
-    with_items:
-      - "{{ namenode_dir }}"
-      - "{{ datanode_dir }}"
-
-  # Configure core-site.xml
-  - name: Configure core-site.xml
-    copy:
-      dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
-      content: |
-        <configuration>
-          <property>
-            <name>fs.defaultFS</name>
-            <value>hdfs://localhost:9000</value>
-          </property>
-        </configuration>
-      owner: "{{ ansible_user }}"
-      group: "{{ ansible_user }}"
-      mode: "0644"
-
-  # Configure hdfs-site.xml
-  - name: Configure hdfs-site.xml
-    copy:
-      dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
-      content: |
-        <configuration>
-          <property>
-            <name>dfs.replication</name>
-            <value>1</value>
-          </property>
-          <property>
-            <name>dfs.namenode.name.dir</name>
-            <value>file://{{ namenode_dir }}</value>
-          </property>
-          <property>
-            <name>dfs.datanode.data.dir</name>
-            <value>file://{{ datanode_dir }}</value>
-          </property>
-        </configuration>
-      owner: "{{ ansible_user }}"
-      group: "{{ ansible_user }}"
-      mode: "0644"
-
-  # Configure mapred-site.xml
-  - name: Configure mapred-site.xml
-    copy:
-      dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
-      content: |
-        <configuration>
-          <property>
-            <name>mapreduce.framework.name</name>
-            <value>yarn</value>
-          </property>
-        </configuration>
-      owner: "{{ ansible_user }}"
-      group: "{{ ansible_user }}"
-      mode: "0644"
-
-  # Configure yarn-site.xml
-  - name: Configure yarn-site.xml
-    copy:
-      dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
-      content: |
-        <configuration>
-          <property>
-            <name>yarn.nodemanager.aux-services</name>
-            <value>mapreduce_shuffle</value>
-          </property>
-        </configuration>
-      owner: "{{ ansible_user }}"
-      group: "{{ ansible_user }}"
-      mode: "0644"
-
-  # Format the Hadoop NameNode
-  - name: Format the Hadoop NameNode
-    command: hdfs namenode -format
-    args:
-      chdir: "{{ hadoop_install_dir }}"
-    register: format_output
-
-  # Display NameNode format output
-  - name: Display NameNode format output
-    debug:
-      var: format_output.stdout
-
-  # Start HDFS services
-  - name: Start HDFS services
-    shell: start-dfs.sh
-    args:
-      executable: /bin/bash
-
-  # Start YARN services
-  - name: Start YARN services
-    shell: start-yarn.sh
-    args:
-      executable: /bin/bash
-
-  # Display Hadoop status
-  - name: Display Hadoop status
-    shell: jps
-    args:
-      executable: /bin/bash
+    - name: Reload environment variables
+      command: source /etc/environment
+      args:
+        warn: false
