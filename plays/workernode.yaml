@@ -12,14 +12,9 @@
         name: openjdk-8-jdk
         state: present
 
-    - name: Set JAVA_HOME in /etc/environment
+    - name: Ensure JAVA_HOME is set in /etc/environment
       lineinfile:
         path: /etc/environment
         regexp: '^JAVA_HOME='
         line: 'JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64'
         state: present
-
-    - name: Reload environment variables
-      command: source /etc/environment
-      args:
-        warn: false
