@@ -1,20 +1,32 @@
 ---
-- name: Install Java for Hadoop
+- name: Install Hadoop
   hosts: all
   become: yes
+  vars:
+    hadoop_version: "3.3.6"  # Remplace par la version souhaitée si besoin
+    hadoop_install_dir: "/usr/local/hadoop"
   tasks:
-    - name: Update APT package index
-      apt:
-        update_cache: yes
+    - name: Télécharger l'archive Hadoop
+      get_url:
+        url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
 
-    - name: Install OpenJDK 8
-      apt:
-        name: openjdk-8-jdk
-        state: present
+    - name: Extraire l'archive Hadoop
+      unarchive:
+        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/usr/local/"
+        remote_src: yes
 
-    - name: Ensure JAVA_HOME is set in /etc/environment
-      lineinfile:
-        path: /etc/environment
-        regexp: '^JAVA_HOME='
-        line: 'JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64'
-        state: present
+    - name: Renommer le dossier Hadoop
+      command:
+        cmd: mv "/usr/local/hadoop-{{ hadoop_version }}" "{{ hadoop_install_dir }}"
+      args:
+        creates: "{{ hadoop_install_dir }}"
+
+    - name: Configurer les permissions pour Hadoop
+      file:
+        path: "{{ hadoop_install_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
