@@ -1,32 +1,22 @@
 ---
-- name: Install Hadoop
+- name: Configure environment variables for Hadoop
   hosts: all
   become: yes
-  vars:
-    hadoop_version: "3.3.6"  # Remplace par la version souhaitée si besoin
-    hadoop_install_dir: "/usr/local/hadoop"
   tasks:
-    - name: Télécharger l'archive Hadoop
-      get_url:
-        url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+    - name: Ajouter les variables d'environnement Hadoop à .bashrc
+      lineinfile:
+        path: ~/.bashrc
+        line: |
+          export HADOOP_HOME=/usr/local/hadoop
+          export HADOOP_INSTALL=$HADOOP_HOME
+          export HADOOP_MAPRED_HOME=$HADOOP_HOME
+          export HADOOP_COMMON_HOME=$HADOOP_HOME
+          export HADOOP_HDFS_HOME=$HADOOP_HOME
+          export YARN_HOME=$HADOOP_HOME
+          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+        state: present
 
-    - name: Extraire l'archive Hadoop
-      unarchive:
-        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/usr/local/"
-        remote_src: yes
-
-    - name: Renommer le dossier Hadoop
-      command:
-        cmd: mv "/usr/local/hadoop-{{ hadoop_version }}" "{{ hadoop_install_dir }}"
+    - name: Recharger le fichier .bashrc pour appliquer les modifications
+      shell: source ~/.bashrc
       args:
-        creates: "{{ hadoop_install_dir }}"
-
-    - name: Configurer les permissions pour Hadoop
-      file:
-        path: "{{ hadoop_install_dir }}"
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0755'
+        executable: /bin/bash
