@@ -1,55 +1,17 @@
 ---
-- name: Test Ansible connection and environment
-  hosts: all
-  become: yes
-  tasks:
-    - name: Vérifier la connexion à la machine cible
-      ping:
-
-    - name: Vérifier l'espace disque
-      command: df -h
-      register: disk_space
-
-    - name: Afficher l'espace disque
-      debug:
-        msg: "{{ disk_space.stdout_lines }}"
-
-    - name: Vérifier les permissions sur /tmp
-      stat:
-        path: /tmp
-      register: tmp_stat
-
-    - name: Afficher les informations sur /tmp
-      debug:
-        msg: "Permissions de /tmp : {{ tmp_stat.stat.mode }} (doivent être 1777)"
-
-    - name: Vérifier si ~/.ansible/tmp existe
-      stat:
-        path: "~/.ansible/tmp"
-      register: ansible_tmp_stat
-
-    - name: Créer ~/.ansible/tmp s'il n'existe pas
-      file:
-        path: "~/.ansible/tmp"
-        state: directory
-        mode: '0700'
-      when: not ansible_tmp_stat.stat.exists
-
-    - name: Vérifier le fichier de configuration Ansible
-      command: ansible-config dump | grep remote_tmp
-      register: ansible_config
-
-    - name: Afficher la configuration remote_tmp
-      debug:
-        msg: "{{ ansible_config.stdout_lines }}"
-
-- name: Configure Hadoop XML files
+- name: Reset and configure Hadoop XML files
   hosts: all
   become: yes
   vars:
     hadoop_conf_dir: "/usr/local/hadoop/etc/hadoop"
   tasks:
-    - name: Configure core-site.xml
+    - name: Supprimer le contenu de core-site.xml avant configuration
+      copy:
+        dest: "{{ hadoop_conf_dir }}/core-site.xml"
+        content: ""
+        force: true
+
+    - name: Configurer core-site.xml
       copy:
         dest: "{{ hadoop_conf_dir }}/core-site.xml"
         content: |
@@ -60,7 +22,13 @@
             </property>
           </configuration>
 
-    - name: Configure hdfs-site.xml
+    - name: Supprimer le contenu de hdfs-site.xml avant configuration
+      copy:
+        dest: "{{ hadoop_conf_dir }}/hdfs-site.xml"
+        content: ""
+        force: true
+
+    - name: Configurer hdfs-site.xml
       copy:
         dest: "{{ hadoop_conf_dir }}/hdfs-site.xml"
         content: |
@@ -79,7 +47,13 @@
             </property>
           </configuration>
 
-    - name: Configure mapred-site.xml
+    - name: Supprimer le contenu de mapred-site.xml avant configuration
+      copy:
+        dest: "{{ hadoop_conf_dir }}/mapred-site.xml"
+        content: ""
+        force: true
+
+    - name: Configurer mapred-site.xml
       copy:
         dest: "{{ hadoop_conf_dir }}/mapred-site.xml"
         content: |
@@ -90,7 +64,13 @@
             </property>
           </configuration>
 
-    - name: Configure yarn-site.xml
+    - name: Supprimer le contenu de yarn-site.xml avant configuration
+      copy:
+        dest: "{{ hadoop_conf_dir }}/yarn-site.xml"
+        content: ""
+        force: true
+
+    - name: Configurer yarn-site.xml
       copy:
         dest: "{{ hadoop_conf_dir }}/yarn-site.xml"
         content: |
