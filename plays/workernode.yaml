@@ -3,15 +3,21 @@
   hosts: all
   become: yes
   tasks:
-    - name: Ajouter les variables d'environnement Hadoop à .bashrc
+    - name: Ajouter HADOOP_HOME et PATH dans /etc/environment (variables globales)
       lineinfile:
-        path: /home/{{ ansible_user }}/.bashrc
-        line: |
-          export HADOOP_HOME=/usr/local/hadoop
-          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+        path: /etc/environment
+        regexp: '^HADOOP_HOME='
+        line: 'HADOOP_HOME=/usr/local/hadoop'
         state: present
 
-    - name: Recharger le fichier .bashrc pour appliquer les modifications
-      shell: source /home/{{ ansible_user }}/.bashrc
+    - name: Ajouter PATH pour Hadoop dans /etc/environment
+      lineinfile:
+        path: /etc/environment
+        regexp: '^PATH='
+        line: 'PATH="$PATH:/usr/local/hadoop/bin:/usr/local/hadoop/sbin"'
+        state: present
+
+    - name: Recharger les variables d'environnement globales
+      shell: source /etc/environment
       args:
         executable: /bin/bash
