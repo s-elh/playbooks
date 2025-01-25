@@ -3,21 +3,9 @@
   hosts: all
   become: yes
   tasks:
-    - name: Ajouter HADOOP_HOME et PATH dans /etc/environment (variables globales)
-      lineinfile:
+    - name: Ajouter HADOOP_HOME et PATH dans /etc/environment
+      blockinfile:
         path: /etc/environment
-        regexp: '^HADOOP_HOME='
-        line: 'HADOOP_HOME=/usr/local/hadoop'
-        state: present
-
-    - name: Ajouter PATH pour Hadoop dans /etc/environment
-      lineinfile:
-        path: /etc/environment
-        regexp: '^PATH='
-        line: 'PATH="$PATH:/usr/local/hadoop/bin:/usr/local/hadoop/sbin"'
-        state: present
-
-    - name: Recharger les variables d'environnement globales
-      shell: source /etc/environment
-      args:
-        executable: /bin/bash
+        block: |
+          HADOOP_HOME=/usr/local/hadoop
+          PATH="/usr/local/hadoop/bin:/usr/local/hadoop/sbin:{{ ansible_env.PATH }}"
