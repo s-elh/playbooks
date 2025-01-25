@@ -1,15 +1,15 @@
 ---
-- name: Reset and configure Hadoop XML files
+- name: Configure Hadoop XML files
   hosts: all
   become: yes
   vars:
     hadoop_conf_dir: "/usr/local/hadoop/etc/hadoop"
   tasks:
-    - name: Supprimer le contenu de core-site.xml avant configuration
-      copy:
-        dest: "{{ hadoop_conf_dir }}/core-site.xml"
-        content: ""
-        force: true
+    - name: Assurer que le répertoire de configuration Hadoop existe
+      file:
+        path: "{{ hadoop_conf_dir }}"
+        state: directory
+        mode: '0755'
 
     - name: Configurer core-site.xml
       copy:
@@ -21,12 +21,7 @@
               <value>hdfs://localhost:9000</value>
             </property>
           </configuration>
-
-    - name: Supprimer le contenu de hdfs-site.xml avant configuration
-      copy:
-        dest: "{{ hadoop_conf_dir }}/hdfs-site.xml"
-        content: ""
-        force: true
+        mode: '0644'
 
     - name: Configurer hdfs-site.xml
       copy:
@@ -46,12 +41,7 @@
               <value>file:/usr/local/hadoop/data/datanode</value>
             </property>
           </configuration>
-
-    - name: Supprimer le contenu de mapred-site.xml avant configuration
-      copy:
-        dest: "{{ hadoop_conf_dir }}/mapred-site.xml"
-        content: ""
-        force: true
+        mode: '0644'
 
     - name: Configurer mapred-site.xml
       copy:
@@ -63,12 +53,7 @@
               <value>yarn</value>
             </property>
           </configuration>
-
-    - name: Supprimer le contenu de yarn-site.xml avant configuration
-      copy:
-        dest: "{{ hadoop_conf_dir }}/yarn-site.xml"
-        content: ""
-        force: true
+        mode: '0644'
 
     - name: Configurer yarn-site.xml
       copy:
@@ -80,3 +65,4 @@
               <value>mapreduce_shuffle</value>
             </property>
           </configuration>
+        mode: '0644'
