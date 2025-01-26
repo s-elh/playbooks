@@ -1,13 +1,26 @@
-- name: Configure Hadoop XML files locally
+---
+- name: Configure  proxy
   hosts: all
+  become: true
+  vars:
+    proxy_url: "http://10.1.38.2:3128"
+
   tasks:
-    - name: Configurer core-site.xml
+    - name: Configure HTTP proxy for apt
+      when: ansible_distribution == "Ubuntu"
       copy:
-        dest: "/usr/local/hadoop/etc/hadoop/core-site.xml"
         content: |
-          <configuration>
-            <property>
-              <name>fs.defaultFS</name>
-              <value>hdfs://localhost:9000</value>
-            </property>
-          </configuration>
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
