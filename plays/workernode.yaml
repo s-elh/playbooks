@@ -1,5 +1,5 @@
 - name: Configure Hadoop XML files locally
-  hosts: localhost
+  hosts: all
   tasks:
     - name: Configurer core-site.xml
       copy:
