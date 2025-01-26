@@ -5,6 +5,9 @@
   vars:
     domain_suffix: "atlascs.ma" 
   tasks:
+
+    - name: apt conf
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
     - name: Ensure /etc/resolv.conf contains the required nameserver
       copy:
         dest: /etc/resolv.conf
