@@ -3,45 +3,36 @@
   hosts: all
   become: yes
   tasks:
-    - name: Ensure system is Ubuntu
-      fail:
-        msg: "This playbook is only for Ubuntu systems"
-      when: ansible_distribution != "Ubuntu"
+    - name: Fix dpkg if interrupted
+      shell: |
+        dpkg --configure -a
+      ignore_errors: yes
 
-    - name: Update and upgrade apt packages
-      apt:
-        update_cache: yes
-        upgrade: yes
-        cache_valid_time: 3600
+    - name: Update apt cache
+      shell: |
+        rm -rf /var/lib/apt/lists/*
+        apt-get clean
+        apt-get update
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
 
-    - name: Install required packages
+    - name: Install minimal required packages
       apt:
-        name: 
-          - curl
-          - sudo
-          - apt-transport-https
-          - ca-certificates
-          - software-properties-common
-          - python3-pip
-          - python3-setuptools
+        name: curl
         state: present
-
-    - name: Create temporary directory for kURL
-      file:
-        path: /tmp/kurl-install
-        state: directory
-        mode: '0755'
+        update_cache: no
+      ignore_errors: yes
 
     - name: Download kURL installation script
       get_url:
         url: https://kurl.sh/fcc1994
-        dest: /tmp/kurl-install/install.sh
+        dest: /tmp/install.sh
         mode: '0755'
 
     - name: Execute kURL installation script
       shell: |
-        cd /tmp/kurl-install
-        bash install.sh
+        bash /tmp/install.sh
       args:
         executable: /bin/bash
       register: kurl_install
@@ -52,12 +43,7 @@
         var: kurl_install.stdout_lines
       when: kurl_install.stdout_lines is defined
 
-    - name: Display errors if installation failed
-      debug:
-        msg: "Installation failed with error: {{ kurl_install.stderr_lines }}"
-      when: kurl_install.failed
-
-    - name: Clean up installation files
+    - name: Clean up
       file:
-        path: /tmp/kurl-install
+        path: /tmp/install.sh
         state: absent
