@@ -1,14 +1,37 @@
-- name: Installer Java pour Hadoop sur Ubuntu 22.04
+---
+- name: Install kURL
   hosts: all
   become: yes
   tasks:
-    - name: Mettre à jour le cache APT
+    - name: Update package cache
       apt:
         update_cache: yes
-        force_apt_get: yes
+      when: ansible_os_family == "Debian"
 
-    - name: Installer OpenJDK 8
-      apt:
-        name: openjdk-8-jdk
+    - name: Install curl
+      package:
+        name: curl
         state: present
-        force_apt_get: yes
+
+    - name: Download kURL installation script
+      get_url:
+        url: https://kurl.sh/fcc1994
+        dest: /tmp/kurl-install.sh
+        mode: '0755'
+
+    - name: Execute kURL installation script
+      command: bash /tmp/kurl-install.sh
+      args:
+        creates: /usr/local/bin/kubectl  # Prevents re-running if already installed
+      register: kurl_install
+      ignore_errors: true
+
+    - name: Display installation output
+      debug:
+        var: kurl_install.stdout_lines
+      when: kurl_install.stdout_lines is defined
+
+    - name: Clean up installation script
+      file:
+        path: /tmp/kurl-install.sh
+        state: absent
