@@ -1,3 +1,8 @@
+---
+- name: Install kURL on Ubuntu
+  hosts: all
+  become: yes
+  tasks:
 - name: Vérifier le contenu de /tmp/install.sh
   shell: cat /tmp/install.sh
   register: install_script_content
