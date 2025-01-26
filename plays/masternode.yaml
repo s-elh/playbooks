@@ -1,46 +1,47 @@
 ---
-- name: Install kURL
+- name: Install kURL on Ubuntu
   hosts: all
   become: yes
   tasks:
-    - name: Update package cache
+    - name: Ensure system is Ubuntu
+      fail:
+        msg: "This playbook is only for Ubuntu systems"
+      when: ansible_distribution != "Ubuntu"
+
+    - name: Update and upgrade apt packages
       apt:
         update_cache: yes
-      when: ansible_os_family == "Debian"
+        upgrade: yes
+        cache_valid_time: 3600
 
     - name: Install required packages
-      package:
+      apt:
         name: 
           - curl
           - sudo
+          - apt-transport-https
+          - ca-certificates
+          - software-properties-common
+          - python3-pip
+          - python3-setuptools
         state: present
+
+    - name: Create temporary directory for kURL
+      file:
+        path: /tmp/kurl-install
+        state: directory
+        mode: '0755'
 
     - name: Download kURL installation script
       get_url:
         url: https://kurl.sh/fcc1994
-        dest: /tmp/kurl-install.sh
+        dest: /tmp/kurl-install/install.sh
         mode: '0755'
 
-    - name: Check disk space
-      command: df -h
-      register: disk_space
-      changed_when: false
-
-    - name: Display disk space
-      debug:
-        var: disk_space.stdout_lines
-
-    - name: Check memory
-      command: free -m
-      register: memory_info
-      changed_when: false
-
-    - name: Display memory info
-      debug:
-        var: memory_info.stdout_lines
-
-    - name: Execute kURL installation script with verbose output
-      shell: bash /tmp/kurl-install.sh
+    - name: Execute kURL installation script
+      shell: |
+        cd /tmp/kurl-install
+        bash install.sh
       args:
         executable: /bin/bash
       register: kurl_install
@@ -48,17 +49,15 @@
 
     - name: Display installation output
       debug:
-        var: kurl_install
-      when: kurl_install is defined
+        var: kurl_install.stdout_lines
+      when: kurl_install.stdout_lines is defined
 
-    - name: Display detailed error if installation failed
+    - name: Display errors if installation failed
       debug:
-        msg: 
-          - "Installation failed with return code {{ kurl_install.rc }}"
-          - "Error output: {{ kurl_install.stderr }}"
-      when: kurl_install.rc is defined and kurl_install.rc != 0
+        msg: "Installation failed with error: {{ kurl_install.stderr_lines }}"
+      when: kurl_install.failed
 
-    - name: Clean up installation script
+    - name: Clean up installation files
       file:
-        path: /tmp/kurl-install.sh
+        path: /tmp/kurl-install
         state: absent
