@@ -1,19 +1,9 @@
----
-- name: Configure Hadoop XML files
-  hosts: all
-  become: yes
-  vars:
-    hadoop_conf_dir: "/usr/local/hadoop/etc/hadoop"
+- name: Configure Hadoop XML files locally
+  hosts: localhost
   tasks:
-    - name: Assurer que le répertoire de configuration Hadoop existe
-      file:
-        path: "{{ hadoop_conf_dir }}"
-        state: directory
-        mode: '0755'
-
     - name: Configurer core-site.xml
       copy:
-        dest: "{{ hadoop_conf_dir }}/core-site.xml"
+        dest: "/usr/local/hadoop/etc/hadoop/core-site.xml"
         content: |
           <configuration>
             <property>
@@ -21,48 +11,3 @@
               <value>hdfs://localhost:9000</value>
             </property>
           </configuration>
-        mode: '0644'
-
-    - name: Configurer hdfs-site.xml
-      copy:
-        dest: "{{ hadoop_conf_dir }}/hdfs-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>dfs.replication</name>
-              <value>1</value>
-            </property>
-            <property>
-              <name>dfs.namenode.name.dir</name>
-              <value>file:/usr/local/hadoop/data/namenode</value>
-            </property>
-            <property>
-              <name>dfs.datanode.data.dir</name>
-              <value>file:/usr/local/hadoop/data/datanode</value>
-            </property>
-          </configuration>
-        mode: '0644'
-
-    - name: Configurer mapred-site.xml
-      copy:
-        dest: "{{ hadoop_conf_dir }}/mapred-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>mapreduce.framework.name</name>
-              <value>yarn</value>
-            </property>
-          </configuration>
-        mode: '0644'
-
-    - name: Configurer yarn-site.xml
-      copy:
-        dest: "{{ hadoop_conf_dir }}/yarn-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>yarn.nodemanager.aux-services</name>
-              <value>mapreduce_shuffle</value>
-            </property>
-          </configuration>
-        mode: '0644'
