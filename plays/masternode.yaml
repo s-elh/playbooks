@@ -8,9 +8,11 @@
         update_cache: yes
       when: ansible_os_family == "Debian"
 
-    - name: Install curl
+    - name: Install required packages
       package:
-        name: curl
+        name: 
+          - curl
+          - sudo
         state: present
 
     - name: Download kURL installation script
@@ -19,17 +21,42 @@
         dest: /tmp/kurl-install.sh
         mode: '0755'
 
-    - name: Execute kURL installation script
-      command: bash /tmp/kurl-install.sh
+    - name: Check disk space
+      command: df -h
+      register: disk_space
+      changed_when: false
+
+    - name: Display disk space
+      debug:
+        var: disk_space.stdout_lines
+
+    - name: Check memory
+      command: free -m
+      register: memory_info
+      changed_when: false
+
+    - name: Display memory info
+      debug:
+        var: memory_info.stdout_lines
+
+    - name: Execute kURL installation script with verbose output
+      shell: bash /tmp/kurl-install.sh
       args:
-        creates: /usr/local/bin/kubectl  # Prevents re-running if already installed
+        executable: /bin/bash
       register: kurl_install
-      ignore_errors: true
+      ignore_errors: yes
 
     - name: Display installation output
       debug:
-        var: kurl_install.stdout_lines
-      when: kurl_install.stdout_lines is defined
+        var: kurl_install
+      when: kurl_install is defined
+
+    - name: Display detailed error if installation failed
+      debug:
+        msg: 
+          - "Installation failed with return code {{ kurl_install.rc }}"
+          - "Error output: {{ kurl_install.stderr }}"
+      when: kurl_install.rc is defined and kurl_install.rc != 0
 
     - name: Clean up installation script
       file:
