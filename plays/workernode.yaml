@@ -1,5 +1,12 @@
 ---
 - name: Configure HTTP proxy for apt (Ubuntu)
+  hosts: all
+  become: yes
+  vars:
+    proxy_url: "http://10.1.38.2:3128"  # Adresse du proxy
+
+  tasks:
+    - name: Configurer le proxy APT
       when: ansible_distribution == "Ubuntu"
       copy:
         content: |
