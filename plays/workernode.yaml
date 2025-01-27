@@ -1,13 +1,14 @@
 ---
-- name: Install and configure Hadoop- name: Configure Hadoop
+- name: Install and configure Hadoop
   hosts: all
   become: yes
   vars:
+    hadoop_version: "3.3.6"
     hadoop_install_dir: "/usr/local/hadoop"
     namenode_dir: "/usr/local/hadoop/data/namenode"
     datanode_dir: "/usr/local/hadoop/data/datanode"
   tasks:
-    # 1. Create directories for Namenode and Datanode
+    # Step 1: Create directories for Namenode and Datanode
     - name: Create Namenode and Datanode directories
       file:
         path: "{{ item }}"
@@ -19,7 +20,7 @@
         - "{{ namenode_dir }}"
         - "{{ datanode_dir }}"
 
-    # 2. Configure core-site.xml
+    # Step 2: Configure core-site.xml
     - name: Configure core-site.xml
       copy:
         dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
@@ -31,7 +32,7 @@
             </property>
           </configuration>
 
-    # 3. Configure hdfs-site.xml
+    # Step 3: Configure hdfs-site.xml
     - name: Configure hdfs-site.xml
       copy:
         dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
@@ -51,7 +52,7 @@
             </property>
           </configuration>
 
-    # 4. Configure mapred-site.xml
+    # Step 4: Configure mapred-site.xml
     - name: Configure mapred-site.xml
       copy:
         dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
@@ -63,7 +64,7 @@
             </property>
           </configuration>
 
-    # 5. Configure yarn-site.xml
+    # Step 5: Configure yarn-site.xml
     - name: Configure yarn-site.xml
       copy:
         dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
@@ -75,7 +76,7 @@
             </property>
           </configuration>
 
-    # 6. Set permissions for configuration files
+    # Step 6: Set permissions for Hadoop configuration files
     - name: Set permissions for Hadoop configuration files
       file:
         path: "{{ hadoop_install_dir }}/etc/hadoop"
@@ -84,61 +85,3 @@
         group: "{{ ansible_user }}"
         mode: '0755'
       recurse: yes
-
-  hosts: all
-  become: yes
-  vars:
-    hadoop_version: "3.3.6"  # Remplace par la version souhaitée
-    hadoop_install_dir: "/usr/local/hadoop"
-
-  tasks:
-    # Étape 1 : Installation de Java
-    - name: Update APT package index
-      apt:
-        update_cache: yes
-
-    - name: Install OpenJDK 8
-      apt:
-        name: openjdk-8-jdk
-        state: present
-
-    - name: Ensure JAVA_HOME is set in /etc/environment
-      lineinfile:
-        path: /etc/environment
-        regexp: '^JAVA_HOME='
-        line: 'JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64'
-        state: present
-
-    # Étape 2 : Télécharger et installer Hadoop
-    - name: Télécharger l'archive Hadoop
-      get_url:
-        url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
-
-    - name: Extraire l'archive Hadoop
-      unarchive:
-        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/usr/local/"
-        remote_src: yes
-
-    - name: Renommer le dossier Hadoop
-      command:
-        cmd: mv "/usr/local/hadoop-{{ hadoop_version }}" "{{ hadoop_install_dir }}"
-      args:
-        creates: "{{ hadoop_install_dir }}"
-
-    - name: Configurer les permissions pour Hadoop
-      file:
-        path: "{{ hadoop_install_dir }}"
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0755'
-
-    # Étape 3 : Configurer les variables d'environnement Hadoop
-    - name: Ajouter HADOOP_HOME et PATH dans /etc/environment
-      blockinfile:
-        path: /etc/environment
-        block: |
-          HADOOP_HOME=/usr/local/hadoop
-          PATH="/usr/local/hadoop/bin:/usr/local/hadoop/sbin:{{ ansible_env.PATH }}"
