@@ -1,3 +1,4 @@
+---
 - name: Configure Passwordless SSH for Hadoop
   hosts: all
   become: yes
