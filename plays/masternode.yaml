@@ -9,18 +9,13 @@
       - "8.8.4.4"
 
   tasks:
-    - name: Backup resolv.conf
-      copy:
-        src: /etc/resolv.conf
-        dest: /etc/resolv.conf.backup
-        remote_src: yes
-
     - name: Configure DNS resolvers
-      template:
-        dest: /etc/resolv.conf
+      copy:
         content: |
           nameserver 8.8.8.8
           nameserver 8.8.4.4
+        dest: /etc/resolv.conf
+        backup: yes
 
     - name: Disable swap
       shell: |
