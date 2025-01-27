@@ -1,80 +1,38 @@
----
-- name: Configure Hadoop
+- name: Configure Passwordless SSH for Hadoop
   hosts: all
   become: yes
-  vars:
-    hadoop_install_dir: "/usr/local/hadoop"
-    namenode_dir: "/usr/local/hadoop/data/namenode"
-    datanode_dir: "/usr/local/hadoop/data/datanode"
   tasks:
-    # Step 1: Create directories for Namenode and Datanode
-    - name: Create Namenode and Datanode directories
+    # 1. Generate SSH key pair if not already present
+    - name: Generate SSH key pair
+      command: ssh-keygen -t rsa -f ~/.ssh/id_rsa -q -N ""
+      args:
+        creates: "~/.ssh/id_rsa"
+
+    # 2. Copy public key to authorized_keys
+    - name: Add SSH key to authorized_keys
+      copy:
+        src: "~/.ssh/id_rsa.pub"
+        dest: "~/.ssh/authorized_keys"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0600'
+
+    # 3. Ensure proper permissions for .ssh directory
+    - name: Set permissions for .ssh directory
       file:
-        path: "{{ item }}"
+        path: "~/.ssh"
         state: directory
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
-        mode: '0755'
-      loop:
-        - "{{ namenode_dir }}"
-        - "{{ datanode_dir }}"
+        mode: '0700'
 
-    # Step 2: Configure core-site.xml
-    - name: Configure core-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>fs.defaultFS</name>
-              <value>hdfs://localhost:9000</value>
-            </property>
-          </configuration>
+    # 4. Test SSH connectivity to localhost
+    - name: Test passwordless SSH to localhost
+      command: ssh -o StrictHostKeyChecking=no localhost hostname
+      register: ssh_test
+      ignore_errors: yes
 
-    # Step 3: Configure hdfs-site.xml
-    - name: Configure hdfs-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>dfs.replication</name>
-              <value>1</value>
-            </property>
-            <property>
-              <name>dfs.namenode.name.dir</name>
-              <value>file://{{ namenode_dir }}</value>
-            </property>
-            <property>
-              <name>dfs.datanode.data.dir</name>
-              <value>file://{{ datanode_dir }}</value>
-            </property>
-          </configuration>
-
-    # Step 4: Configure mapred-site.xml
-    - name: Configure mapred-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>mapreduce.framework.name</name>
-              <value>yarn</value>
-            </property>
-          </configuration>
-
-    # Step 5: Configure yarn-site.xml
-    - name: Configure yarn-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>yarn.nodemanager.aux-services</name>
-              <value>mapreduce_shuffle</value>
-            </property>
-          </configuration>
-
-    # Step 6: Set permissions recursively for Hadoop configuration files
-    - name: Set permissions recursively for Hadoop configuration files
-      command: chmod -R 0755 "{{ hadoop_install_dir }}/etc/hadoop"
+    # 5. Display SSH test results
+    - name: Show passwordless SSH test results
+      debug:
+        msg: "SSH connection successful: {{ ssh_test.stdout }}"
