@@ -1,40 +1,134 @@
 ---
-- name: Configure Passwordless SSH for Hadoop
+- name: Install and configure Hadoop
   hosts: all
   become: yes
+  vars:
+    hadoop_version: "3.3.6"
+    hadoop_install_dir: "/usr/local/hadoop"
+    namenode_dir: "/usr/local/hadoop/data/namenode"
+    datanode_dir: "/usr/local/hadoop/data/datanode"
+
   tasks:
-    # 1. Generate SSH key pair if not already present
-    - name: Generate SSH key pair
-      command: ssh-keygen -t rsa -f /home/{{ ansible_user }}/.ssh/id_rsa -q -N ""
+    # Étape 1 : Installation de Java
+    - name: Update APT package index
+      apt:
+        update_cache: yes
+
+    - name: Install OpenJDK 8
+      apt:
+        name: openjdk-8-jdk
+        state: present
+
+    - name: Ensure JAVA_HOME is set in /etc/environment
+      lineinfile:
+        path: /etc/environment
+        regexp: '^JAVA_HOME='
+        line: 'JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64'
+        state: present
+
+    # Étape 2 : Télécharger et installer Hadoop
+    - name: Télécharger l'archive Hadoop
+      get_url:
+        url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+
+    - name: Extraire l'archive Hadoop
+      unarchive:
+        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/usr/local/"
+        remote_src: yes
+
+    - name: Renommer le dossier Hadoop
+      command:
+        cmd: mv "/usr/local/hadoop-{{ hadoop_version }}" "{{ hadoop_install_dir }}"
       args:
-        creates: "/home/{{ ansible_user }}/.ssh/id_rsa"
+        creates: "{{ hadoop_install_dir }}"
 
-    # 2. Copy public key to authorized_keys
-    - name: Add SSH key to authorized_keys
-      copy:
-        src: "/home/{{ ansible_user }}/.ssh/id_rsa.pub"  # Fichier sur la machine distante
-        dest: "/home/{{ ansible_user }}/.ssh/authorized_keys"
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0600'
-        remote_src: yes  # Indiquer que le fichier source est sur la machine distante
-
-    # 3. Ensure proper permissions for .ssh directory
-    - name: Set permissions for .ssh directory
+    - name: Configurer les permissions pour Hadoop
       file:
-        path: "/home/{{ ansible_user }}/.ssh"
+        path: "{{ hadoop_install_dir }}"
         state: directory
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
-        mode: '0700'
+        mode: '0755'
 
-    # 4. Test SSH connectivity to localhost
-    - name: Test passwordless SSH to localhost
-      command: ssh -o StrictHostKeyChecking=no localhost hostname
-      register: ssh_test
-      ignore_errors: yes
+    # Étape 3 : Configurer les variables d'environnement Hadoop
+    - name: Ajouter HADOOP_HOME et PATH dans /etc/environment
+      blockinfile:
+        path: /etc/environment
+        block: |
+          HADOOP_HOME=/usr/local/hadoop
+          PATH="/usr/local/hadoop/bin:/usr/local/hadoop/sbin:{{ ansible_env.PATH }}"
 
-    # 5. Display SSH test results
-    - name: Show passwordless SSH test results
-      debug:
-        msg: "SSH connection successful: {{ ssh_test.stdout }}"
+    # Étape 4 : Créer les répertoires pour Namenode et Datanode
+    - name: Create Namenode and Datanode directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+      loop:
+        - "{{ namenode_dir }}"
+        - "{{ datanode_dir }}"
+
+    # Étape 5 : Configurer core-site.xml
+    - name: Configure core-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://localhost:9000</value>
+            </property>
+          </configuration>
+
+    # Étape 6 : Configurer hdfs-site.xml
+    - name: Configure hdfs-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>dfs.replication</name>
+              <value>1</value>
+            </property>
+            <property>
+              <name>dfs.namenode.name.dir</name>
+              <value>file://{{ namenode_dir }}</value>
+            </property>
+            <property>
+              <name>dfs.datanode.data.dir</name>
+              <value>file://{{ datanode_dir }}</value>
+            </property>
+          </configuration>
+
+    # Étape 7 : Configurer mapred-site.xml
+    - name: Configure mapred-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>mapreduce.framework.name</name>
+              <value>yarn</value>
+            </property>
+          </configuration>
+
+    # Étape 8 : Configurer yarn-site.xml
+    - name: Configure yarn-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>yarn.nodemanager.aux-services</name>
+              <value>mapreduce_shuffle</value>
+            </property>
+          </configuration>
+
+    # Étape 9 : Configurer les permissions pour les fichiers de configuration Hadoop
+    - name: Set permissions recursively for Hadoop configuration files
+      command: chmod -R 0755 "{{ hadoop_install_dir }}/etc/hadoop"
+
