@@ -1,9 +1,8 @@
 ---
-- name: Install and configure Hadoop
+- name: Configure Hadoop
   hosts: all
   become: yes
   vars:
-    hadoop_version: "3.3.6"
     hadoop_install_dir: "/usr/local/hadoop"
     namenode_dir: "/usr/local/hadoop/data/namenode"
     datanode_dir: "/usr/local/hadoop/data/datanode"
@@ -76,12 +75,6 @@
             </property>
           </configuration>
 
-    # Step 6: Set permissions for Hadoop configuration files
-    - name: Set permissions for Hadoop configuration files
-      file:
-        path: "{{ hadoop_install_dir }}/etc/hadoop"
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0755'
-      recurse: yes
+    # Step 6: Set permissions recursively for Hadoop configuration files
+    - name: Set permissions recursively for Hadoop configuration files
+      command: chmod -R 0755 "{{ hadoop_install_dir }}/etc/hadoop"
