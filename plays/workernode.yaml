@@ -3,38 +3,44 @@
   hosts: all
   become: yes
   tasks:
-    # 1. Generate SSH key pair if not already present
-    - name: Generate SSH key pair
-      command: ssh-keygen -t rsa -f /home/{{ ansible_user }}/.ssh/id_rsa -q -N ""
-      args:
-        creates: "/home/{{ ansible_user }}/.ssh/id_rsa"
+    # 1. Vérifier et installer OpenSSH server si nécessaire
+    - name: Install OpenSSH server
+      apt:
+        name: openssh-server
+        state: present
+        update_cache: yes
 
-    # 2. Copy public key to authorized_keys
+    # 2. Vérifier si la clé SSH existe, sinon la générer
+    - name: Generate SSH key pair
+      command: ssh-keygen -t rsa -f ~/.ssh/id_rsa -q -N ""
+      args:
+        creates: "~/.ssh/id_rsa"
+
+    # 3. Copier la clé publique dans authorized_keys
     - name: Add SSH key to authorized_keys
       copy:
-        src: "/home/{{ ansible_user }}/.ssh/id_rsa.pub"  # Fichier sur la machine distante
-        dest: "/home/{{ ansible_user }}/.ssh/authorized_keys"
+        src: "~/.ssh/id_rsa.pub"
+        dest: "~/.ssh/authorized_keys"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: '0600'
-        remote_src: yes  # Indiquer que le fichier source est sur la machine distante
 
-    # 3. Ensure proper permissions for .ssh directory
+    # 4. Assurer les bonnes permissions pour le répertoire .ssh
     - name: Set permissions for .ssh directory
       file:
-        path: "/home/{{ ansible_user }}/.ssh"
+        path: "~/.ssh"
         state: directory
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: '0700'
 
-    # 4. Test SSH connectivity to localhost
+    # 5. Tester la connexion SSH sans mot de passe
     - name: Test passwordless SSH to localhost
       command: ssh -o StrictHostKeyChecking=no localhost hostname
       register: ssh_test
       ignore_errors: yes
 
-    # 5. Display SSH test results
+    # 6. Afficher les résultats du test SSH
     - name: Show passwordless SSH test results
       debug:
         msg: "SSH connection successful: {{ ssh_test.stdout }}"
