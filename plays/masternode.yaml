@@ -1,7 +1,10 @@
----
 - name: Install kURL on Ubuntu
   hosts: all
   become: yes
+  gather_facts: yes
+  vars:
+    timeout: 7200
+
   tasks:
     - name: Fix dpkg if interrupted
       shell: |
@@ -12,46 +15,45 @@
       shell: |
         rm -rf /var/lib/apt/lists/*
         apt-get clean
-        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get update
       args:
         executable: /bin/bash
-      ignore_errors: yes
+      async: 300
+      poll: 5
 
     - name: Install minimal required packages
+      environment:
+        DEBIAN_FRONTEND: noninteractive
       apt:
         name: curl
         state: present
         update_cache: no
-      ignore_errors: yes
-
-    - name: Supprimer les fichiers existants dans /tmp
-      file:
-        path: /tmp/install.sh
-        state: absent
+      async: 300
+      poll: 5
 
     - name: Download kURL installation script
-      shell: |
-        curl -o /tmp/install.sh https://kurl.sh/fcc1994
-      args:
-        executable: /bin/bash
-
-    - name: Rendre le script exécutable
-      file:
-        path: /tmp/install.sh
+      get_url:
+        url: https://kurl.sh/fcc1994
+        dest: /tmp/install.sh
         mode: '0755'
+      async: 300
+      poll: 5
 
-    - name: Execute kURL installation script
+    - name: Execute kURL installation script non-interactively
       shell: |
-        bash /tmp/install.sh
+        export DEBIAN_FRONTEND=noninteractive
+        yes | bash /tmp/install.sh
       args:
         executable: /bin/bash
+      environment:
+        DEBIAN_FRONTEND: noninteractive
       register: kurl_install
-      ignore_errors: yes
+      async: "{{ timeout }}"
+      poll: 30
 
     - name: Display installation output
       debug:
-        var: kurl_install.stdout_lines
-      when: kurl_install.stdout_lines is defined
+        var: kurl_install
 
     - name: Clean up
       file:
