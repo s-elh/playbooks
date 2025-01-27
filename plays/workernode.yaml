@@ -1,5 +1,90 @@
 ---
-- name: Install and configure Hadoop
+- name: Install and configure Hadoop- name: Configure Hadoop
+  hosts: all
+  become: yes
+  vars:
+    hadoop_install_dir: "/usr/local/hadoop"
+    namenode_dir: "/usr/local/hadoop/data/namenode"
+    datanode_dir: "/usr/local/hadoop/data/datanode"
+  tasks:
+    # 1. Create directories for Namenode and Datanode
+    - name: Create Namenode and Datanode directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+      loop:
+        - "{{ namenode_dir }}"
+        - "{{ datanode_dir }}"
+
+    # 2. Configure core-site.xml
+    - name: Configure core-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://localhost:9000</value>
+            </property>
+          </configuration>
+
+    # 3. Configure hdfs-site.xml
+    - name: Configure hdfs-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>dfs.replication</name>
+              <value>1</value>
+            </property>
+            <property>
+              <name>dfs.namenode.name.dir</name>
+              <value>file://{{ namenode_dir }}</value>
+            </property>
+            <property>
+              <name>dfs.datanode.data.dir</name>
+              <value>file://{{ datanode_dir }}</value>
+            </property>
+          </configuration>
+
+    # 4. Configure mapred-site.xml
+    - name: Configure mapred-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>mapreduce.framework.name</name>
+              <value>yarn</value>
+            </property>
+          </configuration>
+
+    # 5. Configure yarn-site.xml
+    - name: Configure yarn-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>yarn.nodemanager.aux-services</name>
+              <value>mapreduce_shuffle</value>
+            </property>
+          </configuration>
+
+    # 6. Set permissions for configuration files
+    - name: Set permissions for Hadoop configuration files
+      file:
+        path: "{{ hadoop_install_dir }}/etc/hadoop"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+      recurse: yes
+
   hosts: all
   become: yes
   vars:
