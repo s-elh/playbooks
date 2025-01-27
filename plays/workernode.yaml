@@ -1,46 +1,47 @@
 ---
-- name: Configure Passwordless SSH for Hadoop
+- name: Configure Passwordless SSH for Hadoop on Ubuntu
   hosts: all
   become: yes
   tasks:
-    # 1. Vérifier et installer OpenSSH server si nécessaire
+    
+    # 1. Install OpenSSH server (only for Ubuntu/Debian)
     - name: Install OpenSSH server
       apt:
         name: openssh-server
         state: present
         update_cache: yes
 
-    # 2. Vérifier si la clé SSH existe, sinon la générer
-    - name: Generate SSH key pair
-      command: ssh-keygen -t rsa -f ~/.ssh/id_rsa -q -N ""
+    # 2. Check if SSH key pair exists; if not, generate one
+    - name: Generate SSH key pair if not already present
+      command: ssh-keygen -t rsa -f "{{ ansible_env.HOME }}/.ssh/id_rsa" -q -N ""
       args:
-        creates: "~/.ssh/id_rsa"
+        creates: "{{ ansible_env.HOME }}/.ssh/id_rsa"
 
-    # 3. Copier la clé publique dans authorized_keys
+    # 3. Copy the public key to authorized_keys (use absolute path to id_rsa.pub)
     - name: Add SSH key to authorized_keys
       copy:
-        src: "~/.ssh/id_rsa.pub"
-        dest: "~/.ssh/authorized_keys"
+        src: "{{ ansible_env.HOME }}/.ssh/id_rsa.pub"
+        dest: "{{ ansible_env.HOME }}/.ssh/authorized_keys"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: '0600'
 
-    # 4. Assurer les bonnes permissions pour le répertoire .ssh
+    # 4. Set proper permissions for the .ssh directory
     - name: Set permissions for .ssh directory
       file:
-        path: "~/.ssh"
+        path: "{{ ansible_env.HOME }}/.ssh"
         state: directory
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: '0700'
 
-    # 5. Tester la connexion SSH sans mot de passe
+    # 5. Test passwordless SSH to localhost
     - name: Test passwordless SSH to localhost
       command: ssh -o StrictHostKeyChecking=no localhost hostname
       register: ssh_test
       ignore_errors: yes
 
-    # 6. Afficher les résultats du test SSH
+    # 6. Display the results of the SSH test
     - name: Show passwordless SSH test results
       debug:
         msg: "SSH connection successful: {{ ssh_test.stdout }}"
