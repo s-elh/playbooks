@@ -12,11 +12,12 @@
     # 2. Copy public key to authorized_keys
     - name: Add SSH key to authorized_keys
       copy:
-        src: "/home/{{ ansible_user }}/.ssh/id_rsa.pub"
+        src: "/home/{{ ansible_user }}/.ssh/id_rsa.pub"  # Fichier sur la machine distante
         dest: "/home/{{ ansible_user }}/.ssh/authorized_keys"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: '0600'
+        remote_src: yes  # Indiquer que le fichier source est sur la machine distante
 
     # 3. Ensure proper permissions for .ssh directory
     - name: Set permissions for .ssh directory
