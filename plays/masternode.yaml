@@ -4,40 +4,42 @@
   gather_facts: yes
   vars:
     timeout: 7200
+    dns_servers:
+      - "8.8.8.8"
+      - "8.8.4.4"
 
   tasks:
-    - name: Install expect
-      apt:
-        name: expect
-        state: present
-        update_cache: yes
+    - name: Backup resolv.conf
+      copy:
+        src: /etc/resolv.conf
+        dest: /etc/resolv.conf.backup
+        remote_src: yes
+
+    - name: Configure DNS resolvers
+      template:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 8.8.8.8
+          nameserver 8.8.4.4
+
+    - name: Disable swap
+      shell: |
+        swapoff -a
+        sed -i '/ swap / s/^/#/' /etc/fstab
+
+    - name: Install minimal required packages
       environment:
         DEBIAN_FRONTEND: noninteractive
+      apt:
+        name: curl
+        state: present
+        update_cache: yes
+      async: 300
+      poll: 5
 
-    - name: Create expect script
-      copy:
-        dest: /tmp/kurl_install.exp
-        mode: '0755'
-        content: |
-          #!/usr/bin/expect -f
-          set timeout -1
-          spawn bash /tmp/install.sh
-          expect {
-            "*(y/N)*" { send "y\r"; exp_continue }
-            "*(Y/n)*" { send "y\r"; exp_continue }
-            "*(y/n)*" { send "y\r"; exp_continue }
-            eof
-          }
-
-    - name: Download kURL installation script
-      get_url:
-        url: https://kurl.sh/fcc1994
-        dest: /tmp/install.sh
-        mode: '0755'
-
-    - name: Execute kURL installation with expect
+    - name: Install kURL
       shell: |
-        /usr/bin/expect /tmp/kurl_install.exp
+        echo "y" | curl -fsSL https://kurl.sh/fcc1994 | bash
       args:
         executable: /bin/bash
       register: kurl_install
@@ -47,10 +49,3 @@
     - name: Display installation output
       debug:
         var: kurl_install
-
-    - name: Clean up
-      file:
-        path: 
-          - /tmp/install.sh
-          - /tmp/kurl_install.exp
-        state: absent
