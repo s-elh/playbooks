@@ -6,47 +6,40 @@
     timeout: 7200
 
   tasks:
-    - name: Fix dpkg if interrupted
-      shell: |
-        dpkg --configure -a
-      ignore_errors: yes
-
-    - name: Update apt cache
-      shell: |
-        rm -rf /var/lib/apt/lists/*
-        apt-get clean
-        DEBIAN_FRONTEND=noninteractive apt-get update
-      args:
-        executable: /bin/bash
-      async: 300
-      poll: 5
-
-    - name: Install minimal required packages
+    - name: Install expect
+      apt:
+        name: expect
+        state: present
+        update_cache: yes
       environment:
         DEBIAN_FRONTEND: noninteractive
-      apt:
-        name: curl
-        state: present
-        update_cache: no
-      async: 300
-      poll: 5
+
+    - name: Create expect script
+      copy:
+        dest: /tmp/kurl_install.exp
+        mode: '0755'
+        content: |
+          #!/usr/bin/expect -f
+          set timeout -1
+          spawn bash /tmp/install.sh
+          expect {
+            "*(y/N)*" { send "y\r"; exp_continue }
+            "*(Y/n)*" { send "y\r"; exp_continue }
+            "*(y/n)*" { send "y\r"; exp_continue }
+            eof
+          }
 
     - name: Download kURL installation script
       get_url:
         url: https://kurl.sh/fcc1994
         dest: /tmp/install.sh
         mode: '0755'
-      async: 300
-      poll: 5
 
-    - name: Execute kURL installation script non-interactively
+    - name: Execute kURL installation with expect
       shell: |
-        export DEBIAN_FRONTEND=noninteractive
-        yes | bash /tmp/install.sh
+        /usr/bin/expect /tmp/kurl_install.exp
       args:
         executable: /bin/bash
-      environment:
-        DEBIAN_FRONTEND: noninteractive
       register: kurl_install
       async: "{{ timeout }}"
       poll: 30
@@ -57,5 +50,7 @@
 
     - name: Clean up
       file:
-        path: /tmp/install.sh
+        path: 
+          - /tmp/install.sh
+          - /tmp/kurl_install.exp
         state: absent
