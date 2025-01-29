@@ -35,12 +35,12 @@
     - name: Download Hadoop
       get_url:
         url: https://dlcdn.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0-src.tar.gz
-        dest: /tmp/hadoop-3.3.1.tar.gz
+        dest: /tmp/hadoop-3.4.0.tar.gz
 
     # Step 5: Extract Hadoop
     - name: Extract Hadoop
       unarchive:
-        src: /tmp/hadoop-3.3.1.tar.gz
+        src: /tmp/hadoop-3.4.0.tar.gz
         dest: /opt/
         remote_src: yes
 
@@ -49,7 +49,7 @@
       file:
         path: /opt/hadoop
         state: link
-        src: /opt/hadoop-3.3.1
+        src: /opt/hadoop-3.4.0
 
     # Step 7.1: Define Hadoop environment variables template
     - name: Set Hadoop environment variables template
