@@ -1,81 +1,68 @@
 ---
-- name: Install and configure Hadoop
+- name: Install and Configure Hadoop
   hosts: all
   become: yes
   vars:
-    hadoop_version: "3.3.6"
-    hadoop_install_dir: "/usr/local/hadoop"
-    namenode_dir: "/usr/local/hadoop/data/namenode"
-    datanode_dir: "/usr/local/hadoop/data/datanode"
+    hadoop_home: "/usr/local/hadoop"
+    java_home: "/usr/lib/jvm/java-8-openjdk-amd64"
 
   tasks:
-    # Étape 1 : Installation de Java
-    - name: Update APT package index
+
+    ## 🟢 Étape 1 : Installation de Java et des dépendances
+    - name: Update package lists
       apt:
         update_cache: yes
 
-    - name: Install OpenJDK 8
+    - name: Install required packages
       apt:
-        name: openjdk-8-jdk
+        name:
+          - openjdk-8-jdk
+          - ssh
+          - rsync
         state: present
 
-    - name: Ensure JAVA_HOME is set in /etc/environment
+    - name: Set JAVA_HOME in environment variables
       lineinfile:
         path: /etc/environment
         regexp: '^JAVA_HOME='
-        line: 'JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64'
+        line: 'JAVA_HOME={{ java_home }}'
         state: present
 
-    # Étape 2 : Télécharger et installer Hadoop
-    - name: Télécharger l'archive Hadoop
-      get_url:
-        url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+    - name: Apply environment changes
+      shell: source /etc/environment
+      args:
+        executable: /bin/bash
 
-    - name: Extraire l'archive Hadoop
+    ## 🟢 Étape 2 : Téléchargement et Extraction de Hadoop
+    - name: Download Hadoop
+      get_url:
+        url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz"
+        dest: "/tmp/hadoop.tar.gz"
+
+    - name: Extract Hadoop
       unarchive:
-        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        src: "/tmp/hadoop.tar.gz"
         dest: "/usr/local/"
         remote_src: yes
 
-    - name: Renommer le dossier Hadoop
-      command:
-        cmd: mv "/usr/local/hadoop-{{ hadoop_version }}" "{{ hadoop_install_dir }}"
+    - name: Rename Hadoop directory
+      command: mv /usr/local/hadoop-3.3.6 /usr/local/hadoop
       args:
-        creates: "{{ hadoop_install_dir }}"
+        removes: /usr/local/hadoop-3.3.6
+        creates: "{{ hadoop_home }}"
 
-    - name: Configurer les permissions pour Hadoop
-      file:
-        path: "{{ hadoop_install_dir }}"
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0755'
+    ## 🟢 Étape 3 : Configuration de `JAVA_HOME` dans Hadoop
+    - name: Set JAVA_HOME in Hadoop environment
+      lineinfile:
+        path: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
+        regexp: '^export JAVA_HOME='
+        line: 'export JAVA_HOME={{ java_home }}'
+        state: present
 
-    # Étape 3 : Configurer les variables d'environnement Hadoop
-    - name: Ajouter HADOOP_HOME et PATH dans /etc/environment
-      blockinfile:
-        path: /etc/environment
-        block: |
-          HADOOP_HOME=/usr/local/hadoop
-          PATH="/usr/local/hadoop/bin:/usr/local/hadoop/sbin:{{ ansible_env.PATH }}"
-
-    # Étape 4 : Créer les répertoires pour Namenode et Datanode
-    - name: Create Namenode and Datanode directories
-      file:
-        path: "{{ item }}"
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0755'
-      loop:
-        - "{{ namenode_dir }}"
-        - "{{ datanode_dir }}"
-
-    # Étape 5 : Configurer core-site.xml
+    ## 🟢 Étape 4 : Configuration des fichiers XML de Hadoop
     - name: Configure core-site.xml
       copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+        dest: "{{ hadoop_home }}/etc/hadoop/core-site.xml"
         content: |
           <configuration>
             <property>
@@ -84,10 +71,9 @@
             </property>
           </configuration>
 
-    # Étape 6 : Configurer hdfs-site.xml
     - name: Configure hdfs-site.xml
       copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
+        dest: "{{ hadoop_home }}/etc/hadoop/hdfs-site.xml"
         content: |
           <configuration>
             <property>
@@ -96,18 +82,17 @@
             </property>
             <property>
               <name>dfs.namenode.name.dir</name>
-              <value>file://{{ namenode_dir }}</value>
+              <value>file:/usr/local/hadoop/data/namenode</value>
             </property>
             <property>
               <name>dfs.datanode.data.dir</name>
-              <value>file://{{ datanode_dir }}</value>
+              <value>file:/usr/local/hadoop/data/datanode</value>
             </property>
           </configuration>
 
-    # Étape 7 : Configurer mapred-site.xml
     - name: Configure mapred-site.xml
       copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
+        dest: "{{ hadoop_home }}/etc/hadoop/mapred-site.xml"
         content: |
           <configuration>
             <property>
@@ -116,10 +101,9 @@
             </property>
           </configuration>
 
-    # Étape 8 : Configurer yarn-site.xml
     - name: Configure yarn-site.xml
       copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
+        dest: "{{ hadoop_home }}/etc/hadoop/yarn-site.xml"
         content: |
           <configuration>
             <property>
@@ -128,6 +112,4 @@
             </property>
           </configuration>
 
-    # Étape 9 : Configurer les permissions pour les fichiers de configuration Hadoop
-    - name: Set permissions recursively for Hadoop configuration files
-      command: chmod -R 0755 "{{ hadoop_install_dir }}/etc/hadoop"
+
