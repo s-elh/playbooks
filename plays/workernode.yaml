@@ -49,12 +49,14 @@
         dest: /opt/
         remote_src: yes
 
-    # Step 6: Create Hadoop directory
+    # Step 6: Create Hadoop directory (symbolic link)
     - name: Create Hadoop directory
       file:
         path: /opt/hadoop
         state: link
         src: /opt/hadoop-3.4.1-src
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
 
     # Step 7: Create Hadoop configuration directory
     - name: Create Hadoop configuration directory
@@ -167,7 +169,6 @@
         path: /opt/hadoop
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
-        recurse: yes
 
     # Step 14: Add Hadoop to PATH
     - name: Add Hadoop to PATH
