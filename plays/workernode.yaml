@@ -36,6 +36,11 @@
       get_url:
         url: https://dlcdn.apache.org/hadoop/common/hadoop-3.4.1/hadoop-3.4.1-src.tar.gz
         dest: /tmp/hadoop-3.4.1-src.tar.gz
+        timeout: 60
+      register: download_result
+      until: download_result is succeeded
+      retries: 3
+      delay: 10
 
     # Step 5: Extract Hadoop
     - name: Extract Hadoop
@@ -98,66 +103,4 @@
                   <value>/opt/hadoop/data/namenode</value>
               </property>
               <property>
-                  <name>dfs.datanode.data.dir</name>
-                  <value>/opt/hadoop/data/datanode</value>
-              </property>
-          </configuration>
-
-    # Step 9: Configure hdfs-site.xml
-    - name: Configure hdfs-site.xml
-      copy:
-        content: "{{ hdfs_site_xml }}"
-        dest: /opt/hadoop/etc/hadoop/hdfs-site.xml
-
-    # Step 10.1: Define mapred-site.xml template
-    - name: Set mapred-site.xml template
-      set_fact:
-        mapred_site_xml: |
-          <configuration>
-              <property>
-                  <name>mapreduce.framework.name</name>
-                  <value>yarn</value>
-              </property>
-          </configuration>
-
-    # Step 10: Configure mapred-site.xml
-    - name: Configure mapred-site.xml
-      copy:
-        content: "{{ mapred_site_xml }}"
-        dest: /opt/hadoop/etc/hadoop/mapred-site.xml
-
-    # Step 11.1: Define yarn-site.xml template
-    - name: Set yarn-site.xml template
-      set_fact:
-        yarn_site_xml: |
-          <configuration>
-              <property>
-                  <name>yarn.nodemanager.aux-services</name>
-                  <value>mapreduce_shuffle</value>
-              </property>
-              <property>
-                  <name>yarn.resourcemanager.hostname</name>
-                  <value>{{ ansible_facts['hostname'] }}</value>
-              </property>
-          </configuration>
-
-    # Step 11: Configure yarn-site.xml
-    - name: Configure yarn-site.xml
-      copy:
-        content: "{{ yarn_site_xml }}"
-        dest: /opt/hadoop/etc/hadoop/yarn-site.xml
-
-    # Step 12: Set Hadoop permissions
-    - name: Set Hadoop permissions
-      file:
-        path: /opt/hadoop
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        recurse: yes
-
-    # Step 13: Add Hadoop to PATH
-    - name: Add Hadoop to PATH
-      lineinfile:
-        path: /etc/environment
-        line: 'PATH="/opt/hadoop/bin:/opt/hadoop/sbin:$PATH"'
-        create: yes
+                  <name>dfs.d
