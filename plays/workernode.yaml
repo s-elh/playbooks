@@ -56,7 +56,16 @@
         state: link
         src: /opt/hadoop-3.4.1-src
 
-    # Step 7.1: Define Hadoop environment variables template
+    # Step 7: Create Hadoop configuration directory
+    - name: Create Hadoop configuration directory
+      file:
+        path: /opt/hadoop/etc/hadoop
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    # Step 8.1: Define Hadoop environment variables template
     - name: Set Hadoop environment variables template
       set_fact:
         hadoop_env_sh: |
@@ -66,13 +75,13 @@
           export HADOOP_LOG_DIR=/opt/hadoop/logs
           export HADOOP_PID_DIR=/opt/hadoop/pids
 
-    # Step 7: Set Hadoop environment variables
+    # Step 8: Set Hadoop environment variables
     - name: Set Hadoop environment variables
       copy:
         content: "{{ hadoop_env_sh }}"
         dest: /opt/hadoop/etc/hadoop/hadoop-env.sh
 
-    # Step 8.1: Define core-site.xml template
+    # Step 9.1: Define core-site.xml template
     - name: Set core-site.xml template
       set_fact:
         core_site_xml: |
@@ -83,13 +92,13 @@
               </property>
           </configuration>
 
-    # Step 8: Configure core-site.xml
+    # Step 9: Configure core-site.xml
     - name: Configure core-site.xml
       copy:
         content: "{{ core_site_xml }}"
         dest: /opt/hadoop/etc/hadoop/core-site.xml
 
-    # Step 9.1: Define hdfs-site.xml template
+    # Step 10.1: Define hdfs-site.xml template
     - name: Set hdfs-site.xml template
       set_fact:
         hdfs_site_xml: |
@@ -103,4 +112,66 @@
                   <value>/opt/hadoop/data/namenode</value>
               </property>
               <property>
-                  <name>dfs.d
+                  <name>dfs.datanode.data.dir</name>
+                  <value>/opt/hadoop/data/datanode</value>
+              </property>
+          </configuration>
+
+    # Step 10: Configure hdfs-site.xml
+    - name: Configure hdfs-site.xml
+      copy:
+        content: "{{ hdfs_site_xml }}"
+        dest: /opt/hadoop/etc/hadoop/hdfs-site.xml
+
+    # Step 11.1: Define mapred-site.xml template
+    - name: Set mapred-site.xml template
+      set_fact:
+        mapred_site_xml: |
+          <configuration>
+              <property>
+                  <name>mapreduce.framework.name</name>
+                  <value>yarn</value>
+              </property>
+          </configuration>
+
+    # Step 11: Configure mapred-site.xml
+    - name: Configure mapred-site.xml
+      copy:
+        content: "{{ mapred_site_xml }}"
+        dest: /opt/hadoop/etc/hadoop/mapred-site.xml
+
+    # Step 12.1: Define yarn-site.xml template
+    - name: Set yarn-site.xml template
+      set_fact:
+        yarn_site_xml: |
+          <configuration>
+              <property>
+                  <name>yarn.nodemanager.aux-services</name>
+                  <value>mapreduce_shuffle</value>
+              </property>
+              <property>
+                  <name>yarn.resourcemanager.hostname</name>
+                  <value>{{ ansible_facts['hostname'] }}</value>
+              </property>
+          </configuration>
+
+    # Step 12: Configure yarn-site.xml
+    - name: Configure yarn-site.xml
+      copy:
+        content: "{{ yarn_site_xml }}"
+        dest: /opt/hadoop/etc/hadoop/yarn-site.xml
+
+    # Step 13: Set Hadoop permissions
+    - name: Set Hadoop permissions
+      file:
+        path: /opt/hadoop
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        recurse: yes
+
+    # Step 14: Add Hadoop to PATH
+    - name: Add Hadoop to PATH
+      lineinfile:
+        path: /etc/environment
+        line: 'PATH="/opt/hadoop/bin:/opt/hadoop/sbin:$PATH"'
+        create: yes
