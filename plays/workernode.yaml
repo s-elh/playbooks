@@ -1,5 +1,5 @@
 ---
-- name: Install and Configure Hadoop
+- name: Install and Configure Hadoop (Without SSH and No Startup Scripts)
   hosts: all
   become: yes
   vars:
@@ -17,7 +17,6 @@
       apt:
         name:
           - openjdk-8-jdk
-          - ssh
           - rsync
         state: present
 
@@ -33,7 +32,13 @@
       args:
         executable: /bin/bash
 
-    ## 🟢 Étape 2 : Téléchargement et Extraction de Hadoop
+    ## 🟢 Étape 2 : Téléchargement et Installation de Hadoop
+    - name: Ensure Hadoop directory exists
+      file:
+        path: "{{ hadoop_home }}"
+        state: directory
+        mode: '0755'
+
     - name: Download Hadoop
       get_url:
         url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz"
@@ -52,6 +57,12 @@
         creates: "{{ hadoop_home }}"
 
     ## 🟢 Étape 3 : Configuration de `JAVA_HOME` dans Hadoop
+    - name: Ensure hadoop-env.sh exists
+      file:
+        path: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
+        state: touch
+        mode: '0644'
+
     - name: Set JAVA_HOME in Hadoop environment
       lineinfile:
         path: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
@@ -112,4 +123,23 @@
             </property>
           </configuration>
 
+    ## 🟢 Étape 5 : Vérification des fichiers Hadoop
+    - name: Check if Hadoop is correctly installed
+      stat:
+        path: "{{ hadoop_home }}"
+      register: hadoop_status
 
+    - name: Show Hadoop installation status
+      debug:
+        msg: "Hadoop is installed at {{ hadoop_home }}"
+      when: hadoop_status.stat.exists
+
+    - name: Check if core-site.xml exists
+      stat:
+        path: "{{ hadoop_home }}/etc/hadoop/core-site.xml"
+      register: core_site
+
+    - name: Show core-site.xml status
+      debug:
+        msg: "core-site.xml exists and is configured"
+      when: core_site.stat.exists
