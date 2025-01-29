@@ -1,178 +1,142 @@
 ---
 - hosts: all
   become: yes
-  tasks:
-    # Step 1: Configure DNS nameservers
-    - name: Configure DNS nameservers
-      blockinfile:
-        path: /etc/resolv.conf
-        block: |
-          nameserver 8.8.8.8
-          nameserver 8.8.4.4
-        create: yes
-        marker: "# {mark} ANSIBLE MANAGED BLOCK - DNS"
+  vars:
+    hadoop_version: "3.4.1"
+    hadoop_user: "hadoop"
+    hadoop_group: "hadoop"
+    java_home: "/usr/lib/jvm/java-8-openjdk-amd64"
+    hadoop_home: "/opt/hadoop"
+    hadoop_data: "/data/hadoop"
 
-    # Step 2: Update apt cache and install required packages
+  pre_tasks:
+    - name: Create Hadoop group
+      group:
+        name: "{{ hadoop_group }}"
+        state: present
+
+    - name: Create Hadoop user
+      user:
+        name: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        shell: /bin/bash
+        home: "/home/{{ hadoop_user }}"
+        system: no
+
+  tasks:
+    - name: Configure DNS nameservers
+      template:
+        src: resolv.conf.j2
+        dest: /etc/resolv.conf
+        backup: yes
+      vars:
+        nameservers:
+          - "8.8.8.8"
+          - "8.8.4.4"
+
     - name: Update apt cache
       apt:
         update_cache: yes
+        cache_valid_time: 3600
 
     - name: Install required packages
       apt:
-        name: "{{ item }}"
+        name: 
+          - ssh
+          - rsync
+          - openjdk-8-jdk
         state: present
+        update_cache: yes
+
+    - name: Create Hadoop directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0755'
       loop:
-        - ssh
-        - rsync
+        - "{{ hadoop_home }}"
+        - "{{ hadoop_data }}/namenode"
+        - "{{ hadoop_data }}/datanode"
+        - "{{ hadoop_home }}/logs"
+        - "{{ hadoop_home }}/pids"
+        - "{{ hadoop_home }}/tmp"
 
-    # Step 3: Install Java (OpenJDK 8)
-    - name: Install OpenJDK 8
-      apt:
-        name: openjdk-8-jdk
-        state: present
-
-    # Step 4: Download Hadoop
     - name: Download Hadoop
       get_url:
-        url: https://dlcdn.apache.org/hadoop/common/hadoop-3.4.1/hadoop-3.4.1-src.tar.gz
-        dest: /tmp/hadoop-3.4.1-src.tar.gz
-        timeout: 60
+        url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        timeout: 300
+        mode: '0644'
       register: download_result
       until: download_result is succeeded
       retries: 3
       delay: 10
 
-    # Step 5: Extract Hadoop
     - name: Extract Hadoop
       unarchive:
-        src: /tmp/hadoop-3.4.1-src.tar.gz
-        dest: /opt/
+        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/opt"
         remote_src: yes
+        creates: "/opt/hadoop-{{ hadoop_version }}"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
 
-    # Step 6: Create Hadoop directory (symbolic link)
-    - name: Create Hadoop directory
+    - name: Create Hadoop symlink
       file:
-        path: /opt/hadoop
+        src: "/opt/hadoop-{{ hadoop_version }}"
+        dest: "{{ hadoop_home }}"
         state: link
-        src: /opt/hadoop-3.4.1-src
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
 
-    # Step 7: Create Hadoop configuration directory
-    - name: Create Hadoop configuration directory
+    - name: Configure Hadoop environment
+      template:
+        src: hadoop-env.sh.j2
+        dest: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0644'
+      vars:
+        java_home: "{{ java_home }}"
+        hadoop_home: "{{ hadoop_home }}"
+
+    - name: Configure Hadoop XML files
+      template:
+        src: "{{ item }}.j2"
+        dest: "{{ hadoop_home }}/etc/hadoop/{{ item }}"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0644'
+      loop:
+        - core-site.xml
+        - hdfs-site.xml
+        - mapred-site.xml
+        - yarn-site.xml
+
+    - name: Set up SSH keys for Hadoop user
+      user:
+        name: "{{ hadoop_user }}"
+        generate_ssh_key: yes
+        ssh_key_bits: 2048
+        ssh_key_file: ".ssh/id_rsa"
+
+    - name: Configure SSH authorized keys
+      authorized_key:
+        user: "{{ hadoop_user }}"
+        state: present
+        key: "{{ lookup('file', '/home/' + hadoop_user + '/.ssh/id_rsa.pub') }}"
+
+    - name: Add Hadoop binaries to PATH
+      template:
+        src: hadoop.sh.j2
+        dest: /etc/profile.d/hadoop.sh
+        mode: '0644'
+      vars:
+        hadoop_home: "{{ hadoop_home }}"
+
+    - name: Clean up downloaded archive
       file:
-        path: /opt/hadoop/etc/hadoop
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0755'
-
-    # Step 8.1: Define Hadoop environment variables template
-    - name: Set Hadoop environment variables template
-      set_fact:
-        hadoop_env_sh: |
-          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
-          export HADOOP_HOME=/opt/hadoop
-          export HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
-          export HADOOP_LOG_DIR=/opt/hadoop/logs
-          export HADOOP_PID_DIR=/opt/hadoop/pids
-
-    # Step 8: Set Hadoop environment variables
-    - name: Set Hadoop environment variables
-      copy:
-        content: "{{ hadoop_env_sh }}"
-        dest: /opt/hadoop/etc/hadoop/hadoop-env.sh
-
-    # Step 9.1: Define core-site.xml template
-    - name: Set core-site.xml template
-      set_fact:
-        core_site_xml: |
-          <configuration>
-              <property>
-                  <name>fs.defaultFS</name>
-                  <value>hdfs://{{ ansible_facts['hostname'] }}:9000</value>
-              </property>
-          </configuration>
-
-    # Step 9: Configure core-site.xml
-    - name: Configure core-site.xml
-      copy:
-        content: "{{ core_site_xml }}"
-        dest: /opt/hadoop/etc/hadoop/core-site.xml
-
-    # Step 10.1: Define hdfs-site.xml template
-    - name: Set hdfs-site.xml template
-      set_fact:
-        hdfs_site_xml: |
-          <configuration>
-              <property>
-                  <name>dfs.replication</name>
-                  <value>3</value>
-              </property>
-              <property>
-                  <name>dfs.namenode.name.dir</name>
-                  <value>/opt/hadoop/data/namenode</value>
-              </property>
-              <property>
-                  <name>dfs.datanode.data.dir</name>
-                  <value>/opt/hadoop/data/datanode</value>
-              </property>
-          </configuration>
-
-    # Step 10: Configure hdfs-site.xml
-    - name: Configure hdfs-site.xml
-      copy:
-        content: "{{ hdfs_site_xml }}"
-        dest: /opt/hadoop/etc/hadoop/hdfs-site.xml
-
-    # Step 11.1: Define mapred-site.xml template
-    - name: Set mapred-site.xml template
-      set_fact:
-        mapred_site_xml: |
-          <configuration>
-              <property>
-                  <name>mapreduce.framework.name</name>
-                  <value>yarn</value>
-              </property>
-          </configuration>
-
-    # Step 11: Configure mapred-site.xml
-    - name: Configure mapred-site.xml
-      copy:
-        content: "{{ mapred_site_xml }}"
-        dest: /opt/hadoop/etc/hadoop/mapred-site.xml
-
-    # Step 12.1: Define yarn-site.xml template
-    - name: Set yarn-site.xml template
-      set_fact:
-        yarn_site_xml: |
-          <configuration>
-              <property>
-                  <name>yarn.nodemanager.aux-services</name>
-                  <value>mapreduce_shuffle</value>
-              </property>
-              <property>
-                  <name>yarn.resourcemanager.hostname</name>
-                  <value>{{ ansible_facts['hostname'] }}</value>
-              </property>
-          </configuration>
-
-    # Step 12: Configure yarn-site.xml
-    - name: Configure yarn-site.xml
-      copy:
-        content: "{{ yarn_site_xml }}"
-        dest: /opt/hadoop/etc/hadoop/yarn-site.xml
-
-    # Step 13: Set Hadoop permissions
-    - name: Set Hadoop permissions
-      file:
-        path: /opt/hadoop
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-
-    # Step 14: Add Hadoop to PATH
-    - name: Add Hadoop to PATH
-      lineinfile:
-        path: /etc/environment
-        line: 'PATH="/opt/hadoop/bin:/opt/hadoop/sbin:$PATH"'
-        create: yes
+        path: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        state: absent
