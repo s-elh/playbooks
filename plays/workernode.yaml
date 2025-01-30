@@ -150,21 +150,42 @@
         msg: "{{ hadoop_version.stdout_lines }}"
 
     ## 🟢 Étape 9 : Démarrage du cluster Hadoop
+    - name: Ensure proper permissions for Hadoop startup
+      file:
+        path: "{{ hadoop_home }}/sbin"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0755'
+        recurse: yes
+
     - name: Start DFS (Namenode and Datanode)
-      command: "{{ hadoop_home }}/sbin/start-dfs.sh"
+      shell: |
+        source /home/{{ hadoop_user }}/.bashrc
+        {{ hadoop_home }}/sbin/start-dfs.sh
       become: yes
       become_user: "{{ hadoop_user }}"
+      args:
+        executable: /bin/bash
 
     - name: Start YARN (Resource and Node Manager)
-      command: "{{ hadoop_home }}/sbin/start-yarn.sh"
+      shell: |
+        source /home/{{ hadoop_user }}/.bashrc
+        {{ hadoop_home }}/sbin/start-yarn.sh
       become: yes
       become_user: "{{ hadoop_user }}"
+      args:
+        executable: /bin/bash
 
     - name: Verify Hadoop services status
-      command: jps
+      shell: |
+        source /home/{{ hadoop_user }}/.bashrc
+        jps
       register: jps_output
       become: yes
       become_user: "{{ hadoop_user }}"
+      args:
+        executable: /bin/bash
 
     - name: Display running Hadoop services
       debug:
