@@ -128,8 +128,8 @@
           export HADOOP_OPTS="-Djava.library.path=$HADOOP_HOME/lib/native"
 
     - name: Apply environment changes
-      shell: source /home/{{ hadoop_user }}/.bashrc
-      become_user: "{{ hadoop_user }}"
+      shell: |
+        sudo -u {{ hadoop_user }} bash -c 'source /home/{{ hadoop_user }}/.bashrc'
 
     ## 🟢 Étape 7 : Configuration de Java dans Hadoop
     - name: Set JAVA_HOME in Hadoop environment
