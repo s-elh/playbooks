@@ -148,3 +148,24 @@
     - name: Display Hadoop version
       debug:
         msg: "{{ hadoop_version.stdout_lines }}"
+
+    ## 🟢 Étape 9 : Démarrage du cluster Hadoop
+    - name: Start DFS (Namenode and Datanode)
+      command: "{{ hadoop_home }}/sbin/start-dfs.sh"
+      become: yes
+      become_user: "{{ hadoop_user }}"
+
+    - name: Start YARN (Resource and Node Manager)
+      command: "{{ hadoop_home }}/sbin/start-yarn.sh"
+      become: yes
+      become_user: "{{ hadoop_user }}"
+
+    - name: Verify Hadoop services status
+      command: jps
+      register: jps_output
+      become: yes
+      become_user: "{{ hadoop_user }}"
+
+    - name: Display running Hadoop services
+      debug:
+        msg: "{{ jps_output.stdout_lines }}"
