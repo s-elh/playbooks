@@ -1,13 +1,16 @@
 ---
-- name: Install and Configure Hadoop on Ubuntu
+- name: Install and Configure Hadoop 3.4.1 (Lean)
   hosts: all
   become: yes
   vars:
     hadoop_user: "hadoop"
+    hadoop_group: "hadoop"
     hadoop_home: "/usr/local/hadoop"
     java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
+    hadoop_url: "https://downloads.apache.org/hadoop/common/stable/hadoop-3.4.1-lean.tar.gz"
 
   tasks:
+
     ## 🟢 Étape 1 : Mise à jour du système et installation de Java
     - name: Update package lists
       apt:
@@ -29,44 +32,45 @@
       debug:
         msg: "{{ java_version.stdout_lines }}"
 
-    ## 🟢 Étape 2 : Création de l'utilisateur Hadoop et configuration SSH
-    - name: Create Hadoop user
-      user:
-        name: "{{ hadoop_user }}"
-        groups: sudo
-        append: yes
-        shell: /bin/bash
-        createhome: yes
-
-    - name: Install OpenSSH server and client
-      apt:
-        name:
-          - openssh-server
-          - openssh-client
+    ## 🟢 Étape 2 : Création de l'utilisateur Hadoop et gestion des permissions
+    - name: Ensure hadoop group exists
+      group:
+        name: "{{ hadoop_group }}"
         state: present
 
-    - name: Generate SSH key for Hadoop user
-      command: ssh-keygen -t rsa -N '' -f /home/{{ hadoop_user }}/.ssh/id_rsa
-      args:
-        creates: /home/{{ hadoop_user }}/.ssh/id_rsa
-      become_user: "{{ hadoop_user }}"
+    - name: Ensure hadoop user exists
+      user:
+        name: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        shell: /bin/bash
+        createhome: yes
+        home: "/home/{{ hadoop_user }}"
 
-    - name: Add SSH key to authorized_keys
-      shell: cat /home/{{ hadoop_user }}/.ssh/id_rsa.pub >> /home/{{ hadoop_user }}/.ssh/authorized_keys
-      become_user: "{{ hadoop_user }}"
+    - name: Ensure Hadoop user has sudo privileges
+      copy:
+        dest: "/etc/sudoers.d/hadoop"
+        content: "{{ hadoop_user }} ALL=(ALL) NOPASSWD: ALL"
+        mode: "0440"
 
-    - name: Set correct permissions for authorized_keys
+    ## 🟢 Étape 3 : Correction des permissions des fichiers temporaires Ansible
+    - name: Fix temporary directory permissions for Ansible
+      command: mkdir -p /tmp/.ansible/tmp && chmod 777 /tmp/.ansible/tmp
+
+    ## 🟢 Étape 4 : Téléchargement et Installation de Hadoop 3.4.1-lean
+    - name: Ensure /usr/local exists
       file:
-        path: /home/{{ hadoop_user }}/.ssh/authorized_keys
-        mode: '0640'
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
+        path: "/usr/local"
+        state: directory
+        mode: "0755"
 
-    ## 🟢 Étape 3 : Téléchargement et Installation de Hadoop
-    - name: Download Hadoop
+    - name: Download Hadoop 3.4.1-lean
       get_url:
-        url: "https://downloads.apache.org/hadoop/common/stable/hadoop-3.3.4.tar.gz"
+        url: "{{ hadoop_url }}"
         dest: "/tmp/hadoop.tar.gz"
+      retries: 3
+      delay: 10
+      register: download_result
+      until: download_result is succeeded
 
     - name: Extract Hadoop
       unarchive:
@@ -75,28 +79,20 @@
         remote_src: yes
 
     - name: Rename Hadoop directory
-      command: mv /usr/local/hadoop-3.3.4 /usr/local/hadoop
+      command: mv /usr/local/hadoop-3.4.1-lean /usr/local/hadoop
       args:
-        removes: /usr/local/hadoop-3.3.4
+        removes: /usr/local/hadoop-3.4.1-lean
         creates: "{{ hadoop_home }}"
-
-    - name: Create logs directory
-      file:
-        path: "{{ hadoop_home }}/logs"
-        state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-        mode: '0755'
 
     - name: Change ownership of Hadoop directory
       file:
         path: "{{ hadoop_home }}"
         state: directory
         owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
         recurse: yes
 
-    ## 🟢 Étape 4 : Configuration des variables d'environnement Hadoop
+    ## 🟢 Étape 5 : Configuration des variables d'environnement Hadoop
     - name: Set Hadoop environment variables in .bashrc
       blockinfile:
         path: "/home/{{ hadoop_user }}/.bashrc"
@@ -115,83 +111,13 @@
       shell: source /home/{{ hadoop_user }}/.bashrc
       become_user: "{{ hadoop_user }}"
 
-    ## 🟢 Étape 5 : Configuration de Java dans Hadoop
+    ## 🟢 Étape 6 : Configuration de Java dans Hadoop
     - name: Set JAVA_HOME in Hadoop environment
       lineinfile:
         path: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
         regexp: '^export JAVA_HOME='
         line: 'export JAVA_HOME={{ java_home }}'
         state: present
-
-    - name: Download javax activation jar
-      get_url:
-        url: "https://jcenter.bintray.com/javax/activation/javax.activation-api/1.2.0/javax.activation-api-1.2.0.jar"
-        dest: "{{ hadoop_home }}/lib/javax.activation-api-1.2.0.jar"
-
-    ## 🟢 Étape 6 : Configuration des fichiers XML de Hadoop
-    - name: Configure core-site.xml
-      copy:
-        dest: "{{ hadoop_home }}/etc/hadoop/core-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>fs.default.name</name>
-              <value>hdfs://0.0.0.0:9000</value>
-              <description>The default file system URI</description>
-            </property>
-          </configuration>
-
-    - name: Create HDFS directories
-      file:
-        path: "/home/{{ hadoop_user }}/hdfs/{{ item }}"
-        state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-        mode: '0755'
-      loop:
-        - namenode
-        - datanode
-
-    - name: Configure hdfs-site.xml
-      copy:
-        dest: "{{ hadoop_home }}/etc/hadoop/hdfs-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>dfs.replication</name>
-              <value>1</value>
-            </property>
-            <property>
-              <name>dfs.name.dir</name>
-              <value>file:///home/hadoop/hdfs/namenode</value>
-            </property>
-            <property>
-              <name>dfs.data.dir</name>
-              <value>file:///home/hadoop/hdfs/datanode</value>
-            </property>
-          </configuration>
-
-    - name: Configure mapred-site.xml
-      copy:
-        dest: "{{ hadoop_home }}/etc/hadoop/mapred-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>mapreduce.framework.name</name>
-              <value>yarn</value>
-            </property>
-          </configuration>
-
-    - name: Configure yarn-site.xml
-      copy:
-        dest: "{{ hadoop_home }}/etc/hadoop/yarn-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>yarn.nodemanager.aux-services</name>
-              <value>mapreduce_shuffle</value>
-            </property>
-          </configuration>
 
     ## 🟢 Étape 7 : Vérification de l'installation de Hadoop
     - name: Check Hadoop version
