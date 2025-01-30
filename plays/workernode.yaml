@@ -1,5 +1,5 @@
 ---
-- name: Install and Configure Hadoop 3.4.1 (Lean)
+- name: Install and Configure Hadoop 3.4.1
   hosts: all
   become: yes
   vars:
@@ -7,7 +7,7 @@
     hadoop_group: "hadoop"
     hadoop_home: "/usr/local/hadoop"
     java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
-    hadoop_url: "https://downloads.apache.org/hadoop/common/stable/hadoop-3.4.1-lean.tar.gz"
+    hadoop_url: "https://downloads.apache.org/hadoop/common/stable/hadoop-3.4.1.tar.gz"
 
   tasks:
 
@@ -56,14 +56,14 @@
     - name: Fix temporary directory permissions for Ansible
       command: mkdir -p /tmp/.ansible/tmp && chmod 777 /tmp/.ansible/tmp
 
-    ## 🟢 Étape 4 : Téléchargement et Installation de Hadoop 3.4.1-lean
+    ## 🟢 Étape 4 : Téléchargement et Installation de Hadoop 3.4.1
     - name: Ensure /usr/local exists
       file:
         path: "/usr/local"
         state: directory
         mode: "0755"
 
-    - name: Download Hadoop 3.4.1-lean
+    - name: Download Hadoop 3.4.1
       get_url:
         url: "{{ hadoop_url }}"
         dest: "/tmp/hadoop.tar.gz"
@@ -79,9 +79,9 @@
         remote_src: yes
 
     - name: Rename Hadoop directory
-      command: mv /usr/local/hadoop-3.4.1-lean /usr/local/hadoop
+      command: mv /usr/local/hadoop-3.4.1 /usr/local/hadoop
       args:
-        removes: /usr/local/hadoop-3.4.1-lean
+        removes: /usr/local/hadoop-3.4.1
         creates: "{{ hadoop_home }}"
 
     - name: Change ownership of Hadoop directory
