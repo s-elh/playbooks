@@ -1,5 +1,5 @@
 ---
-- name: Install and Configure Hadoop 3.4.1
+- name: Configure proxy and Install Hadoop 3.4.1
   hosts: all
   become: yes
   vars:
@@ -8,10 +8,30 @@
     hadoop_home: "/usr/local/hadoop"
     java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
     hadoop_url: "https://downloads.apache.org/hadoop/common/stable/hadoop-3.4.1.tar.gz"
+    slave_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'slave'}.collect{it.externalIp}"
+    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
+    ## 🟢 Étape 1 : Configuration du proxy
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
 
-    ## 🟢 Étape 1 : Mise à jour du système et installation de Java
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    ## 🟢 Étape 2 : Mise à jour du système et installation de Java
     - name: Update package lists
       apt:
         update_cache: yes
@@ -32,7 +52,7 @@
       debug:
         msg: "{{ java_version.stdout_lines }}"
 
-    ## 🟢 Étape 2 : Création de l'utilisateur Hadoop et gestion des permissions
+    ## 🟢 Étape 3 : Création de l'utilisateur Hadoop et gestion des permissions
     - name: Ensure hadoop group exists
       group:
         name: "{{ hadoop_group }}"
@@ -52,11 +72,11 @@
         content: "{{ hadoop_user }} ALL=(ALL) NOPASSWD: ALL"
         mode: "0440"
 
-    ## 🟢 Étape 3 : Correction des permissions des fichiers temporaires Ansible
+    ## 🟢 Étape 4 : Correction des permissions des fichiers temporaires Ansible
     - name: Fix temporary directory permissions for Ansible
       command: mkdir -p /tmp/.ansible/tmp && chmod 777 /tmp/.ansible/tmp
 
-    ## 🟢 Étape 4 : Téléchargement et Installation de Hadoop 3.4.1
+    ## 🟢 Étape 5 : Téléchargement et Installation de Hadoop 3.4.1
     - name: Ensure /usr/local exists
       file:
         path: "/usr/local"
@@ -92,7 +112,7 @@
         group: "{{ hadoop_group }}"
         recurse: yes
 
-    ## 🟢 Étape 5 : Configuration des variables d'environnement Hadoop
+    ## 🟢 Étape 6 : Configuration des variables d'environnement Hadoop
     - name: Set Hadoop environment variables in .bashrc
       blockinfile:
         path: "/home/{{ hadoop_user }}/.bashrc"
@@ -111,7 +131,7 @@
       shell: source /home/{{ hadoop_user }}/.bashrc
       become_user: "{{ hadoop_user }}"
 
-    ## 🟢 Étape 6 : Configuration de Java dans Hadoop
+    ## 🟢 Étape 7 : Configuration de Java dans Hadoop
     - name: Set JAVA_HOME in Hadoop environment
       lineinfile:
         path: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
@@ -119,7 +139,7 @@
         line: 'export JAVA_HOME={{ java_home }}'
         state: present
 
-    ## 🟢 Étape 7 : Vérification de l'installation de Hadoop
+    ## 🟢 Étape 8 : Vérification de l'installation de Hadoop
     - name: Check Hadoop version
       command: "{{ hadoop_home }}/bin/hadoop version"
       register: hadoop_version
