@@ -72,33 +72,9 @@
         content: "{{ hadoop_user }} ALL=(ALL) NOPASSWD: ALL"
         mode: "0440"
 
-    ## 🟢 Étape 4 : Configuration de l'accès SSH sans mot de passe pour Hadoop
-    - name: Ensure .ssh directory exists for hadoop user
-      file:
-        path: "/home/{{ hadoop_user }}/.ssh"
-        state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: "0700"
-
-    - name: Generate SSH key for Hadoop user if not exists
-      command: "ssh-keygen -t rsa -N '' -f /home/{{ hadoop_user }}/.ssh/id_rsa"
-      args:
-        creates: "/home/{{ hadoop_user }}/.ssh/id_rsa"
-      become: yes
-      become_user: "{{ hadoop_user }}"
-
-    - name: Add SSH public key to authorized_keys
-      shell: "cat /home/{{ hadoop_user }}/.ssh/id_rsa.pub >> /home/{{ hadoop_user }}/.ssh/authorized_keys"
-      become: yes
-      become_user: "{{ hadoop_user }}"
-
-    - name: Set correct permissions on SSH files
-      file:
-        path: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: "0600"
+    ## 🟢 Étape 4 : Correction des permissions des fichiers temporaires Ansible
+    - name: Fix temporary directory permissions for Ansible
+      command: mkdir -p /tmp/.ansible/tmp && chmod 777 /tmp/.ansible/tmp
 
     ## 🟢 Étape 5 : Téléchargement et Installation de Hadoop 3.4.1
     - name: Ensure /usr/local exists
@@ -154,3 +130,22 @@
     - name: Apply environment changes
       shell: |
         sudo -u {{ hadoop_user }} bash -c 'source /home/{{ hadoop_user }}/.bashrc'
+
+    ## 🟢 Étape 7 : Configuration de Java dans Hadoop
+    - name: Set JAVA_HOME in Hadoop environment
+      lineinfile:
+        path: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
+        regexp: '^export JAVA_HOME='
+        line: 'export JAVA_HOME={{ java_home }}'
+        state: present
+
+    ## 🟢 Étape 8 : Vérification de l'installation de Hadoop
+    - name: Check Hadoop version
+      command: "{{ hadoop_home }}/bin/hadoop version"
+      register: hadoop_version
+      changed_when: false
+
+    - name: Display Hadoop version
+      debug:
+        msg: "{{ hadoop_version.stdout_lines }}"
+   
