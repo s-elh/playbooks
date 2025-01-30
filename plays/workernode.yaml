@@ -1,23 +1,46 @@
 ---
-- name: Install Hadoop on Ubuntu
+- name: Configure proxy and Install Hadoop 3.4.1
   hosts: all
   become: yes
   vars:
-    hadoop_version: "3.3.6"
     hadoop_user: "hadoop"
     hadoop_group: "hadoop"
     hadoop_home: "/usr/local/hadoop"
     java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
-    hadoop_url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+    hadoop_url: "https://downloads.apache.org/hadoop/common/stable/hadoop-3.4.1.tar.gz"
+    slave_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'slave'}.collect{it.externalIp}"
+    proxy_url: "http://10.1.38.2:3128"
 
   tasks:
-    - name: Update and install dependencies
+    ## 🟢 Étape 1 : Configuration du proxy
+    - name: Configure HTTP proxy for apt
+      copy:
+        content: |
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
+
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
+
+    ## 🟢 Étape 2 : Mise à jour du système et installation de Java
+    - name: Update package lists
       apt:
         update_cache: yes
+
+    - name: Install Java
+      apt:
         name:
           - default-jdk
-          - ssh
-          - rsync
+          - default-jre
         state: present
 
     - name: Verify Java installation
@@ -27,8 +50,9 @@
 
     - name: Display Java version
       debug:
-        msg: "{{ java_version.stderr_lines }}"
+        msg: "{{ java_version.stdout_lines }}"
 
+    ## 🟢 Étape 3 : Création de l'utilisateur Hadoop et gestion des permissions
     - name: Ensure hadoop group exists
       group:
         name: "{{ hadoop_group }}"
@@ -42,93 +66,91 @@
         createhome: yes
         home: "/home/{{ hadoop_user }}"
 
-    - name: Download Hadoop
+    - name: Ensure Hadoop user has sudo privileges
+      copy:
+        dest: "/etc/sudoers.d/hadoop"
+        content: "{{ hadoop_user }} ALL=(ALL) NOPASSWD: ALL"
+        mode: "0440"
+
+    ## 🟢 Étape 4 : Configuration de l'accès SSH sans mot de passe pour Hadoop
+    - name: Ensure .ssh directory exists for hadoop user
+      file:
+        path: "/home/{{ hadoop_user }}/.ssh"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: "0700"
+
+    - name: Generate SSH key for Hadoop user if not exists
+      command: "ssh-keygen -t rsa -N '' -f /home/{{ hadoop_user }}/.ssh/id_rsa"
+      args:
+        creates: "/home/{{ hadoop_user }}/.ssh/id_rsa"
+      become: yes
+      become_user: "{{ hadoop_user }}"
+
+    - name: Add SSH public key to authorized_keys
+      shell: "cat /home/{{ hadoop_user }}/.ssh/id_rsa.pub >> /home/{{ hadoop_user }}/.ssh/authorized_keys"
+      become: yes
+      become_user: "{{ hadoop_user }}"
+
+    - name: Set correct permissions on SSH files
+      file:
+        path: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: "0600"
+
+    ## 🟢 Étape 5 : Téléchargement et Installation de Hadoop 3.4.1
+    - name: Ensure /usr/local exists
+      file:
+        path: "/usr/local"
+        state: directory
+        mode: "0755"
+
+    - name: Download Hadoop 3.4.1
       get_url:
         url: "{{ hadoop_url }}"
         dest: "/tmp/hadoop.tar.gz"
+      retries: 3
+      delay: 10
+      register: download_result
+      until: download_result is succeeded
 
-    - name: Extract Hadoop archive
+    - name: Extract Hadoop
       unarchive:
         src: "/tmp/hadoop.tar.gz"
         dest: "/usr/local/"
         remote_src: yes
 
     - name: Rename Hadoop directory
-      command: mv /usr/local/hadoop-{{ hadoop_version }} /usr/local/hadoop
+      command: mv /usr/local/hadoop-3.4.1 /usr/local/hadoop
       args:
+        removes: /usr/local/hadoop-3.4.1
         creates: "{{ hadoop_home }}"
 
     - name: Change ownership of Hadoop directory
       file:
         path: "{{ hadoop_home }}"
+        state: directory
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
         recurse: yes
 
+    ## 🟢 Étape 6 : Configuration des variables d'environnement Hadoop
     - name: Set Hadoop environment variables in .bashrc
       blockinfile:
         path: "/home/{{ hadoop_user }}/.bashrc"
         block: |
-          export JAVA_HOME={{ java_home }}
           export HADOOP_HOME={{ hadoop_home }}
-          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
-        create: yes
+          export HADOOP_INSTALL=$HADOOP_HOME
+          export HADOOP_MAPRED_HOME=$HADOOP_HOME
+          export HADOOP_COMMON_HOME=$HADOOP_HOME
+          export HADOOP_HDFS_HOME=$HADOOP_HOME
+          export YARN_HOME=$HADOOP_HOME
+          export HADOOP_COMMON_LIB_NATIVE_DIR=$HADOOP_HOME/lib/native
+          export PATH=$PATH:$HADOOP_HOME/sbin:$HADOOP_HOME/bin
+          export HADOOP_OPTS="-Djava.library.path=$HADOOP_HOME/lib/native"
 
     - name: Apply environment changes
-      shell: "source /home/{{ hadoop_user }}/.bashrc"
-      args:
-        executable: /bin/bash
-
-    - name: Check Hadoop version
-      command: "{{ hadoop_home }}/bin/hadoop version"
-      register: hadoop_version
-      changed_when: false
-
-    - name: Display Hadoop version
-      debug:
-        msg: "{{ hadoop_version.stdout_lines }}"
-
-    - name: Generate SSH key for Hadoop user
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      command: ssh-keygen -t rsa -N "" -f /home/{{ hadoop_user }}/.ssh/id_rsa
-      args:
-        creates: "/home/{{ hadoop_user }}/.ssh/id_rsa"
-
-    - name: Copy public key to authorized_keys
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      shell: "cat /home/{{ hadoop_user }}/.ssh/id_rsa.pub >> /home/{{ hadoop_user }}/.ssh/authorized_keys"
-
-    - name: Set permissions for SSH keys
-      file:
-        path: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
-        mode: '0600'
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-
-    - name: Start Hadoop NameNode
-      shell: "{{ hadoop_home }}/bin/hdfs namenode -format"
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      args:
-        executable: /bin/bash
-
-    - name: Start Hadoop services
-      shell: "{{ hadoop_home }}/sbin/start-dfs.sh"
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      args:
-        executable: /bin/bash
-
-    - name: Verify Hadoop services
-      shell: "jps"
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      register: jps_output
-      args:
-        executable: /bin/bash
-
-    - name: Display running Hadoop services
-      debug:
-        msg: "{{ jps_output.stdout_lines }}"
+      shell: |
+        sudo -u {{ hadoop_user }} bash -c 'source /home/{{ hadoop_user }}/.bashrc'
