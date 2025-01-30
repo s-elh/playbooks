@@ -64,7 +64,7 @@
         mode: "0755"
 
     - name: Download Hadoop 3.4.1
-      get_url:
+      wget_url:
         url: "{{ hadoop_url }}"
         dest: "/tmp/hadoop.tar.gz"
       retries: 3
