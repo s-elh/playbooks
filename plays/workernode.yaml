@@ -75,6 +75,8 @@
     ## 🟢 Étape 4 : Correction des permissions des fichiers temporaires Ansible
     - name: Fix temporary directory permissions for Ansible
       command: mkdir -p /tmp/.ansible/tmp && chmod 777 /tmp/.ansible/tmp
+      become: yes
+      become_user: root
 
     ## 🟢 Étape 5 : Téléchargement et Installation de Hadoop 3.4.1
     - name: Ensure /usr/local exists
