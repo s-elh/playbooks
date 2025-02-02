@@ -80,7 +80,7 @@
         content: |
           server {
               listen 80;
-              server_name {{ ansible_fqdn }};
+              server_name localhost;
 
               location / {
                   proxy_pass http://localhost:3000;
@@ -105,11 +105,10 @@
         path: /etc/nginx/sites-enabled/default
         state: absent
 
-    - name: Start and enable NGINX
+    - name: Reload NGINX
       systemd:
         name: nginx
-        state: started
-        enabled: yes
+        state: reloaded
 
     # Application setup
     - name: Create application directories
@@ -124,7 +123,7 @@
         - "{{ backend_dir }}"
 
     - name: Initialize React frontend
-      command: npx create-react-app . --use-npm --yes
+      command: npx create-react-app . --use-npm
       args:
         chdir: "{{ frontend_dir }}"
         creates: "{{ frontend_dir }}/package.json"
@@ -132,108 +131,60 @@
       become_user: "{{ app_user }}"
       environment:
         CI: "true"
+    - name: Initialize backend package.json
+      copy:
+        content: |
+          {
+            "name": "mern-backend",
+            "version": "1.0.0",
+            "main": "index.js",
+            "dependencies": {
+              "express": "^4.18.2",
+              "mongodb": "^5.0.0"
+            }
+          }
+        dest: "{{ backend_dir }}/package.json"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
 
-    - name: Initialize Express backend
-      command: npm init -y
+    - name: Install backend dependencies
+      command: npm install
       args:
         chdir: "{{ backend_dir }}"
-        creates: "{{ backend_dir }}/package.json"
       become: yes
       become_user: "{{ app_user }}"
 
-    # Changed from npm module to command module
-    - name: Install Express dependencies
-      command: npm install {{ item }}
-      args:
-        chdir: "{{ backend_dir }}"
-      with_items:
-        - express@5.0.1
-        - mongodb
-      become: yes
-      become_user: "{{ app_user }}"
-
-    - name: Create Express server file
+    - name: Create simple Express server file
       copy:
         content: |
           const express = require('express');
           const path = require('path');
-          const { MongoClient } = require('mongodb');
-    
+          
           const app = express();
-          const port = process.env.PORT || 3000;
-    
-          // Connection URL for MongoDB with options
-          const mongoUri = 'mongodb://127.0.0.1:27017';
-          const dbName = 'mydb';
-    
-          // Add error handling for uncaught exceptions
-          process.on('uncaughtException', (err) => {
-            console.error('Uncaught Exception:', err);
+          const port = 3000;
+          
+          // Serve static files from React build
+          app.use(express.static(path.join(__dirname, 'frontend')));
+          
+          // Simple test API endpoint
+          app.get('/api/test', (req, res) => {
+            res.json({ message: 'Backend is working!' });
           });
-    
-          // First verify MongoDB is running
-          async function startServer() {
-            try {
-              // Connect to MongoDB
-              const client = await MongoClient.connect(mongoUri, {
-                useUnifiedTopology: true,
-                maxPoolSize: 50,
-                wtimeoutMS: 2500,
-                useNewUrlParser: true
-              });
-              
-              console.log("Connected successfully to MongoDB");
-              const db = client.db(dbName);
-    
-              // Middleware for parsing JSON
-              app.use(express.json());
-    
-              // API routes
-              app.get('/api/data', async (req, res) => {
-                try {
-                  const items = await db.collection('test').find({}).toArray();
-                  res.json(items);
-                } catch (error) {
-                  console.error('Error fetching data:', error);
-                  res.status(500).json({ error: 'Failed to fetch data' });
-                }
-              });
-    
-              // Serve static files from the React frontend
-              app.use(express.static(path.join(__dirname, 'frontend')));
-    
-              // Handle React routing, return all requests to React app
-              app.get('*', (req, res) => {
-                res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
-              });
-    
-              // Start the server
-              app.listen(port, '0.0.0.0', () => {
-                console.log(`Server is running on port ${port}`);
-              });
-    
-            } catch (err) {
-              console.error('Failed to connect to MongoDB:', err);
-              process.exit(1);
-            }
-          }
-    
-          startServer().catch(console.error);
+          
+          // Handle React routing, return all requests to React app
+          app.get('*', (req, res) => {
+            res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
+          });
+          
+          app.listen(port, '0.0.0.0', () => {
+            console.log(`Server running on port ${port}`);
+          });
         dest: "{{ backend_dir }}/index.js"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: '0644'
-  
-    - name: Install required dependencies
-      command: npm install {{ item }}
-      args:
-        chdir: "{{ frontend_dir }}"
-      with_items:
-        - web-vitals
-        - "@babel/plugin-proposal-private-property-in-object"
-      become: yes
-      become_user: "{{ app_user }}"
-      
+
     - name: Build React app
       command: npm run build
       args:
@@ -242,7 +193,7 @@
       become_user: "{{ app_user }}"
       environment:
         CI: "true"
-
+  
     - name: Move React build to backend
       command: mv {{ frontend_dir }}/build {{ backend_dir }}/frontend
       args:
@@ -250,14 +201,13 @@
       become: yes
       become_user: "{{ app_user }}"
 
-    # Final status message
-    - name: Display installation complete message
+    - name: Display completion message
       debug:
         msg: |
           MERN stack installation complete:
-          - MongoDB is running
-          - Express backend is in {{ backend_dir }}
-          - React frontend is built and integrated
-          - NGINX is configured as reverse proxy
           
-          Access your application at http://{{ ansible_fqdn }}
+          To start the application:
+          1. cd {{ backend_dir }}
+          2. node index.js
+          
+          Access your application at http://localhost
