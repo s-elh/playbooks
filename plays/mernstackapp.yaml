@@ -139,11 +139,11 @@
       become: yes
       become_user: "{{ app_user }}"
 
+    # Changed from npm module to command module
     - name: Install Express dependencies
-      npm:
-        path: "{{ backend_dir }}"
-        name: "{{ item }}"
-        state: present
+      command: npm install {{ item }}
+      args:
+        chdir: "{{ backend_dir }}"
       with_items:
         - express@5.0.1
         - mongodb
@@ -214,6 +214,7 @@
       become: yes
       become_user: "{{ app_user }}"
 
+    # Final status message
     - name: Display installation complete message
       debug:
         msg: |
