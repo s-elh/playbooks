@@ -166,37 +166,46 @@
           const mongoUri = 'mongodb://localhost:27017';
           const dbName = 'mydb';
 
-          // Connect to MongoDB
-          MongoClient.connect(mongoUri, { useUnifiedTopology: true }, (err, client) => {
-            if (err) {
-              console.error('MongoDB connection failed:', err);
-              process.exit(1);
-            }
-            console.log("Connected successfully to MongoDB");
-            const db = client.db(dbName);
-
-            // Example API endpoint
-            app.get('/api/data', async (req, res) => {
-              try {
-                const items = await db.collection('test').find({}).toArray();
-                res.json(items);
-              } catch (error) {
-                res.status(500).json({ error: 'Failed to fetch data' });
-              }
-            });
-
-            // Serve static files from React build
-            app.use(express.static(path.join(__dirname, 'frontend')));
-
-            // Handle React routing
-            app.get('*', (req, res) => {
-              res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
-            });
-
-            app.listen(port, '0.0.0.0', () => {
-              console.log(`Express server is running on port ${port}`);
-            });
+          // Add error handling for uncaught exceptions
+          process.on('uncaughtException', (err) => {
+            console.error('Uncaught Exception:', err);
           });
+
+          // Connect to MongoDB with better error handling
+          MongoClient.connect(mongoUri)
+            .then(client => {
+              console.log("Connected successfully to MongoDB");
+              const db = client.db(dbName);
+
+              // Example API endpoint
+              app.get('/api/data', async (req, res) => {
+                try {
+                  const items = await db.collection('test').find({}).toArray();
+                  res.json(items);
+                } catch (error) {
+                  console.error('Error fetching data:', error);
+                  res.status(500).json({ error: 'Failed to fetch data' });
+                }
+              });
+
+              // Serve static files from React build
+              app.use(express.static(path.join(__dirname, 'frontend')));
+
+              // Handle React routing
+              app.get('*', (req, res) => {
+                res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
+              });
+
+              // Start the server with better error handling
+              app.listen(port, '0.0.0.0', () => {
+                console.log(`Express server is running on port ${port}`);
+              }).on('error', (err) => {
+                console.error('Failed to start server:', err);
+              });
+            })
+            .catch(err => {
+              console.error('Failed to connect to MongoDB:', err);
+            });
         dest: "{{ backend_dir }}/index.js"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
