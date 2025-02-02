@@ -24,18 +24,17 @@
         group: root
         mode: '0644'
 
-    - name: Install prerequisites with fix-missing
+    - name: Install packages
       apt:
         name:
-          - curl
           - gnupg
           - build-essential
           - wget
         state: present
-        update_cache: yes
-        force: yes
-        install_recommends: no
-        fix_missing: yes
+        update_cache: true
+        upgrade: no
+        update_cache_retries: 5
+        update_cache_retry_max_delay: 12
 
     # Node.js installation
     - name: Add NodeSource repository
