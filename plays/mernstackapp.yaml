@@ -219,13 +219,6 @@
       become: yes
       become_user: "{{ app_user }}"
 
-    # Add a wait to ensure the application starts
-    - name: Wait for application to start
-      wait_for:
-        host: "{{ morpheus['server']['internalIp'] }}"
-        port: 3000
-        timeout: 30
-
     - name: Display completion message
       debug:
         msg: |
