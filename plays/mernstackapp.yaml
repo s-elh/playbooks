@@ -122,12 +122,14 @@
         - "{{ backend_dir }}"
 
     - name: Initialize React frontend
-      command: npx create-react-app . --use-npm
+      command: npx create-react-app . --use-npm --yes
       args:
         chdir: "{{ frontend_dir }}"
         creates: "{{ frontend_dir }}/package.json"
       become: yes
       become_user: "{{ app_user }}"
+      environment:
+        CI: "true"
 
     - name: Initialize Express backend
       command: npm init -y
