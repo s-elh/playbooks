@@ -212,8 +212,7 @@
       become: yes
       become_user: "{{ app_user }}"
 
-    # Start the Node.js application in the background
-    - name: Start Node.js application
+    - name: Start Node.js application in bg
       shell: nohup node index.js > app.log 2>&1 &
       args:
         chdir: "{{ backend_dir }}"
@@ -223,6 +222,7 @@
     # Add a wait to ensure the application starts
     - name: Wait for application to start
       wait_for:
+        host: "{{ morpheus['server']['internalIp'] }}"
         port: 3000
         timeout: 30
 
@@ -231,4 +231,4 @@
         msg: |
           MERN stack installation complete and application started!
           
-          Application is running at http://localhost
+          Application is running at http://{{ morpheus['server']['internalIp'] }}
