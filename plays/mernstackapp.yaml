@@ -131,6 +131,17 @@
       become_user: "{{ app_user }}"
       environment:
         CI: "true"
+
+    - name: Install additional frontend dependencies
+      command: npm install {{ item }}
+      args:
+        chdir: "{{ frontend_dir }}"
+      with_items:
+        - web-vitals
+        - "@babel/plugin-proposal-private-property-in-object"
+      become: yes
+      become_user: "{{ app_user }}"
+        
     - name: Initialize backend package.json
       copy:
         content: |
