@@ -32,7 +32,6 @@
           - wget
         state: present
         update_cache: true
-        upgrade: no
         update_cache_retries: 5
         update_cache_retry_max_delay: 12
 
