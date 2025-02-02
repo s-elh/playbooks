@@ -122,7 +122,7 @@
         - "{{ backend_dir }}"
 
     - name: Initialize React frontend
-      command: npx create-react-app .
+      command: npx create-react-app . --use-npm
       args:
         chdir: "{{ frontend_dir }}"
         creates: "{{ frontend_dir }}/package.json"
