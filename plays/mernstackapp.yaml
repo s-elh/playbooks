@@ -212,10 +212,8 @@
       become: yes
       become_user: "{{ app_user }}"
 
-    - name: Start Node.js application in bg
-      shell: nohup node index.js > app.log 2>&1 &
-      args:
-        chdir: "{{ backend_dir }}"
+    - name: Start Node.js application with screen
+      shell: screen -dmS nodejs bash -c 'cd {{ backend_dir }} && node index.js'
       become: yes
       become_user: "{{ app_user }}"
 
@@ -224,4 +222,6 @@
         msg: |
           MERN stack installation complete and application started!
           
-          Application is running at http://{{ morpheus['server']['internalIp'] }}
+          Application is running at http://{{ morpheus['server']['internalIp'] }}          
+          To check the running application:
+          screen -r nodejs
