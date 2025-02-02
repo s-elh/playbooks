@@ -199,13 +199,25 @@
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: '0644'
-
+  
+    - name: Install required dependencies
+      command: npm install {{ item }}
+      args:
+        chdir: "{{ frontend_dir }}"
+      with_items:
+        - web-vitals
+        - "@babel/plugin-proposal-private-property-in-object"
+      become: yes
+      become_user: "{{ app_user }}"
+      
     - name: Build React app
       command: npm run build
       args:
         chdir: "{{ frontend_dir }}"
       become: yes
       become_user: "{{ app_user }}"
+      environment:
+        CI: "true"
 
     - name: Move React build to backend
       command: mv {{ frontend_dir }}/build {{ backend_dir }}/frontend
