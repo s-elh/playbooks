@@ -1,0 +1,226 @@
+---
+- name: Install MERN Stack on Ubuntu
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    nodejs_version: "18.x"
+    mongodb_version: "6.0"
+    app_user: "{{ ansible_user }}"
+    app_dir: "/home/{{ app_user }}/myapp"
+    frontend_dir: "{{ app_dir }}/frontend"
+    backend_dir: "{{ app_dir }}/backend"
+
+  tasks:
+    # System setup
+    - name: Configure resolv.conf with Google DNS
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+
+    - name: Clear apt proxy settings
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        upgrade: yes
+
+    - name: Install prerequisites
+      apt:
+        name:
+          - curl
+          - gnupg
+          - build-essential
+          - wget
+        state: present
+
+    # Node.js installation
+    - name: Add NodeSource repository
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_{{ nodejs_version }} | bash -
+      args:
+        warn: false
+
+    - name: Install Node.js
+      apt:
+        name: nodejs
+        state: present
+
+    # MongoDB installation
+    - name: Add MongoDB GPG key
+      apt_key:
+        url: https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc
+        state: present
+
+    - name: Add MongoDB repository
+      apt_repository:
+        repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} multiverse"
+        state: present
+        filename: mongodb-org-{{ mongodb_version }}
+
+    - name: Install MongoDB
+      apt:
+        name: mongodb-org
+        state: present
+        update_cache: yes
+
+    - name: Start and enable MongoDB
+      systemd:
+        name: mongod
+        state: started
+        enabled: yes
+
+    # NGINX installation and configuration
+    - name: Install NGINX
+      apt:
+        name: nginx
+        state: present
+
+    - name: Create NGINX configuration
+      copy:
+        content: |
+          server {
+              listen 80;
+              server_name {{ ansible_fqdn }};
+
+              location / {
+                  proxy_pass http://localhost:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+              }
+          }
+        dest: /etc/nginx/sites-available/myapp
+        mode: '0644'
+
+    - name: Create symbolic link for NGINX config
+      file:
+        src: /etc/nginx/sites-available/myapp
+        dest: /etc/nginx/sites-enabled/myapp
+        state: link
+
+    - name: Remove default NGINX site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Start and enable NGINX
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+
+    # Application setup
+    - name: Create application directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      with_items:
+        - "{{ frontend_dir }}"
+        - "{{ backend_dir }}"
+
+    - name: Initialize React frontend
+      command: npx create-react-app .
+      args:
+        chdir: "{{ frontend_dir }}"
+        creates: "{{ frontend_dir }}/package.json"
+      become: yes
+      become_user: "{{ app_user }}"
+
+    - name: Initialize Express backend
+      command: npm init -y
+      args:
+        chdir: "{{ backend_dir }}"
+        creates: "{{ backend_dir }}/package.json"
+      become: yes
+      become_user: "{{ app_user }}"
+
+    - name: Install Express dependencies
+      npm:
+        path: "{{ backend_dir }}"
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - express@5.0.1
+        - mongodb
+      become: yes
+      become_user: "{{ app_user }}"
+
+    - name: Create Express server file
+      copy:
+        content: |
+          const express = require('express');
+          const path = require('path');
+          const { MongoClient } = require('mongodb');
+
+          const app = express();
+          const port = process.env.PORT || 3000;
+
+          // Connection URL for MongoDB
+          const mongoUri = 'mongodb://localhost:27017';
+          const dbName = 'mydb';
+
+          // Connect to MongoDB
+          MongoClient.connect(mongoUri, { useUnifiedTopology: true }, (err, client) => {
+            if (err) {
+              console.error('MongoDB connection failed:', err);
+              process.exit(1);
+            }
+            console.log("Connected successfully to MongoDB");
+            const db = client.db(dbName);
+
+            // Example API endpoint
+            app.get('/api/data', async (req, res) => {
+              try {
+                const items = await db.collection('test').find({}).toArray();
+                res.json(items);
+              } catch (error) {
+                res.status(500).json({ error: 'Failed to fetch data' });
+              }
+            });
+
+            // Serve static files from React build
+            app.use(express.static(path.join(__dirname, 'frontend')));
+
+            // Handle React routing
+            app.get('*', (req, res) => {
+              res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
+            });
+
+            app.listen(port, () => {
+              console.log(`Express server is running on port ${port}`);
+            });
+          });
+        dest: "{{ backend_dir }}/index.js"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+
+    - name: Build React app
+      command: npm run build
+      args:
+        chdir: "{{ frontend_dir }}"
+      become: yes
+      become_user: "{{ app_user }}"
+
+    - name: Move React build to backend
+      command: mv {{ frontend_dir }}/build {{ backend_dir }}/frontend
+      args:
+        creates: "{{ backend_dir }}/frontend"
+      become: yes
+      become_user: "{{ app_user }}"
+
+    - name: Display installation complete message
+      debug:
+        msg: |
+          MERN stack installation complete:
+          - MongoDB is running
+          - Express backend is in {{ backend_dir }}
+          - React frontend is built and integrated
+          - NGINX is configured as reverse proxy
+          
+          Access your application at http://{{ ansible_fqdn }}
