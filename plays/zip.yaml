@@ -9,18 +9,29 @@
     hadoop_password: "hadoop"
 
   tasks:
-    ## 🟢 Step 1: Update APT package lists
+    ## 🟢 Step 1: Fix Ansible Temporary File Permissions
+    - name: Ensure Ansible can create temporary files
+      set_fact:
+        ansible_become_flags: "-H -S"
+
+    ## 🟢 Step 2: Ensure /tmp has correct permissions
+    - name: Set correct permissions for /tmp
+      file:
+        path: /tmp
+        mode: "1777"
+
+    ## 🟢 Step 3: Update APT package lists
     - name: Update APT package lists
       apt:
         update_cache: yes
 
-    ## 🟢 Step 2: Install OpenJDK 8
+    ## 🟢 Step 4: Install OpenJDK 8
     - name: Install OpenJDK 8
       apt:
         name: openjdk-8-jdk
         state: present
 
-    ## 🟢 Step 3: Verify Java installation
+    ## 🟢 Step 5: Verify Java installation
     - name: Check Java and Javac versions
       command: "{{ item }}"
       with_items:
@@ -33,7 +44,7 @@
       debug:
         msg: "{{ java_versions.results | map(attribute='stdout_lines') | list }}"
 
-    ## 🟢 Step 4: Install OpenSSH Server & Client
+    ## 🟢 Step 6: Install OpenSSH Server & Client
     - name: Install OpenSSH Server & Client
       apt:
         name:
@@ -41,7 +52,7 @@
           - openssh-client
         state: present
 
-    ## 🟢 Step 5: Create Hadoop User
+    ## 🟢 Step 7: Create Hadoop User
     - name: Create Hadoop User
       user:
         name: "{{ hadoop_user }}"
@@ -50,7 +61,7 @@
         shell: /bin/bash
         createhome: yes
 
-    ## 🟢 Step 6: Ensure SSH Directory Exists with Correct Permissions
+    ## 🟢 Step 8: Ensure SSH Directory Exists with Correct Permissions
     - name: Ensure .ssh directory exists for Hadoop user
       file:
         path: "/home/{{ hadoop_user }}/.ssh"
@@ -59,23 +70,25 @@
         group: "{{ hadoop_user }}"
         mode: "0700"
 
-    ## 🟢 Step 7: Generate SSH Key for Hadoop User (Fixed)
+    ## 🟢 Step 9: Generate SSH Key for Hadoop User (Using su)
     - name: Generate SSH key pair manually
-      become: true
+      become: yes
+      become_method: su  # Use su instead of sudo
       become_user: "{{ hadoop_user }}"
       command: ssh-keygen -t rsa -P '' -f /home/{{ hadoop_user }}/.ssh/id_rsa
       args:
         creates: /home/{{ hadoop_user }}/.ssh/id_rsa
 
-    ## 🟢 Step 8: Add public key to authorized_keys
+    ## 🟢 Step 10: Add public key to authorized_keys
     - name: Add public key to authorized_keys
-      become: true
+      become: yes
+      become_method: su  # Use su instead of sudo
       become_user: "{{ hadoop_user }}"
       shell: cat /home/{{ hadoop_user }}/.ssh/id_rsa.pub >> /home/{{ hadoop_user }}/.ssh/authorized_keys
       args:
         creates: /home/{{ hadoop_user }}/.ssh/authorized_keys
 
-    ## 🟢 Step 9: Set correct permissions on authorized_keys
+    ## 🟢 Step 11: Set correct permissions on authorized_keys
     - name: Set correct permissions for authorized_keys
       file:
         path: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
