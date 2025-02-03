@@ -61,15 +61,17 @@
 
     ## 🟢 Step 7: Generate SSH Key for Hadoop User (Fixed)
     - name: Generate SSH key pair manually
+      become: true
+      become_user: "{{ hadoop_user }}"
       command: ssh-keygen -t rsa -P '' -f /home/{{ hadoop_user }}/.ssh/id_rsa
-      become: false  # Don't use sudo (Fixes permission issue)
       args:
         creates: /home/{{ hadoop_user }}/.ssh/id_rsa
 
     ## 🟢 Step 8: Add public key to authorized_keys
     - name: Add public key to authorized_keys
+      become: true
+      become_user: "{{ hadoop_user }}"
       shell: cat /home/{{ hadoop_user }}/.ssh/id_rsa.pub >> /home/{{ hadoop_user }}/.ssh/authorized_keys
-      become: false
       args:
         creates: /home/{{ hadoop_user }}/.ssh/authorized_keys
 
