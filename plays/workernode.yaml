@@ -1,151 +1,158 @@
 ---
-- name: Configure proxy and Install Hadoop 3.4.1
+- name: Install Java, SSH, and configure Hadoop user
   hosts: all
   become: yes
   vars:
-    hadoop_user: "hadoop"
-    hadoop_group: "hadoop"
-    hadoop_home: "/usr/local/hadoop"
-    java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
-    hadoop_url: "https://downloads.apache.org/hadoop/common/stable/hadoop-3.4.1.tar.gz"
-    slave_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'slave'}.collect{it.externalIp}"
-    proxy_url: "http://10.1.38.2:3128"
-
+    hadoop_user: "hdoop"
+    hadoop_full_name: "hadoop"
+    hadoop_password: "hadoop"
+    hadoop_version: "3.4.0"
+    hadoop_download_url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+    hadoop_download_path: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+    hadoop_extract_path: "/home/{{ hadoop_user }}"
   tasks:
-    ## 🟢 Étape 1 : Configuration du proxy
-    - name: Configure HTTP proxy for apt
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+    ## 🟢 Step 1: Fix Ansible Temporary File Permissions
+    - name: Ensure Ansible can create temporary files
+      set_fact:
+        ansible_become_flags: "-H -S"
 
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
+    ## 🟢 Step 2: Ensure /tmp has correct permissions
+    - name: Set correct permissions for /tmp
+      file:
+        path: /tmp
+        mode: "1777"
 
-    ## 🟢 Étape 2 : Mise à jour du système et installation de Java
-    - name: Update package lists
+    ## 🟢 Step 3: Update APT package lists
+    - name: Update APT package lists
       apt:
         update_cache: yes
 
-    - name: Install Java
+    ## 🟢 Step 4: Install OpenJDK 8
+    - name: Install OpenJDK 8
+      apt:
+        name: openjdk-8-jdk
+        state: present
+
+    ## 🟢 Step 5: Verify Java installation
+    - name: Check Java and Javac versions
+      command: "{{ item }}"
+      with_items:
+        - java -version
+        - javac -version
+      register: java_versions
+      changed_when: false
+
+    - name: Display Java versions
+      debug:
+        msg: "{{ java_versions.results | map(attribute='stdout_lines') | list }}"
+
+    ## 🟢 Step 6: Install OpenSSH Server & Client
+    - name: Install OpenSSH Server & Client
       apt:
         name:
-          - default-jdk
-          - default-jre
+          - openssh-server
+          - openssh-client
         state: present
 
-    - name: Verify Java installation
-      command: java -version
-      register: java_version
-      changed_when: false
-
-    - name: Display Java version
-      debug:
-        msg: "{{ java_version.stdout_lines }}"
-
-    ## 🟢 Étape 3 : Création de l'utilisateur Hadoop et gestion des permissions
-    - name: Ensure hadoop group exists
-      group:
-        name: "{{ hadoop_group }}"
-        state: present
-
-    - name: Ensure hadoop user exists
+    ## 🟢 Step 7: Create Hadoop User and Generate SSH Key
+    - name: Create Hadoop User and Generate SSH Key
       user:
         name: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+        comment: "{{ hadoop_full_name }}"
+        password: "{{ hadoop_password | password_hash('sha512') }}"
         shell: /bin/bash
         createhome: yes
-        home: "/home/{{ hadoop_user }}"
+        generate_ssh_key: yes
+        ssh_key_type: rsa
+        ssh_key_bits: 4096
+        ssh_key_file: ".ssh/id_rsa"
 
-    - name: Ensure Hadoop user has sudo privileges
-      copy:
-        dest: "/etc/sudoers.d/hadoop"
-        content: "{{ hadoop_user }} ALL=(ALL) NOPASSWD: ALL"
-        mode: "0440"
-
-    ## 🟢 Étape 4 : Correction des permissions des fichiers temporaires Ansible
-    - name: Fix temporary directory permissions for Ansible
-      command: mkdir -p /tmp/.ansible/tmp && chmod 777 /tmp/.ansible/tmp
-
-    ## 🟢 Étape 5 : Téléchargement et Installation de Hadoop 3.4.1
-    - name: Ensure /usr/local exists
+    ## 🟢 Step 8: Set Permissions for SSH Directory
+    - name: Set correct permissions for .ssh directory
       file:
-        path: "/usr/local"
-        state: directory
-        mode: "0755"
-
-    - name: Download Hadoop 3.4.1
-      get_url:
-        url: "{{ hadoop_url }}"
-        dest: "/tmp/hadoop.tar.gz"
-      retries: 3
-      delay: 10
-      register: download_result
-      until: download_result is succeeded
-
-    - name: Extract Hadoop
-      unarchive:
-        src: "/tmp/hadoop.tar.gz"
-        dest: "/usr/local/"
-        remote_src: yes
-
-    - name: Rename Hadoop directory
-      command: mv /usr/local/hadoop-3.4.1 /usr/local/hadoop
-      args:
-        removes: /usr/local/hadoop-3.4.1
-        creates: "{{ hadoop_home }}"
-
-    - name: Change ownership of Hadoop directory
-      file:
-        path: "{{ hadoop_home }}"
+        path: "/home/{{ hadoop_user }}/.ssh"
         state: directory
         owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        recurse: yes
+        group: "{{ hadoop_user }}"
+        mode: "0700"
 
-    ## 🟢 Étape 6 : Configuration des variables d'environnement Hadoop
-    - name: Set Hadoop environment variables in .bashrc
-      blockinfile:
-        path: "/home/{{ hadoop_user }}/.bashrc"
-        block: |
-          export HADOOP_HOME={{ hadoop_home }}
-          export HADOOP_INSTALL=$HADOOP_HOME
-          export HADOOP_MAPRED_HOME=$HADOOP_HOME
-          export HADOOP_COMMON_HOME=$HADOOP_HOME
-          export HADOOP_HDFS_HOME=$HADOOP_HOME
-          export YARN_HOME=$HADOOP_HOME
-          export HADOOP_COMMON_LIB_NATIVE_DIR=$HADOOP_HOME/lib/native
-          export PATH=$PATH:$HADOOP_HOME/sbin:$HADOOP_HOME/bin
-          export HADOOP_OPTS="-Djava.library.path=$HADOOP_HOME/lib/native"
+    ## 🟢 Step 9: Add public key to authorized_keys
+    - name: Copy public key to authorized_keys
+      copy:
+        remote_src: yes
+        src: "/home/{{ hadoop_user }}/.ssh/id_rsa.pub"
+        dest: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+        mode: "0600"
 
-    - name: Apply environment changes
-      shell: |
-        sudo -u {{ hadoop_user }} bash -c 'source /home/{{ hadoop_user }}/.bashrc'
-
-    ## 🟢 Étape 7 : Configuration de Java dans Hadoop
-    - name: Set JAVA_HOME in Hadoop environment
-      lineinfile:
-        path: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
-        regexp: '^export JAVA_HOME='
-        line: 'export JAVA_HOME={{ java_home }}'
-        state: present
-
-    ## 🟢 Étape 8 : Vérification de l'installation de Hadoop
-    - name: Check Hadoop version
-      command: "{{ hadoop_home }}/bin/hadoop version"
-      register: hadoop_version
+    ## 🟢 Step 10: Display SSH Keys
+    - name: Display public SSH key
+      become: yes
+      become_user: "{{ hadoop_user }}"
+      command: cat /home/{{ hadoop_user }}/.ssh/id_rsa.pub
+      register: public_key
       changed_when: false
 
-    - name: Display Hadoop version
+    - name: Show public SSH key
       debug:
-        msg: "{{ hadoop_version.stdout_lines }}"
-   
+        msg: "{{ public_key.stdout }}"
+
+    - name: Display private SSH key path
+      debug:
+        msg: "Private key is located at: /home/{{ hadoop_user }}/.ssh/id_rsa"
+
+    ## 🟢 Step 11: Download Hadoop
+    - name: Download Hadoop {{ hadoop_version }}
+      become: yes
+      become_user: "{{ hadoop_user }}"
+      get_url:
+        url: "{{ hadoop_download_url }}"
+        dest: "{{ hadoop_download_path }}"
+        mode: '0644'
+
+    ## 🟢 Step 12: Verify Hadoop Download
+    - name: Check Hadoop download
+      become: yes
+      become_user: "{{ hadoop_user }}"
+      stat:
+        path: "{{ hadoop_download_path }}"
+      register: hadoop_download
+
+    - name: Display Hadoop download status
+      debug:
+        msg: "Hadoop {{ hadoop_version }} downloaded successfully: {{ hadoop_download.stat.exists }}"
+
+    ## 🟢 Step 13: Extract Hadoop Tarball
+    - name: Extract Hadoop tarball
+      become: yes
+      become_user: "{{ hadoop_user }}"
+      unarchive:
+        src: "{{ hadoop_download_path }}"
+        dest: "{{ hadoop_extract_path }}"
+        remote_src: yes
+        creates: "{{ hadoop_extract_path }}/hadoop-{{ hadoop_version }}"
+
+    ## 🟢 Step 14: Verify Hadoop Extraction
+    - name: Check Hadoop extraction
+      become: yes
+      become_user: "{{ hadoop_user }}"
+      stat:
+        path: "{{ hadoop_extract_path }}/hadoop-{{ hadoop_version }}"
+      register: hadoop_extract
+
+    - name: Display Hadoop extraction status
+      debug:
+        msg: "Hadoop {{ hadoop_version }} extracted successfully: {{ hadoop_extract.stat.exists }}"
+
+    ## 🟢 Step 15: List Extracted Hadoop Directory Contents
+    - name: List Hadoop directory contents
+      become: yes
+      become_user: "{{ hadoop_user }}"
+      command: ls -la "{{ hadoop_extract_path }}/hadoop-{{ hadoop_version }}"
+      register: hadoop_dir_contents
+      changed_when: false
+
+    - name: Display Hadoop directory contents
+      debug:
+        msg: "{{ hadoop_dir_contents.stdout_lines }}"
