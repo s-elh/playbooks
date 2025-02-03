@@ -2,14 +2,14 @@
 - name: Install Java, SSH, and configure Hadoop user
   hosts: all
   become: yes
+
   vars:
     hadoop_user: "hdoop"
     hadoop_full_name: "hadoop"
     hadoop_password: "hadoop"
     hadoop_version: "3.4.0"
-    hadoop_download_url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-    hadoop_download_path: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
-    hadoop_extract_path: "/home/{{ hadoop_user }}"
+    hadoop_download_url: "https://dlcdn.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0.tar.gz"
+
   tasks:
     ## 🟢 Step 1: Fix Ansible Temporary File Permissions
     - name: Ensure Ansible can create temporary files
@@ -54,7 +54,7 @@
           - openssh-client
         state: present
 
-    ## 🟢 Step 7: Create Hadoop User and Generate SSH Key
+    ## 🟢 Step 7: Create Hadoop User with SSH Key
     - name: Create Hadoop User and Generate SSH Key
       user:
         name: "{{ hadoop_user }}"
@@ -86,73 +86,17 @@
         group: "{{ hadoop_user }}"
         mode: "0600"
 
-    ## 🟢 Step 10: Display SSH Keys
-    - name: Display public SSH key
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      command: cat /home/{{ hadoop_user }}/.ssh/id_rsa.pub
-      register: public_key
-      changed_when: false
-
-    - name: Show public SSH key
-      debug:
-        msg: "{{ public_key.stdout }}"
-
-    - name: Display private SSH key path
-      debug:
-        msg: "Private key is located at: /home/{{ hadoop_user }}/.ssh/id_rsa"
-
-    ## 🟢 Step 11: Download Hadoop
-    - name: Download Hadoop {{ hadoop_version }}
-      become: yes
-      become_user: "{{ hadoop_user }}"
+    ## 🟢 Step 10: Download Hadoop
+    - name: Download Hadoop 3.4.0
       get_url:
         url: "{{ hadoop_download_url }}"
-        dest: "{{ hadoop_download_path }}"
-        mode: '0644'
+        dest: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+        mode: "0644"
 
-    ## 🟢 Step 12: Verify Hadoop Download
-    - name: Check Hadoop download
-      become: yes
+    ## 🟢 Step 11: Extract Hadoop Archive
+    - name: Extract Hadoop 3.4.0
       become_user: "{{ hadoop_user }}"
-      stat:
-        path: "{{ hadoop_download_path }}"
-      register: hadoop_download
-
-    - name: Display Hadoop download status
-      debug:
-        msg: "Hadoop {{ hadoop_version }} downloaded successfully: {{ hadoop_download.stat.exists }}"
-
-    ## 🟢 Step 13: Extract Hadoop Tarball
-    - name: Extract Hadoop tarball
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      unarchive:
-        src: "{{ hadoop_download_path }}"
-        dest: "{{ hadoop_extract_path }}"
+      ansible.builtin.unarchive:
+        src: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/home/{{ hadoop_user }}/"
         remote_src: yes
-        creates: "{{ hadoop_extract_path }}/hadoop-{{ hadoop_version }}"
-
-    ## 🟢 Step 14: Verify Hadoop Extraction
-    - name: Check Hadoop extraction
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      stat:
-        path: "{{ hadoop_extract_path }}/hadoop-{{ hadoop_version }}"
-      register: hadoop_extract
-
-    - name: Display Hadoop extraction status
-      debug:
-        msg: "Hadoop {{ hadoop_version }} extracted successfully: {{ hadoop_extract.stat.exists }}"
-
-    ## 🟢 Step 15: List Extracted Hadoop Directory Contents
-    - name: List Hadoop directory contents
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      command: ls -la "{{ hadoop_extract_path }}/hadoop-{{ hadoop_version }}"
-      register: hadoop_dir_contents
-      changed_when: false
-
-    - name: Display Hadoop directory contents
-      debug:
-        msg: "{{ hadoop_dir_contents.stdout_lines }}"
