@@ -2,12 +2,10 @@
 - name: Install Java, SSH, and configure Hadoop user
   hosts: all
   become: yes
-
   vars:
     hadoop_user: "hdoop"
     hadoop_full_name: "hadoop"
     hadoop_password: "hadoop"
-
   tasks:
     ## 🟢 Step 1: Fix Ansible Temporary File Permissions
     - name: Ensure Ansible can create temporary files
@@ -52,17 +50,21 @@
           - openssh-client
         state: present
 
-    ## 🟢 Step 7: Create Hadoop User
-    - name: Create Hadoop User
+    ## 🟢 Step 7: Create Hadoop User with SSH Key
+    - name: Create Hadoop User and Generate SSH Key
       user:
         name: "{{ hadoop_user }}"
         comment: "{{ hadoop_full_name }}"
         password: "{{ hadoop_password | password_hash('sha512') }}"
         shell: /bin/bash
         createhome: yes
+        generate_ssh_key: yes
+        ssh_key_type: rsa
+        ssh_key_bits: 4096
+        ssh_key_file: ".ssh/id_rsa"
 
-    ## 🟢 Step 8: Ensure SSH Directory Exists with Correct Permissions
-    - name: Ensure .ssh directory exists for Hadoop user
+    ## 🟢 Step 8: Set Permissions for SSH Directory
+    - name: Set correct permissions for .ssh directory
       file:
         path: "/home/{{ hadoop_user }}/.ssh"
         state: directory
@@ -70,28 +72,12 @@
         group: "{{ hadoop_user }}"
         mode: "0700"
 
-    ## 🟢 Step 9: Generate SSH Key for Hadoop User (Using su)
-    - name: Generate SSH key pair manually
-      become: yes
-      become_method: su  # Use su instead of sudo
-      become_user: "{{ hadoop_user }}"
-      command: ssh-keygen -t rsa -P '' -f /home/{{ hadoop_user }}/.ssh/id_rsa
-      args:
-        creates: /home/{{ hadoop_user }}/.ssh/id_rsa
-
-    ## 🟢 Step 10: Add public key to authorized_keys
-    - name: Add public key to authorized_keys
-      become: yes
-      become_method: su  # Use su instead of sudo
-      become_user: "{{ hadoop_user }}"
-      shell: cat /home/{{ hadoop_user }}/.ssh/id_rsa.pub >> /home/{{ hadoop_user }}/.ssh/authorized_keys
-      args:
-        creates: /home/{{ hadoop_user }}/.ssh/authorized_keys
-
-    ## 🟢 Step 11: Set correct permissions on authorized_keys
-    - name: Set correct permissions for authorized_keys
-      file:
-        path: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
-        mode: "0600"
+    ## 🟢 Step 9: Add public key to authorized_keys
+    - name: Copy public key to authorized_keys
+      copy:
+        remote_src: yes
+        src: "/home/{{ hadoop_user }}/.ssh/id_rsa.pub"
+        dest: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
+        mode: "0600"
