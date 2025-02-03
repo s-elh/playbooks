@@ -9,7 +9,7 @@
     hadoop_password: "hadoop"
 
   tasks:
-    ## 🟢 Step 1: Update package lists
+    ## 🟢 Step 1: Update APT package lists
     - name: Update APT package lists
       apt:
         update_cache: yes
@@ -50,22 +50,19 @@
         shell: /bin/bash
         createhome: yes
 
-    ## 🟢 Step 6: Generate SSH Key for Hadoop User
-    - name: Generate SSH key pair
+    ## 🟢 Step 6: Generate SSH Key for Hadoop User (Using Command)
+    - name: Generate SSH key pair manually
       become_user: "{{ hadoop_user }}"
-      openssh_keypair:
-        path: "/home/{{ hadoop_user }}/.ssh/id_rsa"
-        type: rsa
-        size: 2048
-        state: present
-        force: no
+      command: ssh-keygen -t rsa -P '' -f /home/{{ hadoop_user }}/.ssh/id_rsa
+      args:
+        creates: /home/{{ hadoop_user }}/.ssh/id_rsa
 
     ## 🟢 Step 7: Authorize SSH Key
     - name: Add public key to authorized_keys
-      authorized_key:
-        user: "{{ hadoop_user }}"
-        state: present
-        key: "{{ lookup('file', '/home/' + hadoop_user + '/.ssh/id_rsa.pub') }}"
+      become_user: "{{ hadoop_user }}"
+      shell: cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+      args:
+        creates: /home/{{ hadoop_user }}/.ssh/authorized_keys
 
     ## 🟢 Step 8: Set correct permissions on authorized_keys
     - name: Set correct permissions for authorized_keys
