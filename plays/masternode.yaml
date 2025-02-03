@@ -1,46 +1,24 @@
-- name: Install kURL on Ubuntu
-  hosts: all
-  become: yes
-  gather_facts: yes
+---
+- hosts: all
   vars:
-    timeout: 7200
-    dns_servers:
-      - "8.8.8.8"
-      - "8.8.4.4"
-
+    slave_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'slave'}.collect{it.externalIp}"
+    proxy_url: "http://10.1.38.2:3128"
+  become: yes
   tasks:
-    - name: Configure DNS resolvers
+    - name: Configure HTTP proxy for apt
       copy:
         content: |
-          nameserver 8.8.8.8
-          nameserver 8.8.4.4
-        dest: /etc/resolv.conf
-        backup: yes
+          Acquire::http::Proxy "{{ proxy_url }}";
+          Acquire::https::Proxy "{{ proxy_url }}";
+        dest: /etc/apt/apt.conf.d/95proxies
 
-    - name: Disable swap
-      shell: |
-        swapoff -a
-        sed -i '/ swap / s/^/#/' /etc/fstab
-
-    - name: Install minimal required packages
-      environment:
-        DEBIAN_FRONTEND: noninteractive
-      apt:
-        name: curl
-        state: present
-        update_cache: yes
-      async: 300
-      poll: 5
-
-    - name: Install kURL
-      shell: |
-        echo "y" | curl -fsSL https://kurl.sh/fcc1994 | bash
-      args:
-        executable: /bin/bash
-      register: kurl_install
-      async: "{{ timeout }}"
-      poll: 30
-
-    - name: Display installation output
-      debug:
-        var: kurl_install
+    - name: Configure HTTP proxy for the environment
+      lineinfile:
+        path: /etc/environment
+        line: '{{ item }}'
+        create: yes
+      with_items:
+        - 'http_proxy={{ proxy_url }}'
+        - 'https_proxy={{ proxy_url }}'
+        - 'HTTP_PROXY={{ proxy_url }}'
+        - 'HTTPS_PROXY={{ proxy_url }}'
