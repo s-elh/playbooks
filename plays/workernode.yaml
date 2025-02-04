@@ -3,10 +3,12 @@
     - copy:
         src: "/root/hadoop-1.2.1-1.x86_64.rpm"
         dest: "/root/hadoop-1.rpm"
-        
+        remote_src: yes   # This tells Ansible that the source file is on the remote host
+    
     - copy:
         src: "/root/jdk-8u171-linux-x64.rpm"
         dest: "/root/jdk-1.rpm"
+        remote_src: yes   # Same here for jdk file
       
     - command: "rpm -i /root/jdk-1.rpm --force"
     
