@@ -10,16 +10,8 @@
     download_path: "/home/hdoop"
 
   tasks:
-    ## 🟢 Étape 1 : Créer l'utilisateur hdoop s'il n'existe pas
-    - name: Create Hadoop User
-      user:
-        name: "{{ hadoop_user }}"
-        password: "{{ hadoop_password | password_hash('sha512') }}"
-        shell: /bin/bash
-        createhome: yes
-
-    ## 🟢 Étape 2 : Assurer les permissions du dossier de téléchargement
-    - name: Ensure correct permissions on {{ download_path }}
+    ## 🟢 Étape 1 : Vérifier que le répertoire de l'utilisateur existe
+    - name: Ensure {{ download_path }} exists
       file:
         path: "{{ download_path }}"
         state: directory
@@ -27,7 +19,7 @@
         group: "{{ hadoop_user }}"
         mode: "0755"
 
-    ## 🟢 Étape 3 : Télécharger Hadoop en tant que hdoop
+    ## 🟢 Étape 2 : Télécharger Hadoop en tant que hdoop
     - name: Download Hadoop {{ hadoop_version }}
       become: yes
       become_user: "{{ hadoop_user }}"
@@ -36,7 +28,7 @@
         dest: "{{ download_path }}/hadoop-{{ hadoop_version }}.tar.gz"
         mode: "0644"
 
-    ## 🟢 Étape 4 : Extraire Hadoop en tant que hdoop
+    ## 🟢 Étape 3 : Extraire Hadoop en tant que hdoop
     - name: Extract Hadoop Archive
       become: yes
       become_user: "{{ hadoop_user }}"
