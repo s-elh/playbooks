@@ -1,102 +1,23 @@
 ---
-- name: Install Java, SSH, and configure Hadoop user
+- name: Download and Extract Hadoop
   hosts: all
   become: yes
-
   vars:
-    hadoop_user: "hdoop"
-    hadoop_full_name: "hadoop"
-    hadoop_password: "hadoop"
     hadoop_version: "3.4.0"
     hadoop_download_url: "https://dlcdn.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0.tar.gz"
-
+    download_path: "/home/hadoop"
+  
   tasks:
-    ## 🟢 Step 1: Fix Ansible Temporary File Permissions
-    - name: Ensure Ansible can create temporary files
-      set_fact:
-        ansible_become_flags: "-H -S"
-
-    ## 🟢 Step 2: Ensure /tmp has correct permissions
-    - name: Set correct permissions for /tmp
-      file:
-        path: /tmp
-        mode: "1777"
-
-    ## 🟢 Step 3: Update APT package lists
-    - name: Update APT package lists
-      apt:
-        update_cache: yes
-
-    ## 🟢 Step 4: Install OpenJDK 8
-    - name: Install OpenJDK 8
-      apt:
-        name: openjdk-8-jdk
-        state: present
-
-    ## 🟢 Step 5: Verify Java installation
-    - name: Check Java and Javac versions
-      command: "{{ item }}"
-      with_items:
-        - java -version
-        - javac -version
-      register: java_versions
-      changed_when: false
-
-    - name: Display Java versions
-      debug:
-        msg: "{{ java_versions.results | map(attribute='stdout_lines') | list }}"
-
-    ## 🟢 Step 6: Install OpenSSH Server & Client
-    - name: Install OpenSSH Server & Client
-      apt:
-        name:
-          - openssh-server
-          - openssh-client
-        state: present
-
-    ## 🟢 Step 7: Create Hadoop User with SSH Key
-    - name: Create Hadoop User and Generate SSH Key
-      user:
-        name: "{{ hadoop_user }}"
-        comment: "{{ hadoop_full_name }}"
-        password: "{{ hadoop_password | password_hash('sha512') }}"
-        shell: /bin/bash
-        createhome: yes
-        generate_ssh_key: yes
-        ssh_key_type: rsa
-        ssh_key_bits: 4096
-        ssh_key_file: ".ssh/id_rsa"
-
-    ## 🟢 Step 8: Set Permissions for SSH Directory
-    - name: Set correct permissions for .ssh directory
-      file:
-        path: "/home/{{ hadoop_user }}/.ssh"
-        state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-        mode: "0700"
-
-    ## 🟢 Step 9: Add public key to authorized_keys
-    - name: Copy public key to authorized_keys
-      copy:
-        remote_src: yes
-        src: "/home/{{ hadoop_user }}/.ssh/id_rsa.pub"
-        dest: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-        mode: "0600"
-
-    ## 🟢 Step 10: Download Hadoop
-    - name: Download Hadoop 3.4.0
+    ## 🟢 Étape 1 : Télécharger Hadoop
+    - name: Download Hadoop {{ hadoop_version }}
       get_url:
         url: "{{ hadoop_download_url }}"
-        dest: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "{{ download_path }}/hadoop-{{ hadoop_version }}.tar.gz"
         mode: "0644"
 
-    ## 🟢 Step 11: Extract Hadoop Archive
-    - name: Extract Hadoop 3.4.0
-      become_user: "{{ hadoop_user }}"
+    ## 🟢 Étape 2 : Extraire Hadoop
+    - name: Extract Hadoop Archive
       ansible.builtin.unarchive:
-        src: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/home/{{ hadoop_user }}/"
+        src: "{{ download_path }}/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "{{ download_path }}/"
         remote_src: yes
