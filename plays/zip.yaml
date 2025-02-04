@@ -1,4 +1,4 @@
-- name: Configure proxy, Install Java, and Configure Hadoop 3.4.1
+- name: Configure proxy and Install Hadoop 3.4.0
   hosts: all
   become: yes
   vars:
@@ -6,10 +6,9 @@
     hadoop_group: "hadoop"
     hadoop_home: "/usr/local/hadoop"
     java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
-    hadoop_url: "https://downloads.apache.org/hadoop/common/stable/hadoop-3.4.1.tar.gz"
-    slave_ip: "morpehus[instance][containers].findAll{it.containerTypeShortName == 'slave'}.collect{it.externalIp}"
+    hadoop_url: "https://dlcdn.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0.tar.gz"
     proxy_url: "http://10.1.38.2:3128"
-    
+
   tasks:
     ## 🟢 Étape 1 : Configuration du proxy
     - name: Configure HTTP proxy for apt
@@ -71,51 +70,18 @@
         content: "{{ hadoop_user }} ALL=(ALL) NOPASSWD: ALL"
         mode: "0440"
 
-    ## 🟢 Étape 4 : SSH Configuration and User Setup
-    - name: Install OpenSSH Server & Client
-      apt:
-        name:
-          - openssh-server
-          - openssh-client
-        state: present
+    ## 🟢 Étape 4 : Correction des permissions des fichiers temporaires Ansible
+    - name: Fix temporary directory permissions for Ansible
+      command: mkdir -p /tmp/.ansible/tmp && chmod 777 /tmp/.ansible/tmp
 
-    - name: Create Hadoop User and Generate SSH Key
-      user:
-        name: "{{ hadoop_user }}"
-        comment: "{{ hadoop_full_name }}"
-        password: "{{ hadoop_password | password_hash('sha512') }}"
-        shell: /bin/bash
-        createhome: yes
-        generate_ssh_key: yes
-        ssh_key_type: rsa
-        ssh_key_bits: 4096
-        ssh_key_file: ".ssh/id_rsa"
-
-    - name: Set correct permissions for .ssh directory
-      file:
-        path: "/home/{{ hadoop_user }}/.ssh"
-        state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-        mode: "0700"
-
-    - name: Copy public key to authorized_keys
-      copy:
-        remote_src: yes
-        src: "/home/{{ hadoop_user }}/.ssh/id_rsa.pub"
-        dest: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-        mode: "0600"
-
-    ## 🟢 Étape 5 : Téléchargement et Installation de Hadoop 3.4.1
+    ## 🟢 Étape 5 : Téléchargement et Installation de Hadoop 3.4.0
     - name: Ensure /usr/local exists
       file:
         path: "/usr/local"
         state: directory
         mode: "0755"
 
-    - name: Download Hadoop 3.4.1
+    - name: Download Hadoop 3.4.0
       get_url:
         url: "{{ hadoop_url }}"
         dest: "/tmp/hadoop.tar.gz"
@@ -128,12 +94,11 @@
       unarchive:
         src: "/tmp/hadoop.tar.gz"
         dest: "/usr/local/"
-        remote_src: yes
 
     - name: Rename Hadoop directory
-      command: mv /usr/local/hadoop-3.4.1 /usr/local/hadoop
+      command: mv /usr/local/hadoop-3.4.0 /usr/local/hadoop
       args:
-        removes: /usr/local/hadoop-3.4.1
+        removes: /usr/local/hadoop-3.4.0
         creates: "{{ hadoop_home }}"
 
     - name: Change ownership of Hadoop directory
