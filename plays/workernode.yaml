@@ -8,7 +8,7 @@
       
      - command: "rpm -i /root/jdk-1.rpm --force"
           
-     - command: "rpm -i /root/hadoop-1.rpm --force"- hosts: master
+     - command: "rpm -i /root/hadoop-1.rpm --force"
    tasks:
      - file:
          state: directory
@@ -16,7 +16,7 @@
          src: "/ansible-hadoop-ws/hdfs-site-master.xml"
          dest: "/etc/hadoop/hdfs-site.xml"- copy:
          src: "/ansible-hadoop-ws/core-site.xml"
-         dest: "/etc/hadoop/core-site.xml"- shell: "echo Y|hadoop namenode -format"- shell: "hadoop-daemon.sh start namenode"- hosts: slave
+         dest: "/etc/hadoop/core-site.xml"- shell: "echo Y|hadoop namenode -format"- shell: "hadoop-daemon.sh start namenode"
    tasks:
      - file:
          state: directory
