@@ -1,181 +1,108 @@
 ---
-- name: Configure proxy, install Java, SSH, and setup Hadoop 3.4.1
+- name: Setup Hadoop Cluster Nodes
   hosts: all
   become: yes
   vars:
-    hadoop_user: "hadoop"
-    hadoop_group: "hadoop"
-    hadoop_home: "/usr/local/hadoop"
-    java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
-    hadoop_url: "https://downloads.apache.org/hadoop/common/stable/hadoop-3.4.1.tar.gz"
-    proxy_url: "http://10.1.38.2:3128"
+    hadoop_version: "3.4.0"
+    hadoop_user: "hdoop"
+    download_dir: "/home/{{ hadoop_user }}/Downloads"
+    hadoop_home: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}"
 
   tasks:
-    ## 🟢 Step 1: Configure Proxy
-    - name: Configure HTTP proxy for apt
-      copy:
-        content: |
-          Acquire::http::Proxy "{{ proxy_url }}";
-          Acquire::https::Proxy "{{ proxy_url }}";
-        dest: /etc/apt/apt.conf.d/95proxies
+    - name: Stop firewalld service
+      service:
+        name: firewalld
+        state: stopped
+        enabled: no
+      ignore_errors: yes
 
-    - name: Configure HTTP proxy for the environment
-      lineinfile:
-        path: /etc/environment
-        line: '{{ item }}'
-        create: yes
-      with_items:
-        - 'http_proxy={{ proxy_url }}'
-        - 'https_proxy={{ proxy_url }}'
-        - 'HTTP_PROXY={{ proxy_url }}'
-        - 'HTTPS_PROXY={{ proxy_url }}'
-
-    ## 🟢 Step 2: Fix Ansible Temporary File Permissions
-    - name: Ensure Ansible can create temporary files
-      set_fact:
-        ansible_become_flags: "-H -S"
-
-    - name: Set correct permissions for /tmp
+- name: Configure NameNode
+  hosts: namenode
+  become: yes
+  vars_prompt:
+    - name: namenode_dir
+      private: no
+      prompt: "Enter location directory path for Name Node"
+  tasks:
+    - name: Create NameNode Directory
       file:
-        path: /tmp
-        mode: "1777"
-
-    ## 🟢 Step 3: Update System and Install Java & SSH
-    - name: Update package lists
-      apt:
-        update_cache: yes
-
-    - name: Install Java and SSH
-      apt:
-        name:
-          - openjdk-8-jdk
-          - default-jdk
-          - default-jre
-          - openssh-server
-          - openssh-client
-        state: present
-
-    ## 🟢 Step 4: Verify Java installation (Fixed Version)
-    - name: Verify Java installation
-      command: "{{ item }}"
-      with_items:
-        - java -version
-        - javac -version
-      register: java_version
-      changed_when: false
-      ignore_errors: true  # Prevents playbook failure if Java is not found
-
-    - name: Display Java version
-      debug:
-        msg: "{{ java_version.stdout_lines | default('Java version check failed or no output') }}"
-
-    ## 🟢 Step 5: Create Hadoop User with SSH Key
-    - name: Ensure Hadoop group exists
-      group:
-        name: "{{ hadoop_group }}"
-        state: present
-
-    - name: Ensure Hadoop user exists with SSH Key
-      user:
-        name: "{{ hadoop_user }}"
-        comment: "Hadoop User"
-        group: "{{ hadoop_group }}"
-        shell: /bin/bash
-        createhome: yes
-        home: "/home/{{ hadoop_user }}"
-        generate_ssh_key: yes
-        ssh_key_type: rsa
-        ssh_key_bits: 4096
-        ssh_key_file: ".ssh/id_rsa"
-
-    - name: Set correct permissions for .ssh directory
-      file:
-        path: "/home/{{ hadoop_user }}/.ssh"
+        path: "{{ namenode_dir }}"
         state: directory
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
-        mode: "0700"
+        mode: '0750'
 
-    - name: Copy public key to authorized_keys
-      copy:
-        remote_src: yes
-        src: "/home/{{ hadoop_user }}/.ssh/id_rsa.pub"
-        dest: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-        mode: "0600"
-
-    ## 🟢 Step 6: Download and Install Hadoop 3.4.1
-    - name: Ensure /usr/local exists
-      file:
-        path: "/usr/local"
-        state: directory
-        mode: "0755"
-
-    - name: Download Hadoop 3.4.1
-      get_url:
-        url: "{{ hadoop_url }}"
-        dest: "/tmp/hadoop.tar.gz"
-        mode: "0644"
-      retries: 3
-      delay: 10
-      register: download_result
-      until: download_result is succeeded
-
-    - name: Extract Hadoop
-      unarchive:
-        src: "/tmp/hadoop.tar.gz"
-        dest: "/usr/local/"
-        remote_src: yes
-
-    - name: Rename Hadoop directory
-      command: mv /usr/local/hadoop-3.4.1 /usr/local/hadoop
-      args:
-        removes: /usr/local/hadoop-3.4.1
-        creates: "{{ hadoop_home }}"
-
-    - name: Change ownership of Hadoop directory
-      file:
-        path: "{{ hadoop_home }}"
-        state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        recurse: yes
-
-    ## 🟢 Step 7: Configure Hadoop Environment Variables
-    - name: Set Hadoop environment variables in .bashrc
+    - name: Configure hdfs-site.xml for NameNode
       blockinfile:
-        path: "/home/{{ hadoop_user }}/.bashrc"
+        path: "{{ hadoop_home }}/etc/hadoop/hdfs-site.xml"
+        insertafter: "<configuration>"
         block: |
-          export HADOOP_HOME={{ hadoop_home }}
-          export HADOOP_INSTALL=$HADOOP_HOME
-          export HADOOP_MAPRED_HOME=$HADOOP_HOME
-          export HADOOP_COMMON_HOME=$HADOOP_HOME
-          export HADOOP_HDFS_HOME=$HADOOP_HOME
-          export YARN_HOME=$HADOOP_HOME
-          export HADOOP_COMMON_LIB_NATIVE_DIR=$HADOOP_HOME/lib/native
-          export PATH=$PATH:$HADOOP_HOME/sbin:$HADOOP_HOME/bin
-          export HADOOP_OPTS="-Djava.library.path=$HADOOP_HOME/lib/native"
+          <property>
+              <name>dfs.namenode.name.dir</name>
+              <value>{{ namenode_dir }}</value>
+          </property>
+          <property>
+              <name>dfs.replication</name>
+              <value>3</value>
+          </property>
 
-    - name: Apply environment changes
-      shell: |
-        sudo -u {{ hadoop_user }} bash -c 'source /home/{{ hadoop_user }}/.bashrc'
+    - name: Configure core-site.xml for NameNode
+      blockinfile:
+        path: "{{ hadoop_home }}/etc/hadoop/core-site.xml"
+        insertafter: "<configuration>"
+        block: |
+          <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://{{ groups['namenode'][0] }}:9000</value>
+          </property>
 
-    ## 🟢 Step 8: Set JAVA_HOME in Hadoop Configuration
-    - name: Set JAVA_HOME in Hadoop environment
-      lineinfile:
-        path: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
-        regexp: '^export JAVA_HOME='
-        line: 'export JAVA_HOME={{ java_home }}'
-        state: present
+    - name: Format NameNode
+      become_user: "{{ hadoop_user }}"
+      command: "{{ hadoop_home }}/bin/hdfs namenode -format -force"
+      ignore_errors: yes
 
-    ## 🟢 Step 9: Verify Hadoop Installation
-    - name: Check Hadoop version
-      command: "{{ hadoop_home }}/bin/hadoop version"
-      register: hadoop_version
-      changed_when: false
-      ignore_errors: true  # Prevents failure if Hadoop is not installed correctly
+    - name: Start NameNode daemon
+      become_user: "{{ hadoop_user }}"
+      command: "{{ hadoop_home }}/bin/hdfs --daemon start namenode"
+      ignore_errors: yes
 
-    - name: Display Hadoop version
-      debug:
-        msg: "{{ hadoop_version.stdout_lines | default('Hadoop version check failed or no output') }}"
+- name: Configure DataNode
+  hosts: datanode
+  become: yes
+  vars_prompt:
+    - name: datanode_dir
+      private: no
+      prompt: "Enter location directory path for Data Node"
+  tasks:
+    - name: Create DataNode Directory
+      file:
+        path: "{{ datanode_dir }}"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+        mode: '0750'
+
+    - name: Configure hdfs-site.xml for DataNode
+      blockinfile:
+        path: "{{ hadoop_home }}/etc/hadoop/hdfs-site.xml"
+        insertafter: "<configuration>"
+        block: |
+          <property>
+              <name>dfs.datanode.data.dir</name>
+              <value>{{ datanode_dir }}</value>
+          </property>
+
+    - name: Configure core-site.xml for DataNode
+      blockinfile:
+        path: "{{ hadoop_home }}/etc/hadoop/core-site.xml"
+        insertafter: "<configuration>"
+        block: |
+          <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://{{ groups['namenode'][0] }}:9000</value>
+          </property>
+
+    - name: Start DataNode daemon
+      become_user: "{{ hadoop_user }}"
+      command: "{{ hadoop_home }}/bin/hdfs --daemon start datanode"
+      ignore_errors: yes
