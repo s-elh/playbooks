@@ -2,14 +2,44 @@
 - name: Setup Hadoop Cluster Nodes
   hosts: all
   become: yes
+  become_user: hdoop
   vars:
     hadoop_version: "3.4.0"
-    hadoop_user: "hdoop"
-    download_dir: "/home/{{ hadoop_user }}/Downloads"
-    hadoop_home: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}"
+    hadoop_home: "/home/hdoop/hadoop-{{ hadoop_version }}"
+    hadoop_download_url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+    hadoop_download_path: "/home/hdoop/hadoop-{{ hadoop_version }}.tar.gz"
 
   tasks:
+    ## 🟢 Step 1: Cleanup old Hadoop installation
+    - name: Remove old Hadoop installation
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - "/home/hdoop/hadoop-*"
+        - "/home/hdoop/tmpdata"
+        - "/home/hdoop/namenode"
+        - "/home/hdoop/datanode"
+
+    ## 🟢 Step 2: Download new Hadoop
+    - name: Download Hadoop {{ hadoop_version }}
+      get_url:
+        url: "{{ hadoop_download_url }}"
+        dest: "{{ hadoop_download_path }}"
+        mode: '0644'
+
+    ## 🟢 Step 3: Extract Hadoop
+    - name: Extract Hadoop tarball
+      unarchive:
+        src: "{{ hadoop_download_path }}"
+        dest: "/home/hdoop"
+        remote_src: yes
+        creates: "{{ hadoop_home }}"
+
+    ## 🟢 Step 4: Stop firewalld service
     - name: Stop firewalld service
+      become: yes
+      become_user: root
       service:
         name: firewalld
         state: stopped
@@ -19,6 +49,7 @@
 - name: Configure NameNode
   hosts: namenode
   become: yes
+  become_user: hdoop
   vars_prompt:
     - name: namenode_dir
       private: no
@@ -28,8 +59,8 @@
       file:
         path: "{{ namenode_dir }}"
         state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
+        owner: hdoop
+        group: hdoop
         mode: '0750'
 
     - name: Configure hdfs-site.xml for NameNode
@@ -57,18 +88,17 @@
           </property>
 
     - name: Format NameNode
-      become_user: "{{ hadoop_user }}"
       command: "{{ hadoop_home }}/bin/hdfs namenode -format -force"
       ignore_errors: yes
 
     - name: Start NameNode daemon
-      become_user: "{{ hadoop_user }}"
       command: "{{ hadoop_home }}/bin/hdfs --daemon start namenode"
       ignore_errors: yes
 
 - name: Configure DataNode
   hosts: datanode
   become: yes
+  become_user: hdoop
   vars_prompt:
     - name: datanode_dir
       private: no
@@ -78,8 +108,8 @@
       file:
         path: "{{ datanode_dir }}"
         state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
+        owner: hdoop
+        group: hdoop
         mode: '0750'
 
     - name: Configure hdfs-site.xml for DataNode
@@ -103,6 +133,5 @@
           </property>
 
     - name: Start DataNode daemon
-      become_user: "{{ hadoop_user }}"
       command: "{{ hadoop_home }}/bin/hdfs --daemon start datanode"
       ignore_errors: yes
