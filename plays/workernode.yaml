@@ -1,22 +1,45 @@
 ---
-- name: Download and Extract Hadoop
+- name: Download and Extract Hadoop as hdoop user
   hosts: all
   become: yes
   vars:
+    hadoop_user: "hdoop"
+    hadoop_password: "hadoop"
     hadoop_version: "3.4.0"
     hadoop_download_url: "https://dlcdn.apache.org/hadoop/common/hadoop-3.4.0/hadoop-3.4.0.tar.gz"
-    download_path: "/home/hadoop"
-  
+    download_path: "/home/hdoop"
+
   tasks:
-    ## 🟢 Étape 1 : Télécharger Hadoop
+    ## 🟢 Étape 1 : Créer l'utilisateur hdoop s'il n'existe pas
+    - name: Create Hadoop User
+      user:
+        name: "{{ hadoop_user }}"
+        password: "{{ hadoop_password | password_hash('sha512') }}"
+        shell: /bin/bash
+        createhome: yes
+
+    ## 🟢 Étape 2 : Assurer les permissions du dossier de téléchargement
+    - name: Ensure correct permissions on {{ download_path }}
+      file:
+        path: "{{ download_path }}"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+        mode: "0755"
+
+    ## 🟢 Étape 3 : Télécharger Hadoop en tant que hdoop
     - name: Download Hadoop {{ hadoop_version }}
+      become: yes
+      become_user: "{{ hadoop_user }}"
       get_url:
         url: "{{ hadoop_download_url }}"
         dest: "{{ download_path }}/hadoop-{{ hadoop_version }}.tar.gz"
         mode: "0644"
 
-    ## 🟢 Étape 2 : Extraire Hadoop
+    ## 🟢 Étape 4 : Extraire Hadoop en tant que hdoop
     - name: Extract Hadoop Archive
+      become: yes
+      become_user: "{{ hadoop_user }}"
       ansible.builtin.unarchive:
         src: "{{ download_path }}/hadoop-{{ hadoop_version }}.tar.gz"
         dest: "{{ download_path }}/"
