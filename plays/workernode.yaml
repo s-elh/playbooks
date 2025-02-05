@@ -1,45 +1,154 @@
-- hosts: all
+---
+- name: Prepare Hadoop Installation
+  hosts: all
+  become: yes
+  vars:
+    hadoop_user: "hdoop"
+    hadoop_group: "hadoopgroup"
+    hadoop_home: "/home/hdoop"
+    hadoop_version: "3.3.6"
+    java_version: "11"
+    hadoop_mirrors:
+      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+
+  pre_tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+
+    - name: Install required system packages
+      apt:
+        name:
+          - wget
+          - software-properties-common
+        state: present
+
+    - name: Install Java
+      apt:
+        name:
+          - openjdk-{{ java_version }}-jdk
+          - openjdk-{{ java_version }}-jre
+        state: present
+
+    - name: Set Java environment variables
+      blockinfile:
+        path: /etc/environment
+        block: |
+          JAVA_HOME=/usr/lib/jvm/java-{{ java_version }}-openjdk-amd64
+          PATH="$PATH:$JAVA_HOME/bin"
+        create: yes
+
+    - name: Verify Java installation
+      command: java -version
+      register: java_version_output
+      changed_when: false
+
+    - name: Display Java version
+      debug:
+        var: java_version_output.stderr_lines
+
+    - name: Ensure group exists
+      group:
+        name: "{{ hadoop_group }}"
+        state: present
+
+    - name: Create Hadoop user
+      user:
+        name: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        home: "{{ hadoop_home }}"
+        shell: /bin/bash
+        create_home: yes
+        state: present
+
   tasks:
-    - copy:
-        src: "/root/hadoop-1.2.1-1.x86_64.rpm"
-        dest: "/root/hadoop-1.rpm"
-        remote_src: yes   # This tells Ansible that the source file is on the remote host
-    
-    - copy:
-        src: "/root/jdk-8u171-linux-x64.rpm"
-        dest: "/root/jdk-1.rpm"
-        remote_src: yes   # Same here for jdk file
-      
-    - command: "rpm -i /root/jdk-1.rpm --force"
-    
-    - command: "rpm -i /root/hadoop-1.rpm --force"
-
-    - file:
+    - name: Create Hadoop download directory
+      file:
+        path: "{{ hadoop_home }}/downloads"
         state: directory
-        path: "/NN"
-      
-    - copy:
-        src: "/ansible-hadoop-ws/hdfs-site-master.xml"
-        dest: "/etc/hadoop/hdfs-site.xml"
-      
-    - copy:
-        src: "/ansible-hadoop-ws/core-site.xml"
-        dest: "/etc/hadoop/core-site.xml"
-    
-    - shell: "bash -c 'echo Y | hadoop namenode -format'"
-    
-    - shell: "bash -c 'hadoop-daemon.sh start namenode'"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0755'
 
-    - file:
+    - name: Download Hadoop using wget with multiple mirrors
+      shell: |
+        set -o pipefail
+        for mirror in {{ hadoop_mirrors | join(' ') }}; do
+          wget --tries=3 \
+               --timeout=300 \
+               --no-check-certificate \
+               -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" \
+               "$mirror" && exit 0
+        done
+        exit 1
+      args:
+        creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+        executable: /bin/bash
+      register: wget_download
+      changed_when: wget_download.rc == 0
+      failed_when: wget_download.rc != 0
+
+    - name: Verify downloaded file
+      stat:
+        path: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+      register: hadoop_download_file
+
+    - name: Check download file size
+      assert:
+        that:
+          - hadoop_download_file.stat.exists
+          - hadoop_download_file.stat.size > 100000000  # Check if file is larger than 100MB
+        fail_msg: "Download failed or file is too small"
+
+    - name: Extract Hadoop archive
+      unarchive:
+        src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "{{ hadoop_home }}"
+        remote_src: yes
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    # Nouvelles tâches de configuration post-extraction
+    - name: Move Hadoop directory to /usr/local
+      command: mv "{{ hadoop_home }}/hadoop-{{ hadoop_version }}" /usr/local/hadoop
+      args:
+        creates: /usr/local/hadoop
+        removes: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
+
+    - name: Create logs directory in Hadoop installation
+      file:
+        path: /usr/local/hadoop/logs
         state: directory
-        dest: "/DN"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0755'
 
-    - copy:
-        src: "/ansible-hadoop-ws/hdfs-site-slave.xml"
-        dest: "/etc/hadoop/hdfs-site.xml"
-    
-    - copy:
-        src: "/ansible-hadoop-ws/core-site.xml"
-        dest: "/etc/hadoop/core-site.xml"
-    
-    - shell: "bash -c 'source /home/hadoop/.bashrc'"
+    - name: Set recursive ownership of Hadoop directory
+      file:
+        path: /usr/local/hadoop
+        state: directory
+        recurse: yes
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Set Hadoop environment variables
+      blockinfile:
+        path: "{{ hadoop_home }}/.bashrc"
+        block: |
+          export HADOOP_HOME="/usr/local/hadoop"
+          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+        create: yes
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Verify Hadoop installation
+      stat:
+        path: /usr/local/hadoop
+      register: hadoop_dir
+
+    - name: Fail if Hadoop directory does not exist
+      fail:
+        msg: "Hadoop installation failed - directory not found"
+      when: not hadoop_dir.stat.exists
