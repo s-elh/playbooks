@@ -7,7 +7,7 @@
     hadoop_user: "hdoop"
     hadoop_full_name: "hadoop"
     hadoop_password: "hadoop"
-    hadoop_version: "3.4.0"
+    hadoop_version: "3.3.6"
     ansible_ssh_pipelining: true
 
   pre_tasks:
