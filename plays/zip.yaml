@@ -7,10 +7,17 @@
     hadoop_group: "hadoopgroup"
     hadoop_home: "/home/hdoop"
     hadoop_version: "3.3.6"
-    hadoop_url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-    ansible_ssh_pipelining: true
+    hadoop_mirrors:
+      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
   pre_tasks:
+    - name: Install wget
+      package:
+        name: wget
+        state: present
+
     - name: Ensure group exists
       group:
         name: "{{ hadoop_group }}"
@@ -25,14 +32,6 @@
         create_home: yes
         state: present
 
-    - name: Ensure user can use sudo without password
-      lineinfile:
-        path: /etc/sudoers.d/{{ hadoop_user }}
-        line: "{{ hadoop_user }} ALL=(ALL) NOPASSWD:ALL"
-        create: yes
-        validate: 'visudo -cf %s'
-        mode: 0440
-
   tasks:
     - name: Create Hadoop download directory
       file:
@@ -42,23 +41,35 @@
         group: "{{ hadoop_group }}"
         mode: '0755'
 
-    - name: Download Hadoop archive
-      get_url:
-        url: "{{ hadoop_url }}"
-        dest: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-        mode: '0644'
-        timeout: 120
-        validate_certs: yes
-      register: download_result
-      until: download_result is succeeded
-      retries: 3
-      delay: 5
+    - name: Download Hadoop using wget with multiple mirrors
+      shell: |
+        set -o pipefail
+        for mirror in {{ hadoop_mirrors | join(' ') }}; do
+          wget --tries=3 \
+               --timeout=300 \
+               --no-check-certificate \
+               -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" \
+               "$mirror" && exit 0
+        done
+        exit 1
+      args:
+        creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+        executable: /bin/bash
+      register: wget_download
+      changed_when: wget_download.rc == 0
+      failed_when: wget_download.rc != 0
 
-    - name: Ensure correct ownership of download file
-      file:
+    - name: Verify downloaded file
+      stat:
         path: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+      register: hadoop_download_file
+
+    - name: Check download file size
+      assert:
+        that:
+          - hadoop_download_file.stat.exists
+          - hadoop_download_file.stat.size > 100000000  # Check if file is larger than 100MB
+        fail_msg: "Download failed or file is too small"
 
     - name: Extract Hadoop archive
       unarchive:
@@ -72,14 +83,6 @@
       stat:
         path: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
       register: hadoop_dir
-
-    - name: Ensure correct ownership of Hadoop directory
-      file:
-        path: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        recurse: yes
-        state: directory
 
     - name: Fail if Hadoop directory does not exist
       fail:
