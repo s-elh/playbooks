@@ -1,5 +1,5 @@
 ---
-- name: Install and Configure Hadoop
+- name: Install and Configure Hadoop on Morpheus
   hosts: all
   become: yes
   vars:
@@ -15,6 +15,10 @@
       - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
   tasks:
+    - name: Ensure Ansible collections are installed (posix)
+      command: ansible-galaxy collection install ansible.posix
+      changed_when: false
+
     - name: Install required packages (Java, SSH, Wget)
       apt:
         name:
@@ -34,11 +38,32 @@
         shell: /bin/bash
         create_home: yes
 
+    - name: Generate SSH key for Hadoop user
+      command: ssh-keygen -t rsa -b 2048 -f {{ hadoop_home }}/.ssh/id_rsa -N ""
+      args:
+        creates: "{{ hadoop_home }}/.ssh/id_rsa"
+
     - name: Ensure SSH access for Hadoop user
-      authorized_key:
+      ansible.posix.authorized_key:
         user: "{{ hadoop_user }}"
         state: present
         key: "{{ lookup('file', '{{ hadoop_home }}/.ssh/id_rsa.pub') }}"
+
+    - name: Fix permissions on SSH directory
+      file:
+        path: "{{ hadoop_home }}/.ssh"
+        state: directory
+        mode: '0700'
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Fix permissions on authorized_keys
+      file:
+        path: "{{ hadoop_home }}/.ssh/authorized_keys"
+        state: file
+        mode: '0600'
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
 
     - name: Allow passwordless SSH
       lineinfile:
@@ -63,15 +88,6 @@
         dest: "{{ hadoop_install_dir }}"
         remote_src: yes
         extra_opts: [--strip-components=1]
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-
-    - name: Set Hadoop environment variables
-      blockinfile:
-        path: "{{ hadoop_home }}/.bashrc"
-        block: |
-          export HADOOP_HOME="{{ hadoop_install_dir }}"
-          export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
 
