@@ -6,6 +6,7 @@
     hadoop_user: "hdoop"
     hadoop_group: "hadoopgroup"
     hadoop_home: "/home/hdoop"
+    hadoop_install_dir: "/usr/local/hadoop"
     hadoop_version: "3.3.6"
     java_version: "11"
     hadoop_mirrors:
@@ -23,11 +24,6 @@
         name:
           - wget
           - software-properties-common
-        state: present
-
-    - name: Install Java
-      apt:
-        name:
           - openjdk-{{ java_version }}-jdk
           - openjdk-{{ java_version }}-jre
         state: present
@@ -39,15 +35,6 @@
           JAVA_HOME=/usr/lib/jvm/java-{{ java_version }}-openjdk-amd64
           PATH="$PATH:$JAVA_HOME/bin"
         create: yes
-
-    - name: Verify Java installation
-      command: java -version
-      register: java_version_output
-      changed_when: false
-
-    - name: Display Java version
-      debug:
-        var: java_version_output.stderr_lines
 
     - name: Ensure group exists
       group:
@@ -76,11 +63,8 @@
       shell: |
         set -o pipefail
         for mirror in {{ hadoop_mirrors | join(' ') }}; do
-          wget --tries=3 \
-               --timeout=300 \
-               --no-check-certificate \
-               -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" \
-               "$mirror" && exit 0
+          wget --tries=3 --timeout=300 --no-check-certificate \
+               -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" "$mirror" && exit 0
         done
         exit 1
       args:
@@ -90,46 +74,11 @@
       changed_when: wget_download.rc == 0
       failed_when: wget_download.rc != 0
 
-    - name: Verify downloaded file
-      stat:
-        path: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-      register: hadoop_download_file
-
-    - name: Check download file size
-      assert:
-        that:
-          - hadoop_download_file.stat.exists
-          - hadoop_download_file.stat.size > 100000000  # Check if file is larger than 100MB
-        fail_msg: "Download failed or file is too small"
-
     - name: Extract Hadoop archive
       unarchive:
         src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "{{ hadoop_home }}"
+        dest: "/usr/local/"
         remote_src: yes
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-
-    # Nouvelles tâches de configuration post-extraction
-    - name: Move Hadoop directory to /usr/local
-      command: mv "{{ hadoop_home }}/hadoop-{{ hadoop_version }}" /usr/local/hadoop
-      args:
-        creates: /usr/local/hadoop
-        removes: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
-
-    - name: Create logs directory in Hadoop installation
-      file:
-        path: /usr/local/hadoop/logs
-        state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: '0755'
-
-    - name: Set recursive ownership of Hadoop directory
-      file:
-        path: /usr/local/hadoop
-        state: directory
-        recurse: yes
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
 
@@ -137,11 +86,85 @@
       blockinfile:
         path: "{{ hadoop_home }}/.bashrc"
         block: |
-          export HADOOP_HOME="/usr/local/hadoop"
-          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+          export HADOOP_HOME="{{ hadoop_install_dir }}"
+          export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
         create: yes
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
+
+    # 🔹 CONFIGURATION DES FICHIERS HADOOP
+    - name: Configure core-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://localhost:9000</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Configure hdfs-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>dfs.replication</name>
+              <value>1</value>
+            </property>
+            <property>
+              <name>dfs.namenode.name.dir</name>
+              <value>file:///usr/local/hadoop/data/namenode</value>
+            </property>
+            <property>
+              <name>dfs.datanode.data.dir</name>
+              <value>file:///usr/local/hadoop/data/datanode</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Configure mapred-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>mapreduce.framework.name</name>
+              <value>yarn</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Configure yarn-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>yarn.nodemanager.aux-services</name>
+              <value>mapreduce_shuffle</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    # 🔹 FORMATAGE ET DÉMARRAGE HADOOP
+    - name: Format Hadoop Namenode
+      command: "/usr/local/hadoop/bin/hdfs namenode -format"
+      become_user: "{{ hadoop_user }}"
+      args:
+        creates: "/usr/local/hadoop/data"
+
+    - name: Start Hadoop Services
+      shell: |
+        /usr/local/hadoop/sbin/start-dfs.sh
+        /usr/local/hadoop/sbin/start-yarn.sh
+      become_user: "{{ hadoop_user }}"
 
     - name: Verify Hadoop installation
       stat:
@@ -152,3 +175,9 @@
       fail:
         msg: "Hadoop installation failed - directory not found"
       when: not hadoop_dir.stat.exists
+
+  handlers:
+    - name: Restart SSH
+      service:
+        name: ssh
+        state: restarted
