@@ -19,7 +19,7 @@
         
     - name: Print variables
       debug:
-        msg: "{{ ['morpheus']['evars']['DB_IP'] }}"
+        msg: "{{ morpheus['evars']['DB_IP'] }}"
   
     - name: Install common packages
       apt:
