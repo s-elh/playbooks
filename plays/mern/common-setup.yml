@@ -1,0 +1,29 @@
+---
+- name: Common System Setup
+  hosts: all
+  become: true
+  gather_facts: true
+  
+  tasks:
+    - name: apt conf
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+
+    - name: Ensure /etc/resolv.conf contains the required nameserver
+      copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 8.8.8.8
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install common packages
+      apt:
+        name:
+          - gnupg
+          - build-essential
+          - wget
+        state: present
+        update_cache: true
+        update_cache_retries: 5
+        update_cache_retry_max_delay: 12
