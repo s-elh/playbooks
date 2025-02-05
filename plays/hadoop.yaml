@@ -15,10 +15,6 @@
       - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
   tasks:
-    - name: Ensure Ansible collections are installed (posix)
-      command: ansible-galaxy collection install ansible.posix
-      changed_when: false
-
     - name: Install required packages (Java, SSH, Wget)
       apt:
         name:
@@ -42,14 +38,13 @@
       command: ssh-keygen -t rsa -b 2048 -f {{ hadoop_home }}/.ssh/id_rsa -N ""
       args:
         creates: "{{ hadoop_home }}/.ssh/id_rsa"
+      become_user: "{{ hadoop_user }}"
 
-    - name: Ensure SSH access for Hadoop user
-      ansible.posix.authorized_key:
-        user: "{{ hadoop_user }}"
-        state: present
-        key: "{{ lookup('file', '{{ hadoop_home }}/.ssh/id_rsa.pub') }}"
+    - name: Manually add SSH key for Hadoop user
+      command: "cat {{ hadoop_home }}/.ssh/id_rsa.pub >> {{ hadoop_home }}/.ssh/authorized_keys"
+      become_user: "{{ hadoop_user }}"
 
-    - name: Fix permissions on SSH directory
+    - name: Fix permissions on .ssh directory
       file:
         path: "{{ hadoop_home }}/.ssh"
         state: directory
