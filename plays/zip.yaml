@@ -3,9 +3,10 @@
   hosts: all
   become: yes
   vars:
-    hadoop_user: "hdoop"         # Modifié de "hadoop" à "hdoop"
+    hadoop_user: "hdoop"
     hadoop_full_name: "hadoop"
-    hadoop_password: "hadoop"     # Mot de passe défini comme "hadoop"
+    hadoop_password: "hadoop"
+    hadoop_version: "3.4.0"
   tasks:
     ## 🟢 Step 1: Fix Ansible Temporary File Permissions
     - name: Ensure Ansible can create temporary files
@@ -49,21 +50,50 @@
           - openssh-server
           - openssh-client
         state: present
+        update_cache: yes
 
-    ## 🟢 Step 7: Create Hadoop User with SSH Key
-    - name: Create Hadoop User and Generate SSH Key
+    ## 🟢 Step 7: Create Hadoop User
+    - name: Create Hadoop User
       user:
         name: "{{ hadoop_user }}"
         comment: "{{ hadoop_full_name }}"
         password: "{{ hadoop_password | password_hash('sha512') }}"
         shell: /bin/bash
         createhome: yes
+
+    ## 🟢 Step 8: Download and Install Hadoop
+    - name: Download Hadoop
+      get_url:
+        url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+      become_user: "{{ hadoop_user }}"
+
+    - name: Extract Hadoop archive
+      unarchive:
+        src: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/home/{{ hadoop_user }}"
+        remote_src: yes
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+      become_user: "{{ hadoop_user }}"
+
+    - name: Move Hadoop to /usr/local
+      command: "mv /home/{{ hadoop_user }}/hadoop-{{ hadoop_version }} /usr/local/hadoop"
+      args:
+        creates: "/usr/local/hadoop"
+
+    ## 🟢 Step 9: Generate SSH Key
+    - name: Generate SSH Key
+      user:
+        name: "{{ hadoop_user }}"
         generate_ssh_key: yes
         ssh_key_type: rsa
         ssh_key_bits: 4096
         ssh_key_file: ".ssh/id_rsa"
 
-    ## 🟢 Step 8: Set Permissions for SSH Directory
+    ## 🟢 Step 10: Set Permissions for SSH Directory
     - name: Set correct permissions for .ssh directory
       file:
         path: "/home/{{ hadoop_user }}/.ssh"
@@ -72,7 +102,7 @@
         group: "{{ hadoop_user }}"
         mode: "0700"
 
-    ## 🟢 Step 9: Add public key to authorized_keys
+    ## 🟢 Step 11: Add public key to authorized_keys
     - name: Copy public key to authorized_keys
       copy:
         remote_src: yes
