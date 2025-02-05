@@ -1,89 +1,80 @@
 ---
-- name: Install Java, SSH, and configure Hadoop user
+- name: Prepare Hadoop Installation
   hosts: all
   become: yes
-  become_method: sudo
   vars:
     hadoop_user: "hdoop"
-    hadoop_full_name: "hadoop"
-    hadoop_password: "hadoop"
+    hadoop_group: "hadoopgroup"
+    hadoop_home: "/home/hdoop"
     hadoop_version: "3.3.6"
-    ansible_ssh_pipelining: true
-    download_timeout: 600  # Augmentation du timeout à 10 minutes
-    hadoop_mirrors:
-      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+    hadoop_url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
   pre_tasks:
-    - name: Create temporary directory for Ansible
-      file:
-        path: /tmp/ansible-{{ hadoop_user }}
-        state: directory
-        mode: '0777'
-      become: yes
-
-    - name: Install required packages
-      apt:
-        name: 
-          - curl
-          - wget
+    - name: Ensure group exists
+      group:
+        name: "{{ hadoop_group }}"
         state: present
-      become: yes
+
+    - name: Create Hadoop user
+      user:
+        name: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        home: "{{ hadoop_home }}"
+        shell: /bin/bash
+        create_home: yes
+        state: present
+
+    - name: Ensure user can use sudo without password
+      lineinfile:
+        path: /etc/sudoers.d/{{ hadoop_user }}
+        line: "{{ hadoop_user }} ALL=(ALL) NOPASSWD:ALL"
+        create: yes
+        validate: 'visudo -cf %s'
+        mode: 0440
 
   tasks:
-    - name: Download Hadoop using wget
-      shell: |
-        for mirror in {{ hadoop_mirrors | join(' ') }}; do
-          wget --timeout={{ download_timeout }} --tries=3 -O "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz" "$mirror"
-          if [ $? -eq 0 ]; then
-            break
-          fi
-        done
-      args:
-        creates: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      register: wget_result
-      ignore_errors: yes
-
-    - name: Try curl if wget fails
-      shell: |
-        for mirror in {{ hadoop_mirrors | join(' ') }}; do
-          curl -L --connect-timeout 30 --max-time {{ download_timeout }} "$mirror" -o "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
-          if [ $? -eq 0 ]; then
-            break
-          fi
-        done
-      become: yes
-      become_user: "{{ hadoop_user }}"
-      when: wget_result is failed
-      register: curl_result
-
-    - name: Verify file exists and has content
-      stat:
-        path: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
-      register: hadoop_file
-
-    - name: Check file size
-      fail:
-        msg: "Downloaded file is empty or too small. Download may have failed."
-      when: hadoop_file.stat.exists and hadoop_file.stat.size < 1000000
-
-    - name: Set proper ownership
+    - name: Create Hadoop download directory
       file:
-        path: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+        path: "{{ hadoop_home }}/downloads"
+        state: directory
         owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0755'
+
+    - name: Download Hadoop archive
+      get_url:
+        url: "{{ hadoop_url }}"
+        dest: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
         mode: '0644'
+        timeout: 120
+        validate_certs: yes
       become: yes
+      become_user: "{{ hadoop_user }}"
+      register: download_result
+      until: download_result is succeeded
+      retries: 3
+      delay: 5
 
     - name: Extract Hadoop archive
       unarchive:
-        src: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/home/{{ hadoop_user }}"
+        src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "{{ hadoop_home }}"
         remote_src: yes
         owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
       become: yes
       become_user: "{{ hadoop_user }}"
+
+    - name: Verify Hadoop installation
+      stat:
+        path: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
+      register: hadoop_dir
+      become: yes
+      become_user: "{{ hadoop_user }}"
+
+    - name: Fail if Hadoop directory does not exist
+      fail:
+        msg: "Hadoop installation failed - directory not found"
+      when: not hadoop_dir.stat.exists
