@@ -50,6 +50,13 @@
         create_home: yes
         state: present
 
+    - name: Allow Hadoop user to run sudo without password
+      lineinfile:
+        path: /etc/sudoers
+        line: "{{ hadoop_user }} ALL=(ALL) NOPASSWD: ALL"
+        state: present
+        validate: 'visudo -cf %s'
+
   tasks:
     - name: Create Hadoop download directory
       file:
@@ -153,18 +160,16 @@
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
 
-    # 🔹 FORMATAGE ET DÉMARRAGE HADOOP
+    # 🔹 FORMATAGE ET DÉMARRAGE HADOOP AVEC `sudo -u`
     - name: Format Hadoop Namenode
-      command: "/usr/local/hadoop/bin/hdfs namenode -format"
-      become_user: "{{ hadoop_user }}"
+      command: sudo -u {{ hadoop_user }} -i /usr/local/hadoop/bin/hdfs namenode -format
       args:
         creates: "/usr/local/hadoop/data"
 
     - name: Start Hadoop Services
       shell: |
-        /usr/local/hadoop/sbin/start-dfs.sh
-        /usr/local/hadoop/sbin/start-yarn.sh
-      become_user: "{{ hadoop_user }}"
+        sudo -u {{ hadoop_user }} -i /usr/local/hadoop/sbin/start-dfs.sh
+        sudo -u {{ hadoop_user }} -i /usr/local/hadoop/sbin/start-yarn.sh
 
     - name: Verify Hadoop installation
       stat:
