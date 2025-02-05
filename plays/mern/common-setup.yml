@@ -19,8 +19,11 @@
         
     - name: Print variables
       debug:
-        msg: "{{ evars.DB_IP }} - {{ evars.DB_IP1 }} - {{ evars.DB_IP2 }}"
-    
+        msg: |
+          {{ hostvars[inventory_hostname]['morpheus']['evars']['DB_IP'] }}
+          {{ hostvars[inventory_hostname]['morpheus']['evars']['DB_IP1'] }}
+          {{ hostvars[inventory_hostname]['morpheus']['evars']['DB_IP2'] }}
+          
     - name: Install common packages
       apt:
         name:
