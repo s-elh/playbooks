@@ -8,6 +8,7 @@
     hadoop_home: "/home/hdoop"
     hadoop_version: "3.3.6"
     hadoop_url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+    ansible_ssh_pipelining: true
 
   pre_tasks:
     - name: Ensure group exists
@@ -45,17 +46,19 @@
       get_url:
         url: "{{ hadoop_url }}"
         dest: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
         mode: '0644'
         timeout: 120
         validate_certs: yes
-      become: yes
-      become_user: "{{ hadoop_user }}"
       register: download_result
       until: download_result is succeeded
       retries: 3
       delay: 5
+
+    - name: Ensure correct ownership of download file
+      file:
+        path: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
 
     - name: Extract Hadoop archive
       unarchive:
@@ -64,15 +67,19 @@
         remote_src: yes
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
-      become: yes
-      become_user: "{{ hadoop_user }}"
 
     - name: Verify Hadoop installation
       stat:
         path: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
       register: hadoop_dir
-      become: yes
-      become_user: "{{ hadoop_user }}"
+
+    - name: Ensure correct ownership of Hadoop directory
+      file:
+        path: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        recurse: yes
+        state: directory
 
     - name: Fail if Hadoop directory does not exist
       fail:
