@@ -1,12 +1,11 @@
 ---
-- name: Install and Configure Hadoop on Morpheus
+- name: Prepare Hadoop Installation
   hosts: all
   become: yes
   vars:
     hadoop_user: "hadoop"
     hadoop_group: "hadoopgroup"
-    hadoop_home: "/home/{{ hadoop_user }}"
-    hadoop_install_dir: "/usr/local/hadoop"
+    hadoop_home: "/home/hadoop"
     hadoop_version: "3.3.6"
     java_version: "11"
     hadoop_mirrors:
@@ -14,16 +13,37 @@
       - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
       - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
-  tasks:
-    - name: Install required packages (Java, SSH, Wget)
+  pre_tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+
+    - name: Install required system packages
+      apt:
+        name:
+          - wget
+          - software-properties-common
+        state: present
+
+    - name: Install Java
       apt:
         name:
           - openjdk-{{ java_version }}-jdk
-          - openssh-server
-          - rsync
-          - wget
+          - openjdk-{{ java_version }}-jre
         state: present
-        update_cache: yes
+
+    - name: Set Java environment variables
+      blockinfile:
+        path: /etc/environment
+        block: |
+          JAVA_HOME=/usr/lib/jvm/java-{{ java_version }}-openjdk-amd64
+          PATH="$PATH:$JAVA_HOME/bin"
+        create: yes
+
+    - name: Ensure group exists
+      group:
+        name: "{{ hadoop_group }}"
+        state: present
 
     - name: Create Hadoop user with password
       user:
@@ -33,7 +53,9 @@
         home: "{{ hadoop_home }}"
         shell: /bin/bash
         create_home: yes
+        state: present
 
+  tasks:
     - name: Generate SSH key for Hadoop user
       command: ssh-keygen -t rsa -b 2048 -f {{ hadoop_home }}/.ssh/id_rsa -N ""
       args:
@@ -60,35 +82,45 @@
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
 
-    - name: Allow passwordless SSH
-      lineinfile:
-        path: /etc/ssh/sshd_config
-        line: "PermitRootLogin yes"
-        state: present
-      notify: Restart SSH
+    - name: Download Hadoop using wget with multiple mirrors
+      shell: |
+        set -o pipefail
+        for mirror in {{ hadoop_mirrors | join(' ') }}; do
+          wget --tries=3 \
+               --timeout=300 \
+               --no-check-certificate \
+               -O "{{ hadoop_home }}/hadoop-{{ hadoop_version }}.tar.gz" \
+               "$mirror" && exit 0
+        done
+        exit 1
+      args:
+        creates: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}.tar.gz"
+        executable: /bin/bash
+      register: wget_download
+      changed_when: wget_download.rc == 0
+      failed_when: wget_download.rc != 0
 
-    - name: Download Hadoop using mirrors
-      get_url:
-        url: "{{ item }}"
-        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
-        mode: '0644'
-      loop: "{{ hadoop_mirrors }}"
-      register: download_result
-      ignore_errors: yes
-      until: download_result is succeeded
-
-    - name: Extract Hadoop
+    - name: Extract Hadoop archive
       unarchive:
-        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "{{ hadoop_install_dir }}"
+        src: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/usr/local/"
         remote_src: yes
-        extra_opts: [--strip-components=1]
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
 
-    - name: Configure core-site.xml
+    - name: Set Hadoop environment variables
+      blockinfile:
+        path: "{{ hadoop_home }}/.bashrc"
+        block: |
+          export HADOOP_HOME="/usr/local/hadoop"
+          export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
+        create: yes
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Configure Hadoop (core-site.xml)
       copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+        dest: "/usr/local/hadoop/etc/hadoop/core-site.xml"
         content: |
           <configuration>
             <property>
@@ -98,11 +130,10 @@
           </configuration>
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
-        mode: '0644'
 
-    - name: Configure hdfs-site.xml
+    - name: Configure Hadoop (hdfs-site.xml)
       copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
+        dest: "/usr/local/hadoop/etc/hadoop/hdfs-site.xml"
         content: |
           <configuration>
             <property>
@@ -120,48 +151,17 @@
           </configuration>
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
-        mode: '0644'
 
-    - name: Configure mapred-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>mapreduce.framework.name</name>
-              <value>yarn</value>
-            </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: '0644'
-
-    - name: Configure yarn-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>yarn.nodemanager.aux-services</name>
-              <value>mapreduce_shuffle</value>
-            </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: '0644'
-
-    - name: Format Namenode
-      command: "{{ hadoop_install_dir }}/bin/hdfs namenode -format"
+    - name: Format Hadoop Namenode
+      command: "/usr/local/hadoop/bin/hdfs namenode -format"
       become_user: "{{ hadoop_user }}"
       args:
-        creates: "{{ hadoop_install_dir }}/data"
+        creates: "/usr/local/hadoop/data"
 
-    - name: Start Hadoop DFS
-      shell: "{{ hadoop_install_dir }}/sbin/start-dfs.sh"
-      become_user: "{{ hadoop_user }}"
-
-    - name: Start Hadoop YARN
-      shell: "{{ hadoop_install_dir }}/sbin/start-yarn.sh"
+    - name: Start Hadoop Services
+      shell: |
+        /usr/local/hadoop/sbin/start-dfs.sh
+        /usr/local/hadoop/sbin/start-yarn.sh
       become_user: "{{ hadoop_user }}"
 
   handlers:
