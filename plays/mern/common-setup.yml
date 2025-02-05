@@ -19,8 +19,8 @@
         
     - name: Print variables
       debug:
-        msg: "{{ hostvars[inventory_hostname]['morpheus']['evars']['DB_IP'] | default('makanch') }}"
-          
+        msg: "{{ ['morpheus']['evars']['DB_IP'] }}"
+  
     - name: Install common packages
       apt:
         name:
