@@ -1,0 +1,159 @@
+---
+- name: Install and Configure Hadoop
+  hosts: all
+  become: yes
+  vars:
+    hadoop_user: "hadoop"
+    hadoop_group: "hadoopgroup"
+    hadoop_home: "/home/{{ hadoop_user }}"
+    hadoop_install_dir: "/usr/local/hadoop"
+    hadoop_version: "3.3.6"
+    java_version: "11"
+    hadoop_mirrors:
+      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+
+  tasks:
+    - name: Install required packages (Java, SSH, Wget)
+      apt:
+        name:
+          - openjdk-{{ java_version }}-jdk
+          - openssh-server
+          - rsync
+          - wget
+        state: present
+        update_cache: yes
+
+    - name: Create Hadoop user and group
+      user:
+        name: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        home: "{{ hadoop_home }}"
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Ensure SSH access for Hadoop user
+      authorized_key:
+        user: "{{ hadoop_user }}"
+        state: present
+        key: "{{ lookup('file', '{{ hadoop_home }}/.ssh/id_rsa.pub') }}"
+
+    - name: Allow passwordless SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "PermitRootLogin yes"
+        state: present
+      notify: Restart SSH
+
+    - name: Download Hadoop using mirrors
+      get_url:
+        url: "{{ item }}"
+        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        mode: '0644'
+      loop: "{{ hadoop_mirrors }}"
+      register: download_result
+      ignore_errors: yes
+      until: download_result is succeeded
+
+    - name: Extract Hadoop
+      unarchive:
+        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "{{ hadoop_install_dir }}"
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Set Hadoop environment variables
+      blockinfile:
+        path: "{{ hadoop_home }}/.bashrc"
+        block: |
+          export HADOOP_HOME="{{ hadoop_install_dir }}"
+          export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Configure core-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://localhost:9000</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0644'
+
+    - name: Configure hdfs-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>dfs.replication</name>
+              <value>1</value>
+            </property>
+            <property>
+              <name>dfs.namenode.name.dir</name>
+              <value>file:///usr/local/hadoop/data/namenode</value>
+            </property>
+            <property>
+              <name>dfs.datanode.data.dir</name>
+              <value>file:///usr/local/hadoop/data/datanode</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0644'
+
+    - name: Configure mapred-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>mapreduce.framework.name</name>
+              <value>yarn</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0644'
+
+    - name: Configure yarn-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>yarn.nodemanager.aux-services</name>
+              <value>mapreduce_shuffle</value>
+            </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0644'
+
+    - name: Format Namenode
+      command: "{{ hadoop_install_dir }}/bin/hdfs namenode -format"
+      become_user: "{{ hadoop_user }}"
+      args:
+        creates: "{{ hadoop_install_dir }}/data"
+
+    - name: Start Hadoop DFS
+      shell: "{{ hadoop_install_dir }}/sbin/start-dfs.sh"
+      become_user: "{{ hadoop_user }}"
+
+    - name: Start Hadoop YARN
+      shell: "{{ hadoop_install_dir }}/sbin/start-yarn.sh"
+      become_user: "{{ hadoop_user }}"
+
+  handlers:
+    - name: Restart SSH
+      service:
+        name: ssh
+        state: restarted
