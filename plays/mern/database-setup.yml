@@ -1,11 +1,11 @@
 ---
-- name: MongoDB Setup
-  hosts: database
+- name: Setup MongoDB Node
+  hosts: all
   become: true
   gather_facts: true
   vars:
     mongodb_version: "6.0"
-    
+
   tasks:
     - name: Add MongoDB GPG key
       apt_key:
@@ -36,8 +36,3 @@
         name: mongod
         state: started
         enabled: yes
-
-    - name: Wait for MongoDB to be ready
-      wait_for:
-        port: 27017
-        delay: 10
