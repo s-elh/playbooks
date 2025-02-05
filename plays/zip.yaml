@@ -9,8 +9,11 @@
     hadoop_password: "hadoop"
     hadoop_version: "3.3.6"
     ansible_ssh_pipelining: true
-    java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
-    hadoop_home: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}"
+    download_timeout: 600  # Augmentation du timeout à 10 minutes
+    hadoop_mirrors:
+      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
   pre_tasks:
     - name: Create temporary directory for Ansible
@@ -20,34 +23,60 @@
         mode: '0777'
       become: yes
 
-    - name: Install curl
+    - name: Install required packages
       apt:
-        name: curl
+        name: 
+          - curl
+          - wget
         state: present
       become: yes
 
   tasks:
-    # [Vos tâches existantes jusqu'à l'extraction de Hadoop]
-
-    - name: Try downloading Hadoop with get_url
-      get_url:
-        url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-        timeout: 60
+    - name: Download Hadoop using wget
+      shell: |
+        for mirror in {{ hadoop_mirrors | join(' ') }}; do
+          wget --timeout={{ download_timeout }} --tries=3 -O "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz" "$mirror"
+          if [ $? -eq 0 ]; then
+            break
+          fi
+        done
+      args:
+        creates: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
       become: yes
       become_user: "{{ hadoop_user }}"
-      register: download_result
+      register: wget_result
       ignore_errors: yes
 
-    - name: Download Hadoop with curl if get_url failed
+    - name: Try curl if wget fails
       shell: |
-        curl -L "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz" -o "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+        for mirror in {{ hadoop_mirrors | join(' ') }}; do
+          curl -L --connect-timeout 30 --max-time {{ download_timeout }} "$mirror" -o "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+          if [ $? -eq 0 ]; then
+            break
+          fi
+        done
       become: yes
       become_user: "{{ hadoop_user }}"
-      when: download_result is failed
+      when: wget_result is failed
       register: curl_result
+
+    - name: Verify file exists and has content
+      stat:
+        path: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+      register: hadoop_file
+
+    - name: Check file size
+      fail:
+        msg: "Downloaded file is empty or too small. Download may have failed."
+      when: hadoop_file.stat.exists and hadoop_file.stat.size < 1000000
+
+    - name: Set proper ownership
+      file:
+        path: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+        mode: '0644'
+      become: yes
 
     - name: Extract Hadoop archive
       unarchive:
@@ -58,46 +87,3 @@
         group: "{{ hadoop_user }}"
       become: yes
       become_user: "{{ hadoop_user }}"
-
-    # Ajout des configurations nécessaires pour le lancement du lien Hadoop
-    - name: Set Hadoop environment variables in .bashrc
-      blockinfile:
-        path: "/home/{{ hadoop_user }}/.bashrc"
-        block: |
-          export HADOOP_HOME={{ hadoop_home }}
-          export HADOOP_INSTALL=$HADOOP_HOME
-          export HADOOP_MAPRED_HOME=$HADOOP_HOME
-          export HADOOP_COMMON_HOME=$HADOOP_HOME
-          export HADOOP_HDFS_HOME=$HADOOP_HOME
-          export YARN_HOME=$HADOOP_HOME
-          export HADOOP_COMMON_LIB_NATIVE_DIR=$HADOOP_HOME/lib/native
-          export PATH=$PATH:$HADOOP_HOME/sbin:$HADOOP_HOME/bin
-          export HADOOP_OPTS="-Djava.library.path=$HADOOP_HOME/lib/native"
-      become: yes
-      become_user: "{{ hadoop_user }}"
-
-    - name: Apply environment changes
-      shell: |
-        source /home/{{ hadoop_user }}/.bashrc
-      become: yes
-      become_user: "{{ hadoop_user }}"
-
-    - name: Set JAVA_HOME in Hadoop environment
-      lineinfile:
-        path: "{{ hadoop_home }}/etc/hadoop/hadoop-env.sh"
-        regexp: '^export JAVA_HOME='
-        line: 'export JAVA_HOME={{ java_home }}'
-        state: present
-      become: yes
-      become_user: "{{ hadoop_user }}"
-
-    - name: Verify Hadoop Installation
-      command: "{{ hadoop_home }}/bin/hadoop version"
-      register: hadoop_version_check
-      changed_when: false
-      become: yes
-      become_user: "{{ hadoop_user }}"
-
-    - name: Display Hadoop version
-      debug:
-        msg: "{{ hadoop_version_check.stdout_lines }}"
