@@ -1,13 +1,12 @@
 ---
-- name: Frontend Setup
-  hosts: frontend
+- name: Setup Frontend Node
+  hosts: all
   become: true
   gather_facts: true
   vars:
     nodejs_version: "18.x"
     app_user: "{{ ansible_user }}"
-    app_dir: "/home/{{ app_user }}/myapp/frontend"
-    backend_host: "{{ hostvars['backend']['ansible_host'] }}"
+    frontend_dir: "/home/{{ app_user }}/frontend"
 
   tasks:
     - name: Add NodeSource repository
@@ -19,14 +18,9 @@
         name: nodejs
         state: present
 
-    - name: Install NGINX
-      apt:
-        name: nginx
-        state: present
-
     - name: Create frontend directory
       file:
-        path: "{{ app_dir }}"
+        path: "{{ frontend_dir }}"
         state: directory
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
@@ -35,8 +29,8 @@
     - name: Initialize React frontend
       command: npx create-react-app . --use-npm
       args:
-        chdir: "{{ app_dir }}"
-        creates: "{{ app_dir }}/package.json"
+        chdir: "{{ frontend_dir }}"
+        creates: "{{ frontend_dir }}/package.json"
       become: yes
       become_user: "{{ app_user }}"
       environment:
@@ -45,43 +39,66 @@
     - name: Install additional frontend dependencies
       command: npm install {{ item }}
       args:
-        chdir: "{{ app_dir }}"
+        chdir: "{{ frontend_dir }}"
       with_items:
         - web-vitals
         - "@babel/plugin-proposal-private-property-in-object"
-        - axios
+        - axios  # for API calls to backend
       become: yes
       become_user: "{{ app_user }}"
-
-    - name: Create NGINX configuration
-      template:
-        src: nginx.conf.j2
-        dest: /etc/nginx/sites-available/myapp
-        mode: '0644'
-      vars:
-        backend_url: "http://{{ backend_host }}:3000"
-
-    - name: Create symbolic link for NGINX config
-      file:
-        src: /etc/nginx/sites-available/myapp
-        dest: /etc/nginx/sites-enabled/myapp
-        state: link
-
-    - name: Remove default NGINX site
-      file:
-        path: /etc/nginx/sites-enabled/default
-        state: absent
 
     - name: Build React app
       command: npm run build
       args:
-        chdir: "{{ app_dir }}"
+        chdir: "{{ frontend_dir }}"
       become: yes
       become_user: "{{ app_user }}"
       environment:
         CI: "true"
 
-    - name: Reload NGINX
-      systemd:
-        name: nginx
-        state: reloaded
+    - name: Install and configure NGINX
+      block:
+        - name: Install NGINX
+          apt:
+            name: nginx
+            state: present
+
+        - name: Create NGINX configuration
+          copy:
+            content: |
+              server {
+                  listen 80;
+                  server_name localhost;
+                  root {{ frontend_dir }}/build;
+                  
+                  location / {
+                      try_files $uri $uri/ /index.html;
+                  }
+
+                  location /api {
+                      proxy_pass http://{{ backend_host }}:3000;
+                      proxy_http_version 1.1;
+                      proxy_set_header Upgrade $http_upgrade;
+                      proxy_set_header Connection 'upgrade';
+                      proxy_set_header Host $host;
+                      proxy_cache_bypass $http_upgrade;
+                  }
+              }
+            dest: /etc/nginx/sites-available/frontend
+            mode: '0644'
+
+        - name: Enable frontend site
+          file:
+            src: /etc/nginx/sites-available/frontend
+            dest: /etc/nginx/sites-enabled/frontend
+            state: link
+
+        - name: Remove default site
+          file:
+            path: /etc/nginx/sites-enabled/default
+            state: absent
+
+        - name: Reload NGINX
+          systemd:
+            name: nginx
+            state: reloaded
