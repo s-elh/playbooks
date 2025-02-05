@@ -1,0 +1,87 @@
+---
+- name: Frontend Setup
+  hosts: frontend
+  become: true
+  gather_facts: true
+  vars:
+    nodejs_version: "18.x"
+    app_user: "{{ ansible_user }}"
+    app_dir: "/home/{{ app_user }}/myapp/frontend"
+    backend_host: "{{ hostvars['backend']['ansible_host'] }}"
+
+  tasks:
+    - name: Add NodeSource repository
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_{{ nodejs_version }} | bash -
+    
+    - name: Install Node.js
+      apt:
+        name: nodejs
+        state: present
+
+    - name: Install NGINX
+      apt:
+        name: nginx
+        state: present
+
+    - name: Create frontend directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+
+    - name: Initialize React frontend
+      command: npx create-react-app . --use-npm
+      args:
+        chdir: "{{ app_dir }}"
+        creates: "{{ app_dir }}/package.json"
+      become: yes
+      become_user: "{{ app_user }}"
+      environment:
+        CI: "true"
+
+    - name: Install additional frontend dependencies
+      command: npm install {{ item }}
+      args:
+        chdir: "{{ app_dir }}"
+      with_items:
+        - web-vitals
+        - "@babel/plugin-proposal-private-property-in-object"
+        - axios
+      become: yes
+      become_user: "{{ app_user }}"
+
+    - name: Create NGINX configuration
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/sites-available/myapp
+        mode: '0644'
+      vars:
+        backend_url: "http://{{ backend_host }}:3000"
+
+    - name: Create symbolic link for NGINX config
+      file:
+        src: /etc/nginx/sites-available/myapp
+        dest: /etc/nginx/sites-enabled/myapp
+        state: link
+
+    - name: Remove default NGINX site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Build React app
+      command: npm run build
+      args:
+        chdir: "{{ app_dir }}"
+      become: yes
+      become_user: "{{ app_user }}"
+      environment:
+        CI: "true"
+
+    - name: Reload NGINX
+      systemd:
+        name: nginx
+        state: reloaded
