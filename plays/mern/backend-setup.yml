@@ -91,7 +91,7 @@
     - name: Create environment file
       copy:
         content: |
-          DB_HOST={{ morpheus['instance']['containers']['mern-database']['internalIp'] }}
+          DB_HOST="{{ morpheus['instance']['containers']['mern-database']['internalIp'] }}"
         dest: "{{ backend_dir }}/.env"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
