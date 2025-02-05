@@ -1,0 +1,68 @@
+---
+- name: Backend Setup
+  hosts: backend
+  become: true
+  gather_facts: true
+  vars:
+    nodejs_version: "18.x"
+    app_user: "{{ ansible_user }}"
+    app_dir: "/home/{{ app_user }}/myapp/backend"
+    mongodb_host: "{{ hostvars['database']['ansible_host'] }}"
+
+  tasks:
+    - name: Add NodeSource repository
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_{{ nodejs_version }} | bash -
+    
+    - name: Install Node.js
+      apt:
+        name: nodejs
+        state: present
+
+    - name: Create backend directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+
+    - name: Initialize backend package.json
+      copy:
+        content: |
+          {
+            "name": "mern-backend",
+            "version": "1.0.0",
+            "main": "index.js",
+            "dependencies": {
+              "express": "^4.18.2",
+              "mongodb": "^5.0.0",
+              "cors": "^2.8.5"
+            }
+          }
+        dest: "{{ app_dir }}/package.json"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+
+    - name: Install backend dependencies
+      command: npm install
+      args:
+        chdir: "{{ app_dir }}"
+      become: yes
+      become_user: "{{ app_user }}"
+
+    - name: Create Express server file
+      template:
+        src: server.js.j2
+        dest: "{{ app_dir }}/index.js"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+      vars:
+        mongodb_url: "mongodb://{{ mongodb_host }}:27017/mernapp"
+
+    - name: Start Node.js application with screen
+      shell: screen -dmS nodejs bash -c 'cd {{ app_dir }} && node index.js'
+      become: yes
+      become_user: "{{ app_user }}"
