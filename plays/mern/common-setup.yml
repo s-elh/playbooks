@@ -19,7 +19,7 @@
         
     - name: Print variables
       debug:
-        msg: "{{ morpheus['server']['internalIp'] }} , lookup('env', 'DB_IP') , {{ morpheus['container']['internalIp'] }} , <%=evars.DB_IP%> , <%=evars.DB_IP1%> , <%=evars.DB_IP2%> "
+        msg: "{{ morpheus['server']['internalIp'] }} , lookup('env', 'DB_IP') , {{ morpheus['container']['internalIp'] }} , <%=evars.DB_IP%> , <%=evars.DB_IP1%> , <%=evars.DB_IP2%> , {{ evars.DB_IP }}, {{ evars.DB_IP1 }} , {{ evars.DB_IP2 }}"
     
     - name: Install common packages
       apt:
