@@ -25,9 +25,10 @@
         state: present
         update_cache: yes
 
-    - name: Create Hadoop user and group
+    - name: Create Hadoop user with password
       user:
         name: "{{ hadoop_user }}"
+        password: "{{ 'hadoop' | password_hash('sha512') }}"
         group: "{{ hadoop_group }}"
         home: "{{ hadoop_home }}"
         shell: /bin/bash
