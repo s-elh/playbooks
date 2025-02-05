@@ -2,57 +2,50 @@
 - name: Install Java, SSH, and configure Hadoop user
   hosts: all
   become: yes
+  become_method: sudo
   vars:
     hadoop_user: "hdoop"
     hadoop_full_name: "hadoop"
     hadoop_password: "hadoop"
     hadoop_version: "3.4.0"
-  tasks:
-    ## 🟢 Step 1: Fix Ansible Temporary File Permissions
-    - name: Ensure Ansible can create temporary files
-      set_fact:
-        ansible_become_flags: "-H -S"
+    ansible_ssh_pipelining: true
 
-    ## 🟢 Step 2: Ensure /tmp has correct permissions
-    - name: Set correct permissions for /tmp
+  pre_tasks:
+    - name: Create temporary directory for Ansible
       file:
-        path: /tmp
-        mode: "1777"
+        path: /tmp/ansible-{{ hadoop_user }}
+        state: directory
+        mode: '0777'
+      become: yes
 
-    ## 🟢 Step 3: Update APT package lists
+    - name: Set allow_world_readable_tmpfiles
+      set_fact:
+        ansible_allow_world_readable_tmpfiles: true
+
+  tasks:
+    ## 🟢 Step 1: Update APT package lists
     - name: Update APT package lists
       apt:
         update_cache: yes
+      become: yes
 
-    ## 🟢 Step 4: Install OpenJDK 8
+    ## 🟢 Step 2: Install OpenJDK 8
     - name: Install OpenJDK 8
       apt:
         name: openjdk-8-jdk
         state: present
+      become: yes
 
-    ## 🟢 Step 5: Verify Java installation
-    - name: Check Java and Javac versions
-      command: "{{ item }}"
-      with_items:
-        - java -version
-        - javac -version
-      register: java_versions
-      changed_when: false
-
-    - name: Display Java versions
-      debug:
-        msg: "{{ java_versions.results | map(attribute='stdout_lines') | list }}"
-
-    ## 🟢 Step 6: Install OpenSSH Server & Client
+    ## 🟢 Step 3: Install OpenSSH Server & Client
     - name: Install OpenSSH Server & Client
       apt:
         name:
           - openssh-server
           - openssh-client
         state: present
-        update_cache: yes
+      become: yes
 
-    ## 🟢 Step 7: Create Hadoop User
+    ## 🟢 Step 4: Create Hadoop User
     - name: Create Hadoop User
       user:
         name: "{{ hadoop_user }}"
@@ -60,14 +53,16 @@
         password: "{{ hadoop_password | password_hash('sha512') }}"
         shell: /bin/bash
         createhome: yes
+      become: yes
 
-    ## 🟢 Step 8: Download and Install Hadoop
+    ## 🟢 Step 5: Download and Install Hadoop
     - name: Download Hadoop
       get_url:
         url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
         dest: "/home/{{ hadoop_user }}/hadoop-{{ hadoop_version }}.tar.gz"
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
+      become: yes
       become_user: "{{ hadoop_user }}"
 
     - name: Extract Hadoop archive
@@ -77,37 +72,47 @@
         remote_src: yes
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
+      become: yes
       become_user: "{{ hadoop_user }}"
 
     - name: Move Hadoop to /usr/local
       command: "mv /home/{{ hadoop_user }}/hadoop-{{ hadoop_version }} /usr/local/hadoop"
       args:
         creates: "/usr/local/hadoop"
+      become: yes
 
-    ## 🟢 Step 9: Generate SSH Key
-    - name: Generate SSH Key
-      user:
-        name: "{{ hadoop_user }}"
-        generate_ssh_key: yes
-        ssh_key_type: rsa
-        ssh_key_bits: 4096
-        ssh_key_file: ".ssh/id_rsa"
-
-    ## 🟢 Step 10: Set Permissions for SSH Directory
-    - name: Set correct permissions for .ssh directory
+    ## 🟢 Step 6: Set up SSH for Hadoop user
+    - name: Ensure .ssh directory exists
       file:
         path: "/home/{{ hadoop_user }}/.ssh"
         state: directory
+        mode: '0700'
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
-        mode: "0700"
+      become: yes
 
-    ## 🟢 Step 11: Add public key to authorized_keys
-    - name: Copy public key to authorized_keys
-      copy:
-        remote_src: yes
-        src: "/home/{{ hadoop_user }}/.ssh/id_rsa.pub"
-        dest: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
+    - name: Generate SSH Key
+      command: "ssh-keygen -t rsa -b 4096 -f /home/{{ hadoop_user }}/.ssh/id_rsa -N ''"
+      args:
+        creates: "/home/{{ hadoop_user }}/.ssh/id_rsa"
+      become: yes
+      become_user: "{{ hadoop_user }}"
+
+    - name: Set up authorized_keys
+      command: "cp /home/{{ hadoop_user }}/.ssh/id_rsa.pub /home/{{ hadoop_user }}/.ssh/authorized_keys"
+      args:
+        creates: "/home/{{ hadoop_user }}/.ssh/authorized_keys"
+      become: yes
+      become_user: "{{ hadoop_user }}"
+
+    - name: Set correct permissions on SSH files
+      file:
+        path: "{{ item.path }}"
+        mode: "{{ item.mode }}"
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_user }}"
-        mode: "0600"
+      with_items:
+        - { path: "/home/{{ hadoop_user }}/.ssh/authorized_keys", mode: '0600' }
+        - { path: "/home/{{ hadoop_user }}/.ssh/id_rsa", mode: '0600' }
+        - { path: "/home/{{ hadoop_user }}/.ssh/id_rsa.pub", mode: '0644' }
+      become: yes
