@@ -1,0 +1,93 @@
+---
+- name: Install Basic Drupal on Ubuntu
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    php_version: "8.1"
+    drupal_version: "10.2.2"
+    web_root: "/var/www/html"
+
+  tasks:
+    # Basic system setup
+    - name: apt conf
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+
+    - name: Configure DNS
+      copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 8.8.8.8
+        mode: '0644'
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+        update_cache_retries: 5
+
+    # Install required packages
+    - name: Install essential packages
+      apt:
+        name:
+          - apache2
+          - mysql-server
+          - php{{ php_version }}
+          - php{{ php_version }}-mysql
+          - php{{ php_version }}-gd
+          - php{{ php_version }}-xml
+          - php{{ php_version }}-mbstring
+          - unzip
+          - wget
+        state: present
+
+    # Configure MySQL with basic settings
+    - name: Start MySQL
+      service:
+        name: mysql
+        state: started
+        enabled: yes
+
+    - name: Create Drupal database
+      mysql_db:
+        name: drupal
+        state: present
+
+    - name: Create Drupal user
+      mysql_user:
+        name: drupal
+        password: drupalpass
+        priv: 'drupal.*:ALL'
+        state: present
+
+    # Install Drupal
+    - name: Download and extract Drupal
+      unarchive:
+        src: "https://ftp.drupal.org/files/projects/drupal-{{ drupal_version }}.tar.gz"
+        dest: "{{ web_root }}"
+        remote_src: yes
+        creates: "{{ web_root }}/drupal"
+
+    - name: Set permissions
+      file:
+        path: "{{ web_root }}"
+        owner: www-data
+        group: www-data
+        recurse: yes
+
+    - name: Start Apache
+      service:
+        name: apache2
+        state: started
+        enabled: yes
+
+    - name: Display completion message
+      debug:
+        msg: |
+          Drupal installation ready!
+          Visit http://{{ morpheus['server']['internalIp'] }} to complete setup
+
+          Database details:
+          Name: drupal
+          User: drupal
+          Password: drupalpass
