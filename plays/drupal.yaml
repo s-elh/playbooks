@@ -45,13 +45,13 @@
         state: started
         enabled: yes
 
-    # Set MySQL root password using the pattern from reference
+    # Set MySQL root password
     - name: Set MySQL root password
       shell: |
         mysql --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
       ignore_errors: true
 
-    # Create database and user using direct MySQL commands
+    # Create database and user
     - name: Create Drupal database and user
       shell: |
         mysql -u root -p{{ mysql_root_password }} -e "
@@ -90,23 +90,21 @@
     - name: Move Drupal files to web root
       shell: "cp -r /tmp/drupal-{{ drupal_version }}/* {{ web_root }}/"
 
+    # Modified Apache Configuration Section
+    - name: Enable Apache modules
+      shell: |
+        a2enmod rewrite
+        a2enmod env
+        a2enmod dir
+        a2enmod mime
+      register: apache_mods
+
     - name: Set proper permissions
       shell: |
         chown -R www-data:www-data {{ web_root }}
         find {{ web_root }} -type d -exec chmod 755 {} \;
         find {{ web_root }} -type f -exec chmod 644 {} \;
-    
-    # Modified Apache Configuration Section
-    - name: Enable Apache modules
-      apache2_module:
-        name: "{{ item }}"
-        state: present
-      with_items:
-        - rewrite
-        - env
-        - dir
-        - mime
-    
+
     - name: Configure Apache for Drupal
       copy:
         content: |
@@ -115,7 +113,7 @@
             DocumentRoot {{ web_root }}
             
             <Directory {{ web_root }}>
-              Options FollowSymLinks
+              Options FollowSymLinks MultiViews
               AllowOverride All
               Require all granted
             </Directory>
@@ -124,45 +122,57 @@
             CustomLog ${APACHE_LOG_DIR}/access.log combined
           </VirtualHost>
         dest: /etc/apache2/sites-available/000-default.conf
-    
-    - name: Ensure .htaccess exists and has correct permissions
-      copy:
-        remote_src: yes
-        src: "{{ web_root }}/.htaccess.txt"
-        dest: "{{ web_root }}/.htaccess"
-        owner: www-data
-        group: www-data
-        mode: '0644'
+
+    - name: Ensure .htaccess exists
+      shell: |
+        if [ -f "{{ web_root }}/.htaccess.txt" ]; then
+          cp {{ web_root }}/.htaccess.txt {{ web_root }}/.htaccess
+        elif [ -f "{{ web_root }}/example.htaccess" ]; then
+          cp {{ web_root }}/example.htaccess {{ web_root }}/.htaccess
+        fi
+        chown www-data:www-data {{ web_root }}/.htaccess
+        chmod 644 {{ web_root }}/.htaccess
       ignore_errors: yes
-    
+
     - name: Create settings.php from default
-      copy:
-        remote_src: yes
-        src: "{{ web_root }}/sites/default/default.settings.php"
-        dest: "{{ web_root }}/sites/default/settings.php"
-        owner: www-data
-        group: www-data
-        mode: '0644'
-    
-    - name: Create files directory
-      file:
-        path: "{{ web_root }}/sites/default/files"
-        state: directory
-        owner: www-data
-        group: www-data
-        mode: '0755'
-    
+      shell: |
+        cp {{ web_root }}/sites/default/default.settings.php {{ web_root }}/sites/default/settings.php
+        chown www-data:www-data {{ web_root }}/sites/default/settings.php
+        chmod 644 {{ web_root }}/sites/default/settings.php
+      ignore_errors: yes
+
+    - name: Create and set permissions for files directory
+      shell: |
+        mkdir -p {{ web_root }}/sites/default/files
+        chown -R www-data:www-data {{ web_root }}/sites/default/files
+        chmod 755 {{ web_root }}/sites/default/files
+      ignore_errors: yes
+
     - name: Verify Apache configuration
       shell: apache2ctl -t
       register: apache_verify
-      
+
     - name: Restart Apache
       service:
         name: apache2
         state: restarted
         enabled: yes
       when: apache_verify.rc == 0
-            
+
+    # Add debugging tasks
+    - name: Check Apache error log
+      shell: "tail -n 50 /var/log/apache2/error.log"
+      register: apache_error_log
+
+    - name: Display Apache error log
+      debug:
+        var: apache_error_log.stdout_lines
+
+    - name: Display MySQL version
+      command: mysql --version
+      register: mysql_version
+      changed_when: false
+
     - name: Display completion message
       debug:
         msg: |
