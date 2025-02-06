@@ -9,7 +9,7 @@
     web_root: "/var/www/html"
     mysql_root_password: "ACSCloud!2021!"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
-
+    
   tasks:
     # Basic system setup
     - name: Configure resolv.conf with Google DNS
@@ -95,35 +95,74 @@
         chown -R www-data:www-data {{ web_root }}
         find {{ web_root }} -type d -exec chmod 755 {} \;
         find {{ web_root }} -type f -exec chmod 644 {} \;
-
-    # Apache configuration
-    - name: Enable Apache rewrite module
-      shell: a2enmod rewrite
-
+    
+    # Modified Apache Configuration Section
+    - name: Enable Apache modules
+      apache2_module:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - rewrite
+        - env
+        - dir
+        - mime
+    
     - name: Configure Apache for Drupal
       copy:
         content: |
-          <Directory {{ web_root }}>
+          <VirtualHost *:80>
+            ServerAdmin webmaster@localhost
+            DocumentRoot {{ web_root }}
+            
+            <Directory {{ web_root }}>
               Options FollowSymLinks
               AllowOverride All
               Require all granted
-          </Directory>
-        dest: /etc/apache2/conf-available/drupal.conf
-
-    - name: Enable Drupal configuration
-      shell: a2enconf drupal
-
+            </Directory>
+            
+            ErrorLog ${APACHE_LOG_DIR}/error.log
+            CustomLog ${APACHE_LOG_DIR}/access.log combined
+          </VirtualHost>
+        dest: /etc/apache2/sites-available/000-default.conf
+    
+    - name: Ensure .htaccess exists and has correct permissions
+      copy:
+        remote_src: yes
+        src: "{{ web_root }}/.htaccess.txt"
+        dest: "{{ web_root }}/.htaccess"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+      ignore_errors: yes
+    
+    - name: Create settings.php from default
+      copy:
+        remote_src: yes
+        src: "{{ web_root }}/sites/default/default.settings.php"
+        dest: "{{ web_root }}/sites/default/settings.php"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+    
+    - name: Create files directory
+      file:
+        path: "{{ web_root }}/sites/default/files"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+    
+    - name: Verify Apache configuration
+      shell: apache2ctl -t
+      register: apache_verify
+      
     - name: Restart Apache
       service:
         name: apache2
         state: restarted
         enabled: yes
-
-    - name: Display MySQL version
-      command: mysql --version
-      register: mysql_version
-      changed_when: false
-
+      when: apache_verify.rc == 0
+            
     - name: Display completion message
       debug:
         msg: |
