@@ -7,7 +7,7 @@
     php_version: "8.1"
     joomla_version: "5-2-3"
     web_root: "/var/www/html"
-    mysql_root_password: "RootRoot"
+    mysql_root_password: "ACSCloud!2021!"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
@@ -59,7 +59,7 @@
       shell: |
         mysql -u root -p{{ mysql_root_password }} -e "
         CREATE DATABASE IF NOT EXISTS joomla;
-        CREATE USER IF NOT EXISTS 'joomla'@'localhost' IDENTIFIED BY 'joomlapass';
+        CREATE USER IF NOT EXISTS 'joomla'@'localhost' IDENTIFIED BY 'ACSCloud!2021!';
         GRANT ALL PRIVILEGES ON joomla.* TO 'joomla'@'localhost';
         FLUSH PRIVILEGES;"
       ignore_errors: true
@@ -160,6 +160,6 @@
           Database details:
           Name: joomla
           User: joomla
-          Password: joomlapass
+          Password: ACSCloud!2021!
           
           MySQL version: {{ mysql_version.stdout }}
