@@ -17,14 +17,6 @@
         group: root
         mode: '0644'
         
-    - name: Print all container info
-      debug:
-        msg: "{{ morpheus['instance']['containers'] }}"
-
-    - name: Print variables
-      debug:
-        msg: "{{ morpheus['instance']['containers'] | selectattr('hostname', 'equalto', 'mern-database') | map(attribute='externalIp') | first }}"
-
     - name: Install common packages
       apt:
         name:
