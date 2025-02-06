@@ -92,6 +92,7 @@
             creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
             executable: /bin/bash
           become_user: "{{ hadoop_user }}"
+          become_method: su
           register: hadoop_download
           failed_when: hadoop_download.rc != 0
 
@@ -138,16 +139,15 @@
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
         recurse: yes
-        mode: 'u+rwx,go+rx'
+        mode: '0755'
 
   post_tasks:
     - name: Verify Hadoop Installation
       block:
         - name: Check Hadoop version
-          command: "{{ hadoop_install_dir }}/bin/hadoop version"
+          shell: sudo su - hdoop -c "{{ hadoop_install_dir }}/bin/hadoop version"
           register: hadoop_version_check
           changed_when: false
-          become_user: "{{ hadoop_user }}"
 
         - name: Display Hadoop version
           debug:
