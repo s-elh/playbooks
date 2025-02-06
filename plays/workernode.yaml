@@ -1,188 +1,227 @@
 ---
 - name: Prepare Hadoop Installation
-  hosts: all
-  become: yes
-  vars:
-    hadoop_user: "hdoop"
-    hadoop_group: "hadoopgroup"
-    hadoop_home: "/home/hdoop"
-    hadoop_install_dir: "/usr/local/hadoop"
-    hadoop_version: "3.3.6"
-    java_version: "11"
-    hadoop_mirrors:
-      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+ hosts: all
+ become: yes
+ vars:
+   hadoop_user: "hdoop"
+   hadoop_group: "hadoopgroup"
+   hadoop_home: "/home/hdoop"
+   hadoop_install_dir: "/usr/local/hadoop"
+   hadoop_version: "3.3.6"
+   java_version: "11"
+   hadoop_mirrors:
+     - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+     - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+     - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
-  pre_tasks:
-    - name: Update package cache
-      apt:
-        update_cache: yes
+ pre_tasks:
+   - name: Update package cache
+     apt:
+       update_cache: yes
 
-    - name: Install required system packages
-      apt:
-        name:
-          - wget
-          - software-properties-common
-          - openjdk-{{ java_version }}-jdk
-          - openjdk-{{ java_version }}-jre
-        state: present
+   - name: Install required system packages
+     apt:
+       name:
+         - wget
+         - software-properties-common
+         - openjdk-{{ java_version }}-jdk
+         - openjdk-{{ java_version }}-jre
+       state: present
 
-    - name: Set Java environment variables
-      blockinfile:
-        path: /etc/environment
-        block: |
-          JAVA_HOME=/usr/lib/jvm/java-{{ java_version }}-openjdk-amd64
-          PATH="$PATH:$JAVA_HOME/bin"
-        create: yes
+   - name: Set Java environment variables
+     blockinfile:
+       path: /etc/environment
+       block: |
+         JAVA_HOME=/usr/lib/jvm/java-{{ java_version }}-openjdk-amd64
+         PATH="$PATH:$JAVA_HOME/bin"
+       create: yes
 
-    - name: Ensure group exists
-      group:
-        name: "{{ hadoop_group }}"
-        state: present
+   - name: Ensure group exists
+     group:
+       name: "{{ hadoop_group }}"
+       state: present
 
-    - name: Create Hadoop user
-      user:
-        name: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        home: "{{ hadoop_home }}"
-        shell: /bin/bash
-        create_home: yes
-        state: present
+   - name: Create Hadoop user
+     user:
+       name: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
+       home: "{{ hadoop_home }}"
+       shell: /bin/bash
+       create_home: yes
+       state: present
 
-    - name: Allow Hadoop user to run sudo without password
-      lineinfile:
-        path: /etc/sudoers
-        line: "{{ hadoop_user }} ALL=(ALL) NOPASSWD: ALL"
-        state: present
-        validate: 'visudo -cf %s'
+   - name: Allow Hadoop user to run sudo without password
+     lineinfile:
+       path: /etc/sudoers
+       line: "{{ hadoop_user }} ALL=(ALL) NOPASSWD: ALL"
+       state: present
+       validate: 'visudo -cf %s'
 
-  tasks:
-    - name: Create Hadoop download directory
-      file:
-        path: "{{ hadoop_home }}/downloads"
-        state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: '0755'
+ tasks:
+   - name: Create Hadoop download directory
+     file:
+       path: "{{ hadoop_home }}/downloads"
+       state: directory
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
+       mode: '0755'
 
-    - name: Download Hadoop using wget with multiple mirrors
-      shell: |
-        set -o pipefail
-        for mirror in {{ hadoop_mirrors | join(' ') }}; do
-          wget --tries=3 --timeout=300 --no-check-certificate \
-               -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" "$mirror" && exit 0
-        done
-        exit 1
-      args:
-        creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-        executable: /bin/bash
-      register: wget_download
-      changed_when: wget_download.rc == 0
-      failed_when: wget_download.rc != 0
+   - name: Download Hadoop using wget with multiple mirrors
+     shell: |
+       set -o pipefail
+       for mirror in {{ hadoop_mirrors | join(' ') }}; do
+         wget --tries=3 --timeout=300 --no-check-certificate \
+              -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" "$mirror" && exit 0
+       done
+       exit 1
+     args:
+       creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+       executable: /bin/bash
+     register: wget_download
+     changed_when: wget_download.rc == 0
+     failed_when: wget_download.rc != 0
 
-    - name: Extract Hadoop archive
-      unarchive:
-        src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/usr/local/"
-        remote_src: yes
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+   # Create necessary directories before extraction
+   - name: Create Hadoop installation directory
+     file:
+       path: "/usr/local"
+       state: directory
+       owner: root
+       group: root
+       mode: '0755'
 
-    - name: Set Hadoop environment variables
-      blockinfile:
-        path: "{{ hadoop_home }}/.bashrc"
-        block: |
-          export HADOOP_HOME="{{ hadoop_install_dir }}"
-          export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
-        create: yes
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+   - name: Extract Hadoop archive
+     unarchive:
+       src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+       dest: "/usr/local/"
+       remote_src: yes
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
 
-    # 🔹 CONFIGURATION DES FICHIERS HADOOP
-    - name: Configure core-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>fs.defaultFS</name>
-              <value>hdfs://localhost:9000</value>
-            </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+   - name: Create symbolic link for Hadoop
+     file:
+       src: "/usr/local/hadoop-{{ hadoop_version }}"
+       dest: "{{ hadoop_install_dir }}"
+       state: link
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
 
-    - name: Configure hdfs-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>dfs.replication</name>
-              <value>1</value>
-            </property>
-            <property>
-              <name>dfs.namenode.name.dir</name>
-              <value>file:///usr/local/hadoop/data/namenode</value>
-            </property>
-            <property>
-              <name>dfs.datanode.data.dir</name>
-              <value>file:///usr/local/hadoop/data/datanode</value>
-            </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+   # Create Hadoop configuration directories
+   - name: Create Hadoop configuration directories
+     file:
+       path: "{{ hadoop_install_dir }}/etc/hadoop"
+       state: directory
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
+       mode: '0755'
+     become: yes
 
-    - name: Configure mapred-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>mapreduce.framework.name</name>
-              <value>yarn</value>
-            </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+   - name: Set Hadoop environment variables
+     blockinfile:
+       path: "{{ hadoop_home }}/.bashrc"
+       block: |
+         export HADOOP_HOME="{{ hadoop_install_dir }}"
+         export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
+       create: yes
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
 
-    - name: Configure yarn-site.xml
-      copy:
-        dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>yarn.nodemanager.aux-services</name>
-              <value>mapreduce_shuffle</value>
-            </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+   # Configuration files
+   - name: Configure core-site.xml
+     copy:
+       dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+       content: |
+         <configuration>
+           <property>
+             <name>fs.defaultFS</name>
+             <value>hdfs://localhost:9000</value>
+           </property>
+         </configuration>
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
 
-    # 🔹 FORMATAGE ET DÉMARRAGE HADOOP AVEC `sudo -u`
-    - name: Format Hadoop Namenode
-      command: sudo -u {{ hadoop_user }} -i /usr/local/hadoop/bin/hdfs namenode -format
-      args:
-        creates: "/usr/local/hadoop/data"
+   - name: Configure hdfs-site.xml
+     copy:
+       dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
+       content: |
+         <configuration>
+           <property>
+             <name>dfs.replication</name>
+             <value>1</value>
+           </property>
+           <property>
+             <name>dfs.namenode.name.dir</name>
+             <value>file:///usr/local/hadoop/data/namenode</value>
+           </property>
+           <property>
+             <name>dfs.datanode.data.dir</name>
+             <value>file:///usr/local/hadoop/data/datanode</value>
+           </property>
+         </configuration>
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
 
-    - name: Start Hadoop Services
-      shell: |
-        sudo -u {{ hadoop_user }} -i /usr/local/hadoop/sbin/start-dfs.sh
-        sudo -u {{ hadoop_user }} -i /usr/local/hadoop/sbin/start-yarn.sh
+   - name: Configure mapred-site.xml
+     copy:
+       dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
+       content: |
+         <configuration>
+           <property>
+             <name>mapreduce.framework.name</name>
+             <value>yarn</value>
+           </property>
+         </configuration>
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
 
-    - name: Verify Hadoop installation
-      stat:
-        path: /usr/local/hadoop
-      register: hadoop_dir
+   - name: Configure yarn-site.xml
+     copy:
+       dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
+       content: |
+         <configuration>
+           <property>
+             <name>yarn.nodemanager.aux-services</name>
+             <value>mapreduce_shuffle</value>
+           </property>
+         </configuration>
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
 
-    - name: Fail if Hadoop directory does not exist
-      fail:
-        msg: "Hadoop installation failed - directory not found"
-      when: not hadoop_dir.stat.exists
+   # Create data directories
+   - name: Create Hadoop data directories
+     file:
+       path: "{{ item }}"
+       state: directory
+       owner: "{{ hadoop_user }}"
+       group: "{{ hadoop_group }}"
+       mode: '0755'
+     loop:
+       - "/usr/local/hadoop/data"
+       - "/usr/local/hadoop/data/namenode"
+       - "/usr/local/hadoop/data/datanode"
 
-  handlers:
-    - name: Restart SSH
-      service:
-        name: ssh
-        state: restarted
+   - name: Format Hadoop Namenode
+     command: sudo -u {{ hadoop_user }} -i /usr/local/hadoop/bin/hdfs namenode -format
+     args:
+       creates: "/usr/local/hadoop/data/namenode"
+
+   - name: Start Hadoop Services
+     shell: |
+       sudo -u {{ hadoop_user }} -i /usr/local/hadoop/sbin/start-dfs.sh
+       sudo -u {{ hadoop_user }} -i /usr/local/hadoop/sbin/start-yarn.sh
+
+   - name: Verify Hadoop installation
+     stat:
+       path: /usr/local/hadoop
+     register: hadoop_dir
+
+   - name: Fail if Hadoop directory does not exist
+     fail:
+       msg: "Hadoop installation failed - directory not found"
+     when: not hadoop_dir.stat.exists
+
+ handlers:
+   - name: Restart SSH
+     service:
+       name: ssh
+       state: restarted
