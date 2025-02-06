@@ -1,54 +1,43 @@
 ---
-- name: Prepare Hadoop Installation
+- name: Complete Hadoop Installation and Configuration for Ubuntu
   hosts: all
   become: yes
   vars:
-    hadoop_user: "hadoop"
+    hadoop_user: "hdoop"
     hadoop_group: "hadoopgroup"
-    hadoop_home: "/home/hadoop"
+    hadoop_home: "/home/hdoop"
     hadoop_version: "3.3.6"
-    java_version: "11"
+    java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
+    hadoop_install_dir: "/home/hdoop/hadoop"
     hadoop_mirrors:
       - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
       - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
       - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
   pre_tasks:
-    - name: Update package cache
+    - name: Update Ubuntu apt cache
       apt:
         update_cache: yes
 
-    - name: Install required system packages
+    - name: Install Java and required packages
       apt:
-        name:
+        name: 
+          - default-jdk
+          - default-jre
           - wget
-          - software-properties-common
+          - openssh-server
+          - ssh
+          - rsync
         state: present
-
-    - name: Install Java
-      apt:
-        name:
-          - openjdk-{{ java_version }}-jdk
-          - openjdk-{{ java_version }}-jre
-        state: present
-
-    - name: Set Java environment variables
-      blockinfile:
-        path: /etc/environment
-        block: |
-          JAVA_HOME=/usr/lib/jvm/java-{{ java_version }}-openjdk-amd64
-          PATH="$PATH:$JAVA_HOME/bin"
-        create: yes
 
     - name: Ensure group exists
       group:
         name: "{{ hadoop_group }}"
         state: present
 
-    - name: Create Hadoop user with password
+    - name: Create Hadoop user
       user:
         name: "{{ hadoop_user }}"
-        password: "{{ 'hadoop' | password_hash('sha512') }}"
         group: "{{ hadoop_group }}"
         home: "{{ hadoop_home }}"
         shell: /bin/bash
@@ -56,31 +45,13 @@
         state: present
 
   tasks:
-    - name: Generate SSH key for Hadoop user
-      command: ssh-keygen -t rsa -b 2048 -f {{ hadoop_home }}/.ssh/id_rsa -N ""
-      args:
-        creates: "{{ hadoop_home }}/.ssh/id_rsa"
-      become_user: "{{ hadoop_user }}"
-
-    - name: Manually add SSH key for Hadoop user
-      command: "cat {{ hadoop_home }}/.ssh/id_rsa.pub >> {{ hadoop_home }}/.ssh/authorized_keys"
-      become_user: "{{ hadoop_user }}"
-
-    - name: Fix permissions on .ssh directory
+    - name: Create Hadoop download directory
       file:
-        path: "{{ hadoop_home }}/.ssh"
+        path: "{{ hadoop_home }}/downloads"
         state: directory
-        mode: '0700'
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
-
-    - name: Fix permissions on authorized_keys
-      file:
-        path: "{{ hadoop_home }}/.ssh/authorized_keys"
-        state: file
-        mode: '0600'
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+        mode: '0755'
 
     - name: Download Hadoop using wget with multiple mirrors
       shell: |
@@ -89,12 +60,12 @@
           wget --tries=3 \
                --timeout=300 \
                --no-check-certificate \
-               -O "{{ hadoop_home }}/hadoop-{{ hadoop_version }}.tar.gz" \
+               -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" \
                "$mirror" && exit 0
         done
         exit 1
       args:
-        creates: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}.tar.gz"
+        creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
         executable: /bin/bash
       register: wget_download
       changed_when: wget_download.rc == 0
@@ -102,70 +73,133 @@
 
     - name: Extract Hadoop archive
       unarchive:
-        src: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/usr/local/"
+        src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "{{ hadoop_home }}"
         remote_src: yes
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
 
-    - name: Set Hadoop environment variables
+    - name: Create symbolic link for Hadoop
+      file:
+        src: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
+        dest: "{{ hadoop_install_dir }}"
+        state: link
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Create necessary directories for HDFS
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0755'
+      loop:
+        - "{{ hadoop_home }}/hdfs/namenode"
+        - "{{ hadoop_home }}/hdfs/datanode"
+        - "{{ hadoop_home }}/hdfs/tmp"
+
+    - name: Configure .bashrc for Hadoop environment
       blockinfile:
         path: "{{ hadoop_home }}/.bashrc"
         block: |
-          export HADOOP_HOME="/usr/local/hadoop"
-          export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
+          # Hadoop Environment Variables
+          export JAVA_HOME={{ java_home }}
+          export HADOOP_HOME={{ hadoop_install_dir }}
+          export HADOOP_INSTALL=$HADOOP_HOME
+          export HADOOP_MAPRED_HOME=$HADOOP_HOME
+          export HADOOP_COMMON_HOME=$HADOOP_HOME
+          export HADOOP_HDFS_HOME=$HADOOP_HOME
+          export YARN_HOME=$HADOOP_HOME
+          export HADOOP_COMMON_LIB_NATIVE_DIR=$HADOOP_HOME/lib/native
+          export PATH=$PATH:$HADOOP_HOME/sbin:$HADOOP_HOME/bin
+          export HADOOP_OPTS="-Djava.library.path=$HADOOP_HOME/lib/native"
+        marker: "# {mark} ANSIBLE MANAGED HADOOP BLOCK"
         create: yes
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
 
-    - name: Configure Hadoop (core-site.xml)
+    - name: Configure hadoop-env.sh
       copy:
-        dest: "/usr/local/hadoop/etc/hadoop/core-site.xml"
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/hadoop-env.sh"
         content: |
+          # Set Hadoop-specific environment variables here
+
+          # The only required environment variable is JAVA_HOME.  All others are
+          # optional.  When running a distributed configuration it is best to
+          # set JAVA_HOME in this file, so that it is correctly defined on
+          # remote nodes.
+
+          # The java implementation to use.
+          export JAVA_HOME={{ java_home }}
+
+          # Extra Java CLASSPATH elements.  Automatically insert capacity-scheduler.
+          export HADOOP_CLASSPATH=$HADOOP_CLASSPATH:/usr/local/hadoop/lib/*.jar
+
+          # Extra Java runtime options.  Empty by default.
+          export HADOOP_OPTS="-Djava.library.path=$HADOOP_HOME/lib/native"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0644'
+
+    - name: Configure core-site.xml
+      copy:
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
           <configuration>
-            <property>
-              <name>fs.defaultFS</name>
-              <value>hdfs://localhost:9000</value>
-            </property>
+              <property>
+                  <name>fs.defaultFS</name>
+                  <value>hdfs://localhost:9000</value>
+              </property>
+              <property>
+                  <name>hadoop.tmp.dir</name>
+                  <value>{{ hadoop_home }}/hdfs/tmp</value>
+              </property>
           </configuration>
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
+        mode: '0644'
 
-    - name: Configure Hadoop (hdfs-site.xml)
+    - name: Configure hdfs-site.xml
       copy:
-        dest: "/usr/local/hadoop/etc/hadoop/hdfs-site.xml"
+        dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
         content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
           <configuration>
-            <property>
-              <name>dfs.replication</name>
-              <value>1</value>
-            </property>
-            <property>
-              <name>dfs.namenode.name.dir</name>
-              <value>file:///usr/local/hadoop/data/namenode</value>
-            </property>
-            <property>
-              <name>dfs.datanode.data.dir</name>
-              <value>file:///usr/local/hadoop/data/datanode</value>
-            </property>
+              <property>
+                  <name>dfs.replication</name>
+                  <value>1</value>
+              </property>
+              <property>
+                  <name>dfs.namenode.name.dir</name>
+                  <value>{{ hadoop_home }}/hdfs/namenode</value>
+              </property>
+              <property>
+                  <name>dfs.datanode.data.dir</name>
+                  <value>{{ hadoop_home }}/hdfs/datanode</value>
+              </property>
           </configuration>
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
+        mode: '0644'
 
-    - name: Format Hadoop Namenode
-      command: "/usr/local/hadoop/bin/hdfs namenode -format"
-      become_user: "{{ hadoop_user }}"
-      args:
-        creates: "/usr/local/hadoop/data"
+    - name: Set ownership of Hadoop installation
+      file:
+        path: "{{ hadoop_install_dir }}"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        recurse: yes
 
-    - name: Start Hadoop Services
-      shell: |
-        /usr/local/hadoop/sbin/start-dfs.sh
-        /usr/local/hadoop/sbin/start-yarn.sh
-      become_user: "{{ hadoop_user }}"
+  post_tasks:
+    - name: Verify Hadoop installation
+      stat:
+        path: "{{ hadoop_install_dir }}"
+      register: hadoop_dir
 
-  handlers:
-    - name: Restart SSH
-      service:
-        name: ssh
-        state: restarted
+    - name: Fail if Hadoop directory does not exist
+      fail:
+        msg: "Hadoop installation failed - directory not found"
+      when: not hadoop_dir.stat.exists
