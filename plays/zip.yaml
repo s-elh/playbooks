@@ -1,5 +1,5 @@
 ---
-- name: Prepare Hadoop Installation
+- name: Prepare Hadoop Installation for Ubuntu
   hosts: all
   become: yes
   vars:
@@ -13,9 +13,18 @@
       - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
   pre_tasks:
-    - name: Install wget
-      package:
-        name: wget
+    - name: Update Ubuntu apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Java and required packages for Ubuntu
+      apt:
+        name: 
+          - default-jdk
+          - default-jre
+          - wget
+          - openssh-server
+          - ssh
         state: present
 
     - name: Ensure group exists
@@ -76,6 +85,14 @@
         src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
         dest: "{{ hadoop_home }}"
         remote_src: yes
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Create symbolic link for Hadoop
+      file:
+        src: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
+        dest: "{{ hadoop_home }}/hadoop"
+        state: link
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
 
