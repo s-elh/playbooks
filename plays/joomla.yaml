@@ -1,0 +1,165 @@
+---
+- name: Install Basic Joomla on Ubuntu
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    php_version: "8.1"
+    joomla_version: "5.2.3"
+    web_root: "/var/www/html"
+    mysql_root_password: "RootRoot"
+    ansible_remote_tmp: "/var/tmp/.ansible/tmp"
+
+  tasks:
+    # Basic system setup
+    - name: Configure resolv.conf with Google DNS
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
+    - name: Clear apt proxy settings
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    # Install minimum required packages
+    - name: Install essential packages
+      apt:
+        name:
+          - apache2
+          - mysql-server
+          - php{{ php_version }}
+          - php{{ php_version }}-mysql
+          - php{{ php_version }}-gd
+          - php{{ php_version }}-xml
+          - php{{ php_version }}-mbstring
+          - php{{ php_version }}-curl
+          - php{{ php_version }}-zip
+          - php{{ php_version }}-intl
+          - unzip
+          - wget
+        state: present
+
+    # Configure MySQL with basic settings
+    - name: Start MySQL
+      systemd:
+        name: mysql
+        state: started
+        enabled: yes
+
+    # Set MySQL root password
+    - name: Set MySQL root password
+      shell: |
+        mysql --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
+      ignore_errors: true
+
+    # Create database and user
+    - name: Create Joomla database and user
+      shell: |
+        mysql -u root -p{{ mysql_root_password }} -e "
+        CREATE DATABASE IF NOT EXISTS joomla;
+        CREATE USER IF NOT EXISTS 'joomla'@'localhost' IDENTIFIED BY 'joomlapass';
+        GRANT ALL PRIVILEGES ON joomla.* TO 'joomla'@'localhost';
+        FLUSH PRIVILEGES;"
+      ignore_errors: true
+
+    # Clear web root and prepare for Joomla
+    - name: Remove default web content
+      file:
+        path: "{{ web_root }}"
+        state: absent
+
+    - name: Create fresh web root
+      file:
+        path: "{{ web_root }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    # Install Joomla
+    - name: Download Joomla
+      get_url:
+        url: "https://downloads.joomla.org/cms/joomla{{ joomla_version.split('.')|first }}/{{ joomla_version }}/Joomla_{{ joomla_version }}-Stable-Full_Package.zip"
+        dest: "/tmp/joomla.zip"
+
+    - name: Extract Joomla
+      unarchive:
+        src: "/tmp/joomla.zip"
+        dest: "{{ web_root }}"
+        remote_src: yes
+
+    # Set proper permissions
+    - name: Set proper permissions
+      shell: |
+        chown -R www-data:www-data {{ web_root }}
+        find {{ web_root }} -type d -exec chmod 755 {} \;
+        find {{ web_root }} -type f -exec chmod 644 {} \;
+
+    # PHP configuration
+    - name: Configure PHP
+      lineinfile:
+        path: /etc/php/{{ php_version }}/apache2/php.ini
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      with_items:
+        - { regexp: '^memory_limit =', line: 'memory_limit = 256M' }
+        - { regexp: '^upload_max_filesize =', line: 'upload_max_filesize = 32M' }
+        - { regexp: '^post_max_size =', line: 'post_max_size = 32M' }
+        - { regexp: '^max_execution_time =', line: 'max_execution_time = 300' }
+
+    # Apache configuration
+    - name: Enable Apache rewrite module
+      shell: a2enmod rewrite
+
+    - name: Configure Apache for Joomla
+      copy:
+        content: |
+          <Directory {{ web_root }}>
+              Options FollowSymLinks
+              AllowOverride All
+              Require all granted
+          </Directory>
+        dest: /etc/apache2/conf-available/joomla.conf
+
+    - name: Enable Joomla configuration
+      shell: a2enconf joomla
+
+    - name: Create .htaccess file
+      copy:
+        content: |
+          RewriteEngine On
+          RewriteBase /
+          RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+          RewriteCond %{REQUEST_FILENAME} !-f
+          RewriteCond %{REQUEST_FILENAME} !-d
+          RewriteRule ^(.*)$ index.php [L]
+        dest: "{{ web_root }}/.htaccess"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
+        enabled: yes
+
+    - name: Display MySQL version
+      command: mysql --version
+      register: mysql_version
+      changed_when: false
+
+    - name: Display completion message
+      debug:
+        msg: |
+          Joomla installation ready!
+          Visit http://{{ morpheus['server']['internalIp'] }} to complete setup
+          
+          Database details:
+          Name: joomla
+          User: joomla
+          Password: joomlapass
+          
+          MySQL version: {{ mysql_version.stdout }}
