@@ -5,7 +5,7 @@
   gather_facts: true
   vars:
     php_version: "8.1"
-    joomla_version: "5.2.3"
+    joomla_version: "5-2-3"
     web_root: "/var/www/html"
     mysql_root_password: "RootRoot"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
