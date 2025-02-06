@@ -81,7 +81,7 @@
     # Install Joomla
     - name: Download Joomla
       get_url:
-        url: "https://downloads.joomla.org/cms/joomla{{ joomla_version.split('.')|first }}/{{ joomla_version }}/Joomla_{{ joomla_version }}-Stable-Full_Package.zip"
+        url: "https://downloads.joomla.org/cms/joomla{{ joomla_version.split('-')[0] }}/{{ joomla_version }}/Joomla_{{ joomla_version }}-Stable-Full_Package.zip"
         dest: "/tmp/joomla.zip"
 
     - name: Extract Joomla
