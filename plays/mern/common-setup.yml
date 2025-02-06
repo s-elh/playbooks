@@ -16,11 +16,7 @@
         owner: root
         group: root
         mode: '0644'
-        
-    - name: Print variables
-      debug:
-        msg: "{{ evars.DB_IP }}"
-  
+          
     - name: Install common packages
       apt:
         name:
