@@ -5,7 +5,7 @@
   gather_facts: true
   vars:
     php_version: "8.1"
-    drupal_version: "10.2.2"
+    drupal_version: "10.4.2"
     web_root: "/var/www/html"
 
   tasks:
