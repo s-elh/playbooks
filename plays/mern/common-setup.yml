@@ -19,11 +19,11 @@
         
     - name: Print all container info
       debug:
-        msg: "{{ morpheus.instance.containers }}"
+        msg: "{{ morpheus[instance][containers] }}"
     
     - name: Print variables
       debug:
-        msg: "{{ morpheus.instance.containers | json_query('[?containerTypeShortName==`mern-database`].externalIp | [0]') }}"
+        msg: "{{ morpheus[instance][containers].findAll{it.containerTypeShortName == 'mern-database'}.collect{it.externalIp}[0] }}"
 
     - name: Install common packages
       apt:
