@@ -2,18 +2,18 @@
 - name: Comprehensive Hadoop Installation and Configuration
   hosts: all
   become: yes
+  become_method: sudo
+  become_user: root
+
   vars:
-    # User Configuration
     hadoop_user: "hdoop"
     hadoop_group: "hadoopgroup"
     hadoop_home: "/home/{{ hadoop_user }}"
     
-    # Hadoop Configuration
     hadoop_version: "3.3.6"
     hadoop_install_dir: "{{ hadoop_home }}/hadoop"
     java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
     
-    # Download Mirrors
     hadoop_mirrors:
       - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
       - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
@@ -91,8 +91,8 @@
           args:
             creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
             executable: /bin/bash
+          become: yes
           become_user: "{{ hadoop_user }}"
-          become_method: su
           register: hadoop_download
           failed_when: hadoop_download.rc != 0
 
@@ -145,7 +145,7 @@
     - name: Verify Hadoop Installation
       block:
         - name: Check Hadoop version
-          shell: sudo su - hdoop -c "{{ hadoop_install_dir }}/bin/hadoop version"
+          shell: sudo -u hdoop "{{ hadoop_install_dir }}/bin/hadoop version"
           register: hadoop_version_check
           changed_when: false
 
