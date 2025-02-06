@@ -17,9 +17,13 @@
         group: root
         mode: '0644'
         
+    - name: Print all container info
+      debug:
+        msg: "{{ morpheus.instance.containers }}"
+    
     - name: Print variables
       debug:
-        msg: "{{ morpheus.instance.containers | selectattr('containerTypeShortName', 'equalto', 'mern-database') | map(attribute='externalIp') | first }}"
+        msg: "{{ morpheus.instance.containers | json_query('[?containerTypeShortName==`mern-database`].externalIp | [0]') }}"
 
     - name: Install common packages
       apt:
