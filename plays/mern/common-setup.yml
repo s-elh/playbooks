@@ -19,8 +19,8 @@
         
     - name: Print variables
       debug:
-        msg: "{{ morpheus[instance][containers].findAll{it.containerTypeShortName == 'mern-database'}.collect{it.externalIp}[0] }}"
-        
+        msg: "<%= instance.containers.findAll{it.containerTypeShortName == 'mern-database'}.collect{it.externalIp}[0] %>"
+
     - name: Install common packages
       apt:
         name:
