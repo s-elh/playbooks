@@ -66,7 +66,7 @@
           app.use(cors());
           app.use(express.json());
           
-          const mongoUrl = `mongodb://{{ morpheus[instance][containers].findAll{it.containerTypeShortName == 'mern-database'}.collect{it.externalIp}[0] }}:27017/mernapp`;
+          const mongoUrl = `mongodb://<%= instance.containers.findAll{it.containerTypeShortName == 'mern-database'}.collect{it.externalIp}[0] %>:27017/mernapp`;
           
           app.get('/api/test', async (req, res) => {
             try {
@@ -91,7 +91,7 @@
     - name: Create environment file
       copy:
         content: |
-          DB_HOST="{{ morpheus[instance][containers].findAll{it.containerTypeShortName == 'mern-database'}.collect{it.externalIp}[0] }}"
+          DB_HOST="<%= instance.containers.findAll{it.containerTypeShortName == 'mern-database'}.collect{it.externalIp}[0] %>"
         dest: "{{ backend_dir }}/.env"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
