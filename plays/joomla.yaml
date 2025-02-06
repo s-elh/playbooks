@@ -41,7 +41,18 @@
           - wget
         state: present
 
-    # Configure MySQL with basic settings
+    # Configure MySQL for remote access
+    - name: Configure MySQL to listen on all interfaces
+      copy:
+        content: |
+          [mysqld]
+          bind-address = 0.0.0.0
+          default-authentication-plugin = mysql_native_password
+        dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Start MySQL
       systemd:
         name: mysql
@@ -54,13 +65,15 @@
         mysql --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
       ignore_errors: true
 
-    # Create database and user
-    - name: Create Joomla database and user
+    # Create database and user with remote access
+    - name: Create Joomla database and user with remote access
       shell: |
         mysql -u root -p{{ mysql_root_password }} -e "
         CREATE DATABASE IF NOT EXISTS joomla;
         CREATE USER IF NOT EXISTS 'joomla'@'localhost' IDENTIFIED BY 'ACSCloud!2021!';
+        CREATE USER IF NOT EXISTS 'joomla'@'%' IDENTIFIED BY 'ACSCloud!2021!';
         GRANT ALL PRIVILEGES ON joomla.* TO 'joomla'@'localhost';
+        GRANT ALL PRIVILEGES ON joomla.* TO 'joomla'@'%';
         FLUSH PRIVILEGES;"
       ignore_errors: true
 
@@ -161,5 +174,6 @@
           Name: joomla
           User: joomla
           Password: ACSCloud!2021!
+          Host: {{ morpheus['server']['internalIp'] }}
           
           MySQL version: {{ mysql_version.stdout }}
