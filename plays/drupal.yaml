@@ -7,7 +7,7 @@
     php_version: "8.1"
     drupal_version: "10.4.2"
     web_root: "/var/www/html"
-    mysql_root_password: "RootRoot"
+    mysql_root_password: "ACSCloud!2021!"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
@@ -56,7 +56,7 @@
       shell: |
         mysql -u root -p{{ mysql_root_password }} -e "
         CREATE DATABASE IF NOT EXISTS drupal;
-        CREATE USER IF NOT EXISTS 'drupal'@'localhost' IDENTIFIED BY 'drupalpass';
+        CREATE USER IF NOT EXISTS 'drupal'@'localhost' IDENTIFIED BY 'ACSCloud!2021!';
         GRANT ALL PRIVILEGES ON drupal.* TO 'drupal'@'localhost';
         FLUSH PRIVILEGES;"
       ignore_errors: true
@@ -133,6 +133,6 @@
           Database details:
           Name: drupal
           User: drupal
-          Password: drupalpass
+          Password: ACSCloud!2021!
           
           MySQL version: {{ mysql_version.stdout }}
