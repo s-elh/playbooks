@@ -23,7 +23,7 @@
         update_cache: yes
         cache_valid_time: 3600
 
-    # Install required packages
+    # Install minimum required packages
     - name: Install essential packages
       apt:
         name:
@@ -45,13 +45,13 @@
         state: started
         enabled: yes
 
-    # Set MySQL root password
+    # Set MySQL root password using the pattern from reference
     - name: Set MySQL root password
       shell: |
         mysql --user=root --execute="ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
       ignore_errors: true
 
-    # Create database and user
+    # Create database and user using direct MySQL commands
     - name: Create Drupal database and user
       shell: |
         mysql -u root -p{{ mysql_root_password }} -e "
@@ -61,25 +61,62 @@
         FLUSH PRIVILEGES;"
       ignore_errors: true
 
-    # Install Drupal
-    - name: Download and extract Drupal
-      unarchive:
-        src: "https://ftp.drupal.org/files/projects/drupal-{{ drupal_version }}.tar.gz"
-        dest: "{{ web_root }}"
-        remote_src: yes
-        creates: "{{ web_root }}/drupal"
-
-    - name: Set permissions
+    # Clear web root and prepare for Drupal
+    - name: Remove default web content
       file:
         path: "{{ web_root }}"
+        state: absent
+
+    - name: Create fresh web root
+      file:
+        path: "{{ web_root }}"
+        state: directory
         owner: www-data
         group: www-data
-        recurse: yes
+        mode: '0755'
 
-    - name: Start Apache
+    # Install Drupal
+    - name: Download Drupal
+      get_url:
+        url: "https://ftp.drupal.org/files/projects/drupal-{{ drupal_version }}.tar.gz"
+        dest: "/tmp/drupal.tar.gz"
+
+    - name: Extract Drupal
+      unarchive:
+        src: "/tmp/drupal.tar.gz"
+        dest: "/tmp"
+        remote_src: yes
+
+    - name: Move Drupal files to web root
+      shell: "cp -r /tmp/drupal-{{ drupal_version }}/* {{ web_root }}/"
+
+    - name: Set proper permissions
+      shell: |
+        chown -R www-data:www-data {{ web_root }}
+        find {{ web_root }} -type d -exec chmod 755 {} \;
+        find {{ web_root }} -type f -exec chmod 644 {} \;
+
+    # Apache configuration
+    - name: Enable Apache rewrite module
+      shell: a2enmod rewrite
+
+    - name: Configure Apache for Drupal
+      copy:
+        content: |
+          <Directory {{ web_root }}>
+              Options FollowSymLinks
+              AllowOverride All
+              Require all granted
+          </Directory>
+        dest: /etc/apache2/conf-available/drupal.conf
+
+    - name: Enable Drupal configuration
+      shell: a2enconf drupal
+
+    - name: Restart Apache
       service:
         name: apache2
-        state: started
+        state: restarted
         enabled: yes
 
     - name: Display MySQL version
