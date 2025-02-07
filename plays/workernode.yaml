@@ -4,6 +4,7 @@
   become: yes
   become_method: sudo
   become_user: root
+  allow_world_readable_tmpfiles: true
 
   vars:
     hadoop_user: "hdoop"
@@ -74,6 +75,9 @@
             - "{{ hadoop_home }}/hdfs/namenode"
             - "{{ hadoop_home }}/hdfs/datanode"
             - "{{ hadoop_home }}/hdfs/tmp"
+            - "/home/hdoop/dfsdata/namenode"
+            - "/home/hdoop/dfsdata/datanode"
+            - "/home/hdoop/tmpdata"
 
     - name: Download Hadoop
       block:
@@ -133,25 +137,24 @@
             owner: "{{ hadoop_user }}"
             group: "{{ hadoop_group }}"
 
-    - name: Create required HDFS directories
+    - name: Ensure Hadoop configuration directory exists
       file:
-        path: "{{ item }}"
+        path: "{{ hadoop_install_dir }}/etc/hadoop"
         state: directory
+        mode: '0755'
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
-        mode: '0755'
-      loop:
-        - "/home/hdoop/dfsdata/namenode"
-        - "/home/hdoop/dfsdata/datanode"
-        - "/home/hdoop/tmpdata"
 
     - name: Configure Hadoop files
       block:
         - name: Replace core-site.xml content
-          replace:
-            path: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
-            regexp: '^[\s\S]*$'  # Match entire file content
-            replace: |
+          copy:
+            dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+            owner: "{{ hadoop_user }}"
+            group: "{{ hadoop_group }}"
+            mode: '0644'
+            force: yes
+            content: |
               <?xml version="1.0" encoding="UTF-8"?>
               <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
               <configuration>
@@ -164,14 +167,15 @@
                       <value>hdfs://127.0.0.1:9000</value>
                   </property>
               </configuration>
-          become: yes
-          become_user: "{{ hadoop_user }}"
 
         - name: Replace hdfs-site.xml content
-          replace:
-            path: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
-            regexp: '^[\s\S]*$'  # Match entire file content
-            replace: |
+          copy:
+            dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
+            owner: "{{ hadoop_user }}"
+            group: "{{ hadoop_group }}"
+            mode: '0644'
+            force: yes
+            content: |
               <?xml version="1.0" encoding="UTF-8"?>
               <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
               <configuration>
@@ -188,14 +192,15 @@
                       <value>1</value>
                   </property>
               </configuration>
-          become: yes
-          become_user: "{{ hadoop_user }}"
 
         - name: Replace mapred-site.xml content
-          replace:
-            path: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
-            regexp: '^[\s\S]*$'  # Match entire file content
-            replace: |
+          copy:
+            dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
+            owner: "{{ hadoop_user }}"
+            group: "{{ hadoop_group }}"
+            mode: '0644'
+            force: yes
+            content: |
               <?xml version="1.0"?>
               <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
               <configuration>
@@ -204,14 +209,15 @@
                       <value>yarn</value>
                   </property>
               </configuration>
-          become: yes
-          become_user: "{{ hadoop_user }}"
 
         - name: Replace yarn-site.xml content
-          replace:
-            path: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
-            regexp: '^[\s\S]*$'  # Match entire file content
-            replace: |
+          copy:
+            dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
+            owner: "{{ hadoop_user }}"
+            group: "{{ hadoop_group }}"
+            mode: '0644'
+            force: yes
+            content: |
               <?xml version="1.0"?>
               <configuration>
                   <property>
@@ -235,8 +241,6 @@
                       <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PERPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
                   </property>
               </configuration>
-          become: yes
-          become_user: "{{ hadoop_user }}"
 
     - name: Set Hadoop Permissions
       file:
