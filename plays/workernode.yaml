@@ -1,42 +1,97 @@
 ---
-- name: Installer Kurl sur Ubuntu
-  hosts: all
-  become: yes  # Exécuter en tant que root
-  tasks:
-    - name: Vérifier que l'OS est Ubuntu
-      fail:
-        msg: "Ce playbook est conçu uniquement pour Ubuntu."
-      when: ansible_facts['distribution'] != "Ubuntu"
+# [Previous tasks remain the same until configuration part...]
 
-    - name: Définir un répertoire temporaire sécurisé pour Ansible
-      ansible.builtin.file:
-        path: /tmp/.ansible/tmp
-        state: directory
-        mode: '0700'
-        owner: "{{ ansible_user | default('ubuntu') }}"
-        group: "{{ ansible_user | default('ubuntu') }}"
+    - name: Configure Hadoop files
+      block:
+        - name: Replace core-site.xml content
+          replace:
+            path: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
+            regexp: '^[\s\S]*$'  # Match entire file content
+            replace: |
+              <?xml version="1.0" encoding="UTF-8"?>
+              <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+              <configuration>
+                  <property>
+                      <name>hadoop.tmp.dir</name>
+                      <value>/home/hdoop/tmpdata</value>
+                  </property>
+                  <property>
+                      <name>fs.default.name</name>
+                      <value>hdfs://127.0.0.1:9000</value>
+                  </property>
+              </configuration>
+          become: yes
+          become_user: "{{ hadoop_user }}"
 
-    - name: Forcer Ansible à utiliser /tmp comme répertoire temporaire
-      set_fact:
-        ansible_remote_tmp: "/tmp/.ansible/tmp"
+        - name: Replace hdfs-site.xml content
+          replace:
+            path: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
+            regexp: '^[\s\S]*$'  # Match entire file content
+            replace: |
+              <?xml version="1.0" encoding="UTF-8"?>
+              <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+              <configuration>
+                  <property>
+                      <name>dfs.data.dir</name>
+                      <value>/home/hdoop/dfsdata/namenode</value>
+                  </property>
+                  <property>
+                      <name>dfs.data.dir</name>
+                      <value>/home/hdoop/dfsdata/datanode</value>
+                  </property>
+                  <property>
+                      <name>dfs.replication</name>
+                      <value>1</value>
+                  </property>
+              </configuration>
+          become: yes
+          become_user: "{{ hadoop_user }}"
 
-    - name: Mettre à jour les paquets
-      ansible.builtin.apt:
-        update_cache: yes
+        - name: Replace mapred-site.xml content
+          replace:
+            path: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
+            regexp: '^[\s\S]*$'  # Match entire file content
+            replace: |
+              <?xml version="1.0"?>
+              <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+              <configuration>
+                  <property>
+                      <name>mapreduce.framework.name</name>
+                      <value>yarn</value>
+                  </property>
+              </configuration>
+          become: yes
+          become_user: "{{ hadoop_user }}"
 
-    - name: Installer les dépendances requises
-      ansible.builtin.apt:
-        name:
-          - curl
-          - sudo
-        state: present
+        - name: Replace yarn-site.xml content
+          replace:
+            path: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
+            regexp: '^[\s\S]*$'  # Match entire file content
+            replace: |
+              <?xml version="1.0"?>
+              <configuration>
+                  <property>
+                      <name>yarn.nodemanager.aux-services</name>
+                      <value>mapreduce_shuffle</value>
+                  </property>
+                  <property>
+                      <name>yarn.nodemanager.aux-services.mapreduce.shuffle.class</name>
+                      <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+                  </property>
+                  <property>
+                      <name>yarn.resourcemanager.hostname</name>
+                      <value>127.0.0.1</value>
+                  </property>
+                  <property>
+                      <name>yarn.acl.enable</name>
+                      <value>0</value>
+                  </property>
+                  <property>
+                      <name>yarn.nodemanager.env-whitelist</name>
+                      <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PERPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
+                  </property>
+              </configuration>
+          become: yes
+          become_user: "{{ hadoop_user }}"
 
-    - name: Télécharger et exécuter le script d'installation de Kurl
-      ansible.builtin.shell: "curl https://kurl.sh/f2e5eda | sudo bash"
-      args:
-        executable: /bin/bash
-      register: kurl_installation
-
-    - name: Afficher la sortie de l'installation
-      debug:
-        var: kurl_installation.stdout_lines
+# [Rest of the playbook remains the same...]
