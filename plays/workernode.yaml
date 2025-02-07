@@ -1,6 +1,6 @@
 ---
 - name: Installer Kurl sur Ubuntu
-  hosts: ubuntu  # Remplace par le bon groupe/host dans ton inventory
+  hosts: all
   become: yes  # Exécuter avec sudo
   tasks:
     - name: Vérifier que l'OS est Ubuntu
