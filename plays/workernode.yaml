@@ -1,5 +1,149 @@
 ---
-# [Previous tasks remain the same until configuration part...]
+- name: Comprehensive Hadoop Installation and Configuration
+  hosts: all
+  become: yes
+  become_method: sudo
+  become_user: root
+
+  vars:
+    hadoop_user: "hdoop"
+    hadoop_group: "hadoopgroup"
+    hadoop_home: "/home/{{ hadoop_user }}"
+    
+    hadoop_version: "3.3.6"
+    hadoop_install_dir: "{{ hadoop_home }}/hadoop"
+    java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
+    
+    hadoop_mirrors:
+      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+
+  pre_tasks:
+    - name: Ensure system is prepared for Hadoop installation
+      block:
+        - name: Wait for any existing package management lock
+          shell: while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 5; done;
+          changed_when: false
+          failed_when: false
+
+        - name: Update apt cache
+          apt:
+            update_cache: yes
+            cache_valid_time: 3600
+
+        - name: Install required system packages
+          apt:
+            name: 
+              - default-jdk
+              - default-jre
+              - wget
+              - openssh-server
+              - ssh
+              - rsync
+              - python3-pip
+            state: present
+            update_cache: yes
+
+    - name: Create Hadoop group
+      group:
+        name: "{{ hadoop_group }}"
+        state: present
+
+    - name: Create Hadoop user
+      user:
+        name: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        home: "{{ hadoop_home }}"
+        shell: /bin/bash
+        create_home: yes
+        state: present
+
+  tasks:
+    - name: Prepare Hadoop installation directories
+      block:
+        - name: Create download and installation directories
+          file:
+            path: "{{ item }}"
+            state: directory
+            owner: "{{ hadoop_user }}"
+            group: "{{ hadoop_group }}"
+            mode: '0755'
+          loop:
+            - "{{ hadoop_home }}/downloads"
+            - "{{ hadoop_home }}/hdfs/namenode"
+            - "{{ hadoop_home }}/hdfs/datanode"
+            - "{{ hadoop_home }}/hdfs/tmp"
+
+    - name: Download Hadoop
+      block:
+        - name: Download Hadoop with multiple mirror fallback
+          shell: |
+            set -o pipefail
+            for mirror in {{ hadoop_mirrors | join(' ') }}; do
+              wget --tries=3 \
+                   --timeout=300 \
+                   --no-check-certificate \
+                   -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" \
+                   "$mirror" && exit 0
+            done
+            exit 1
+          args:
+            creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+            executable: /bin/bash
+          become: yes
+          become_user: "{{ hadoop_user }}"
+          register: hadoop_download
+          failed_when: hadoop_download.rc != 0
+
+    - name: Install Hadoop
+      block:
+        - name: Extract Hadoop archive
+          unarchive:
+            src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+            dest: "{{ hadoop_home }}"
+            remote_src: yes
+            owner: "{{ hadoop_user }}"
+            group: "{{ hadoop_group }}"
+
+        - name: Create Hadoop symbolic link
+          file:
+            src: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
+            dest: "{{ hadoop_install_dir }}"
+            state: link
+            owner: "{{ hadoop_user }}"
+            group: "{{ hadoop_group }}"
+
+    - name: Configure Hadoop Environment
+      block:
+        - name: Update .bashrc with Hadoop environment variables
+          blockinfile:
+            path: "{{ hadoop_home }}/.bashrc"
+            block: |
+              # Hadoop Environment Variables
+              export JAVA_HOME={{ java_home }}
+              export HADOOP_HOME={{ hadoop_install_dir }}
+              export HADOOP_MAPRED_HOME=$HADOOP_HOME
+              export HADOOP_COMMON_HOME=$HADOOP_HOME
+              export HADOOP_HDFS_HOME=$HADOOP_HOME
+              export YARN_HOME=$HADOOP_HOME
+              export PATH=$PATH:$HADOOP_HOME/sbin:$HADOOP_HOME/bin
+            marker: "# {mark} ANSIBLE MANAGED HADOOP BLOCK"
+            create: yes
+            owner: "{{ hadoop_user }}"
+            group: "{{ hadoop_group }}"
+
+    - name: Create required HDFS directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0755'
+      loop:
+        - "/home/hdoop/dfsdata/namenode"
+        - "/home/hdoop/dfsdata/datanode"
+        - "/home/hdoop/tmpdata"
 
     - name: Configure Hadoop files
       block:
@@ -94,4 +238,28 @@
           become: yes
           become_user: "{{ hadoop_user }}"
 
-# [Rest of the playbook remains the same...]
+    - name: Set Hadoop Permissions
+      file:
+        path: "{{ hadoop_install_dir }}"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        recurse: yes
+        mode: '0755'
+
+  post_tasks:
+    - name: Verify Hadoop Installation
+      block:
+        - name: Check Hadoop version
+          shell: sudo -u hdoop "{{ hadoop_install_dir }}/bin/hadoop version"
+          register: hadoop_version_check
+          changed_when: false
+
+        - name: Display Hadoop version
+          debug:
+            var: hadoop_version_check.stdout_lines
+
+  handlers:
+    - name: Restart SSH
+      service:
+        name: ssh
+        state: restarted
