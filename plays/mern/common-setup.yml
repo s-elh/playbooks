@@ -3,8 +3,14 @@
   hosts: all
   become: true
   gather_facts: true
+  vars:
+    db_ip: "{{ morpheus['instance']['containers'] | selectattr('hostname', 'equalto', 'mern-database') | map(attribute='externalIp') | first }}"
 
   tasks:
+    - name: Print database container IP 
+      debug: 
+        msg: "{{ db_ip }}"
+      
     - name: apt conf
       shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
       
