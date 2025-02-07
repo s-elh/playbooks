@@ -1,14 +1,26 @@
 ---
 - name: Installer Kurl sur Ubuntu
   hosts: all
-  become: yes  # Exécuter avec sudo
+  become: yes  # Exécuter en tant que root
   tasks:
     - name: Vérifier que l'OS est Ubuntu
       fail:
         msg: "Ce playbook est conçu uniquement pour Ubuntu."
       when: ansible_facts['distribution'] != "Ubuntu"
 
-    - name: Mettre à jour la liste des paquets
+    - name: Définir un répertoire temporaire sécurisé pour Ansible
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: '0700'
+        owner: "{{ ansible_user | default('ubuntu') }}"
+        group: "{{ ansible_user | default('ubuntu') }}"
+
+    - name: Forcer Ansible à utiliser /tmp comme répertoire temporaire
+      set_fact:
+        ansible_remote_tmp: "/tmp/.ansible/tmp"
+
+    - name: Mettre à jour les paquets
       ansible.builtin.apt:
         update_cache: yes
 
