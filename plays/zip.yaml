@@ -96,6 +96,21 @@
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
 
+    - name: Create Hadoop lib directory
+      file:
+        path: "/usr/local/hadoop/lib"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0755'
+
+    - name: Download javax.activation-api-1.2.0.jar
+      get_url:
+        url: "https://jcenter.bintray.com/javax/activation/javax.activation-api/1.2.0/javax.activation-api-1.2.0.jar"
+        dest: "/usr/local/hadoop/lib/javax.activation-api-1.2.0.jar"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
     - name: Configure environment variables in .bashrc
       blockinfile:
         path: "{{ hadoop_home }}/.bashrc"
@@ -128,13 +143,6 @@
         path: "{{ hadoop_home }}/hadoop/etc/hadoop/hadoop-env.sh"
         line: "export HADOOP_CLASSPATH+=\" $HADOOP_HOME/lib/*.jar\""
         state: present
-
-    - name: Download javax.activation-api-1.2.0.jar
-      get_url:
-        url: "https://jcenter.bintray.com/javax/activation/javax.activation-api/1.2.0/javax.activation-api-1.2.0.jar"
-        dest: "/usr/local/hadoop/lib/javax.activation-api-1.2.0.jar"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
 
     - name: Configure core-site.xml
       blockinfile:
