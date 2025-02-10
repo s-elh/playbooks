@@ -1,6 +1,6 @@
 ---
 - name: Install Kubernetes using kURL
-  hosts: all
+  hosts: k8s_nodes
   become: true
   vars:
     kurl_script_url: "https://kurl.sh/f2e5eda"
@@ -65,10 +65,11 @@
       delay: 5
       until: download_script is success
 
-    - name: Check if Kubernetes is already installed
+    - name: Verify script download
       stat:
-        path: /usr/bin/kubectl
-      register: kubectl_binary
+        path: /tmp/kurl/install.sh
+      register: script_check
+      failed_when: not script_check.stat.exists
 
     - name: Create installation log directory
       file:
@@ -76,15 +77,16 @@
         state: directory
         mode: '0755'
 
-    - name: Run kURL installation script
+    - name: Run kURL installation script with detailed logging
       shell: |
         set -x
-        bash /tmp/kurl/install.sh 2>&1 | tee /var/log/kurl/installation.log
+        cd /tmp/kurl
+        bash ./install.sh 2>&1 | tee /var/log/kurl/installation.log
       args:
-        creates: /usr/bin/kubectl
+        executable: /bin/bash
+        chdir: /tmp/kurl
       register: kurl_installation
-      when: not kubectl_binary.stat.exists
-      ignore_errors: yes
+      failed_when: false
 
     - name: Display installation output
       debug:
@@ -96,26 +98,62 @@
         var: kurl_installation.stderr_lines
       when: kurl_installation.stderr is defined
 
-    - name: Fail if installation failed
-      fail:
-        msg: "kURL installation failed. Check /var/log/kurl/installation.log for details"
-      when: 
-        - not kubectl_binary.stat.exists
-        - kurl_installation.rc is defined
-        - kurl_installation.rc != 0
-
-    - name: Verify Kubernetes installation
-      command: kubectl version --short
-      register: kubectl_version
+    - name: Verify kubectl installation
+      shell: |
+        which kubectl || echo "kubectl not found"
+        ls -l /usr/local/bin/kubectl || echo "not in /usr/local/bin"
+        ls -l /usr/bin/kubectl || echo "not in /usr/bin"
+      register: kubectl_check
       changed_when: false
-      ignore_errors: yes
 
-    - name: Display Kubernetes version
+    - name: Display kubectl installation status
       debug:
-        var: kubectl_version.stdout_lines
-      when: kubectl_version is success
+        var: kubectl_check.stdout_lines
 
-    - name: Clean up installation files
-      file:
-        path: /tmp/kurl
-        state: absent
+    - name: Add kubectl to PATH if exists in alternate location
+      shell: |
+        if [ -f /usr/local/bin/kubectl ]; then
+          ln -sf /usr/local/bin/kubectl /usr/bin/kubectl
+        fi
+      when: kubectl_check.stdout is defined and 'not in /usr/bin' in kubectl_check.stdout
+
+    - name: Verify final kubectl availability
+      command: which kubectl
+      register: final_kubectl_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check kubernetes node status
+      shell: |
+        export PATH=$PATH:/usr/local/bin:/usr/bin
+        kubectl get nodes
+      register: node_status
+      changed_when: false
+      failed_when: false
+      when: final_kubectl_check.rc == 0
+
+    - name: Display node status
+      debug:
+        var: node_status.stdout_lines
+      when: node_status is defined and node_status.stdout_lines is defined
+
+    - name: Collect installation diagnostics on failure
+      shell: |
+        echo "=== System Info ==="
+        uname -a
+        echo "=== Directory Listing ==="
+        ls -la /usr/bin/kubectl* /usr/local/bin/kubectl* 2>/dev/null || echo "No kubectl found"
+        echo "=== Installation Log Excerpt ==="
+        tail -n 50 /var/log/kurl/installation.log
+      register: diagnostics
+      when: final_kubectl_check.rc != 0
+
+    - name: Display diagnostics
+      debug:
+        var: diagnostics.stdout_lines
+      when: diagnostics is defined and diagnostics.stdout_lines is defined
+
+    - name: Fail if installation verification failed
+      fail:
+        msg: "Kubernetes installation failed. Check the installation logs and diagnostics above."
+      when: final_kubectl_check.rc != 0
