@@ -1,12 +1,53 @@
 ---
 - name: Install Kubernetes using kURL
-  hosts: all
+  hosts: k8s_nodes
   become: true
   vars:
     kurl_script_url: "https://kurl.sh/f2e5eda"
     installation_timeout: 7200  # 2 hours in seconds
 
+  pre_tasks:
+    - name: Update apt cache (Debian/Ubuntu)
+      apt:
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+      ignore_errors: yes
+
+    - name: Update yum cache (RedHat/CentOS)
+      yum:
+        update_cache: yes
+      when: ansible_os_family == "RedHat"
+      ignore_errors: yes
+
   tasks:
+    - name: Install system prerequisites
+      package:
+        name:
+          - curl
+          - sudo
+          - tar
+          - gzip
+          - openssl
+          - ca-certificates
+          - python3
+          - iptables
+          - selinux-utils
+        state: present
+      register: pkg_result
+      retries: 3
+      delay: 5
+      until: pkg_result is success
+
+    - name: Disable swap
+      command: swapoff -a
+      changed_when: false
+
+    - name: Remove swap from fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
     - name: Create temporary directory for kURL script
       file:
         path: /tmp/kurl
@@ -18,25 +59,31 @@
         url: "{{ kurl_script_url }}"
         dest: /tmp/kurl/install.sh
         mode: '0755'
+        validate_certs: yes
+        force: yes
       register: download_script
-      async: 300
-      poll: 5
+      retries: 3
+      delay: 5
+      until: download_script is success
+
+    - name: Display installation script content (for debugging)
+      command: cat /tmp/kurl/install.sh
+      register: script_content
+      changed_when: false
+
+    - name: Check script content
+      debug:
+        var: script_content.stdout_lines
 
     - name: Check if Kubernetes is already installed
       stat:
         path: /usr/bin/kubectl
       register: kubectl_binary
 
-    - name: Install required packages
-      package:
-        name:
-          - curl
-          - sudo
-        state: present
-      when: not kubectl_binary.stat.exists
-
-    - name: Run kURL installation script
-      shell: bash /tmp/kurl/install.sh
+    - name: Run kURL installation script with debug output
+      shell: |
+        set -x
+        bash /tmp/kurl/install.sh 2>&1 | tee /tmp/kurl/installation.log
       args:
         creates: /usr/bin/kubectl
       register: kurl_installation
@@ -51,7 +98,18 @@
       until: job_result.finished
       retries: 240  # Will check every 30 seconds for 2 hours
       delay: 30
-      when: not kubectl_binary.stat.exists
+      when: not kubectl_binary.stat.exists and kurl_installation is defined
+
+    - name: Capture installation logs on failure
+      command: cat /tmp/kurl/installation.log
+      register: installation_logs
+      when: job_result is failed
+      ignore_errors: yes
+
+    - name: Display installation logs if failed
+      debug:
+        var: installation_logs.stdout_lines
+      when: installation_logs is defined
 
     - name: Clean up installation files
       file:
@@ -62,7 +120,9 @@
       command: kubectl version --short
       register: kubectl_version
       changed_when: false
+      ignore_errors: yes
 
     - name: Display Kubernetes version
       debug:
         var: kubectl_version.stdout_lines
+      when: kubectl_version is success
