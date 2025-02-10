@@ -3,11 +3,11 @@
   hosts: all
   become: true
   gather_facts: true
-      
+
+  tasks:
     - name: apt conf
       shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
       
-  tasks:
     - name: Ensure /etc/resolv.conf contains the required nameserver
       copy:
         dest: /etc/resolv.conf
