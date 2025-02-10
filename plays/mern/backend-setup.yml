@@ -7,6 +7,7 @@
     nodejs_version: "18.x"
     app_user: "{{ ansible_user }}"
     backend_dir: "/home/{{ app_user }}/backend"
+    db_ip: "{{ morpheus['instance']['containers'] | selectattr('hostname', 'equalto', 'mern-database') | map(attribute='externalIp') | first }}"
 
   tasks:
     - name: Add NodeSource repository
@@ -66,7 +67,7 @@
           app.use(cors());
           app.use(express.json());
           
-          const mongoUrl = `mongodb://{{ morpheus['instance']['containers'] | selectattr('hostname', 'equalto', 'mern-database') | map(attribute='externalIp') | first }}:27017/mernapp`;
+          const mongoUrl = `mongodb://{{ db_ip }}:27017/mernapp`;
           
           app.get('/api/test', async (req, res) => {
             try {
@@ -91,7 +92,7 @@
     - name: Create environment file
       copy:
         content: |
-          DB_HOST="{{ morpheus['instance']['containers'] | selectattr('hostname', 'equalto', 'mern-database') | map(attribute='externalIp') | first }}"
+          DB_HOST="{{ db_ip }}"
         dest: "{{ backend_dir }}/.env"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
