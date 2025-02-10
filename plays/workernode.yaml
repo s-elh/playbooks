@@ -1,6 +1,6 @@
 ---
 - name: Install Kubernetes using kURL
-  hosts: all
+  hosts: k8s_nodes
   become: true
   vars:
     kurl_script_url: "https://kurl.sh/f2e5eda"
@@ -24,15 +24,17 @@
         fail_msg: "System does not meet minimum requirements. Need 4GB RAM, 2 CPUs, and 20GB disk space."
         success_msg: "System meets minimum requirements"
 
-    - name: Ensure full internet connectivity
-      command: curl -s --connect-timeout 5 https://kurl.sh
-      register: connectivity_check
-      ignore_errors: yes
+    - name: Check if SELinux is installed
+      stat:
+        path: /etc/selinux/config
+      register: selinux_config
 
-    - name: Fail if no internet connectivity
-      fail:
-        msg: "No internet connectivity to kurl.sh. Please check your network connection."
-      when: connectivity_check.rc != 0
+    - name: Disable SELinux if present
+      shell: |
+        setenforce 0 || true
+        sed -i 's/^SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config || true
+      when: selinux_config.stat.exists
+      ignore_errors: yes
 
     - name: Install system prerequisites
       package:
@@ -45,7 +47,6 @@
           - ca-certificates
           - python3
           - iptables
-          - selinux-utils
           - ntp
           - chrony
         state: present
@@ -54,16 +55,18 @@
       delay: 5
       until: pkg_result is success
 
-    - name: Stop and disable firewalld
+    - name: Check firewalld status
+      command: systemctl status firewalld
+      register: firewalld_status
+      failed_when: false
+      changed_when: false
+
+    - name: Stop and disable firewalld if present
       systemd:
         name: firewalld
         state: stopped
         enabled: no
-      ignore_errors: yes
-
-    - name: Disable SELinux
-      selinux:
-        state: disabled
+      when: firewalld_status.rc == 0
       ignore_errors: yes
 
     - name: Disable swap
@@ -87,12 +90,22 @@
         - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
         - { name: 'net.ipv4.ip_forward', value: '1' }
         - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+      ignore_errors: yes
 
     - name: Create temporary directory for kURL script
       file:
         path: /tmp/kurl
         state: directory
         mode: '0755'
+
+    - name: Ensure full internet connectivity
+      command: curl -s --connect-timeout 5 https://kurl.sh
+      register: connectivity_check
+      ignore_errors: yes
+
+    - name: Display connectivity check result
+      debug:
+        var: connectivity_check
 
     - name: Download kURL installation script
       get_url:
@@ -127,6 +140,11 @@
       debug:
         var: kurl_installation.stdout_lines
       when: kurl_installation.stdout is defined
+
+    - name: Display installation errors
+      debug:
+        var: kurl_installation.stderr_lines
+      when: kurl_installation.stderr is defined
 
     - name: Check installation logs for specific errors
       shell: |
