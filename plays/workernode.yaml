@@ -118,4 +118,3 @@
         else
           echo "Join command not found. Ensure it is created on the master."
         fi
-
