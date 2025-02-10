@@ -1,6 +1,6 @@
 ---
 - name: Install Kubernetes using kURL
-  hosts: k8s_nodes
+  hosts: all
   become: true
   vars:
     kurl_script_url: "https://kurl.sh/f2e5eda"
