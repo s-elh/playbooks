@@ -24,7 +24,7 @@
         - 'https_proxy={{ proxy_url }}'
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
-  hosts: workers
+  hosts: all
   become: yes
 
   tasks:
