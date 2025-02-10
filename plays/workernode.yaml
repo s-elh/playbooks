@@ -25,14 +25,37 @@
         - 'HTTP_PROXY={{ proxy_url }}'
         - 'HTTPS_PROXY={{ proxy_url }}'
 
-    - name: Ensure a valid DNS resolver is set
-      copy:
+    # === Fix DNS issue ===
+    - name: Stop and disable systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: no
+
+    - name: Remove symbolic link for /etc/resolv.conf
+      ansible.builtin.file:
+        path: /etc/resolv.conf
+        state: absent
+
+    - name: Set a valid DNS resolver
+      ansible.builtin.copy:
         dest: /etc/resolv.conf
         content: |
           nameserver 8.8.8.8
           nameserver 1.1.1.1
-      notify: Restart networking
+          options edns0 trust-ad
+        mode: '0644'
 
+    - name: Verify DNS resolution
+      ansible.builtin.command: nslookup google.com
+      register: dns_test
+      ignore_errors: true
+
+    - name: Show DNS resolution result
+      debug:
+        var: dns_test.stdout
+
+    # === Installation des prérequis ===
     - name: Update APT package index
       ansible.builtin.apt:
         update_cache: yes
@@ -56,6 +79,7 @@
         regexp: '.*swap.*'
         state: absent
 
+    # === Configuration du noyau et des modules nécessaires ===
     - name: Load required kernel modules
       ansible.builtin.shell: |
         modprobe br_netfilter
@@ -79,12 +103,14 @@
     - name: Apply sysctl parameters
       ansible.builtin.command: sysctl --system
 
-    - name: Download kURL installer for worker node (timeout 7200s)
+    # === Installation de kURL avec un timeout de 2 heures ===
+    - name: Download and run kURL installer (timeout 7200s)
       ansible.builtin.shell: |
         curl -fsSL https://kurl.sh/latest | sudo bash
-      async: 7200  # Temps max d'exécution = 2 heures (7200s)
-      poll: 60      # Vérification toutes les 60 secondes
+      async: 7200  # Exécuter jusqu'à 2 heures maximum
+      poll: 60      # Vérifier toutes les 60 secondes
 
+    # === Ajout du Worker Node au Cluster Kubernetes ===
     - name: Join Kubernetes cluster using token from master
       ansible.builtin.shell: |
         if [ -f /root/join-command.sh ]; then
@@ -93,8 +119,3 @@
           echo "Join command not found. Ensure it is created on the master."
         fi
 
-  handlers:
-    - name: Restart networking
-      ansible.builtin.service:
-        name: systemd-resolved
-        state: restarted
