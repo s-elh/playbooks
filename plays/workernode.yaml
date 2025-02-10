@@ -4,21 +4,36 @@
   become: true
   vars:
     kurl_script_url: "https://kurl.sh/f2e5eda"
-
-  pre_tasks:
-    - name: Update apt cache (Debian/Ubuntu)
-      apt:
-        update_cache: yes
-      when: ansible_os_family == "Debian"
-      ignore_errors: yes
-
-    - name: Update yum cache (RedHat/CentOS)
-      yum:
-        update_cache: yes
-      when: ansible_os_family == "RedHat"
-      ignore_errors: yes
+    min_memory_mb: 4096
+    min_cpu_count: 2
+    min_disk_gb: 20
 
   tasks:
+    - name: Gather system facts
+      setup:
+        gather_subset:
+          - hardware
+          - virtual
+
+    - name: Check system requirements
+      assert:
+        that:
+          - ansible_memtotal_mb >= min_memory_mb
+          - ansible_processor_vcpus >= min_cpu_count
+          - ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_total') | list | first >= min_disk_gb * 1024 * 1024 * 1024
+        fail_msg: "System does not meet minimum requirements. Need 4GB RAM, 2 CPUs, and 20GB disk space."
+        success_msg: "System meets minimum requirements"
+
+    - name: Ensure full internet connectivity
+      command: curl -s --connect-timeout 5 https://kurl.sh
+      register: connectivity_check
+      ignore_errors: yes
+
+    - name: Fail if no internet connectivity
+      fail:
+        msg: "No internet connectivity to kurl.sh. Please check your network connection."
+      when: connectivity_check.rc != 0
+
     - name: Install system prerequisites
       package:
         name:
@@ -31,11 +46,25 @@
           - python3
           - iptables
           - selinux-utils
+          - ntp
+          - chrony
         state: present
       register: pkg_result
       retries: 3
       delay: 5
       until: pkg_result is success
+
+    - name: Stop and disable firewalld
+      systemd:
+        name: firewalld
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+
+    - name: Disable SELinux
+      selinux:
+        state: disabled
+      ignore_errors: yes
 
     - name: Disable swap
       command: swapoff -a
@@ -46,6 +75,18 @@
         path: /etc/fstab
         regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
         replace: '# \1'
+
+    - name: Set system parameters for Kubernetes
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        sysctl_set: yes
+        reload: yes
+      with_items:
+        - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
 
     - name: Create temporary directory for kURL script
       file:
@@ -65,23 +106,17 @@
       delay: 5
       until: download_script is success
 
-    - name: Verify script download
-      stat:
-        path: /tmp/kurl/install.sh
-      register: script_check
-      failed_when: not script_check.stat.exists
-
     - name: Create installation log directory
       file:
         path: /var/log/kurl
         state: directory
         mode: '0755'
 
-    - name: Run kURL installation script with detailed logging
+    - name: Run kURL installation script with verbose output
       shell: |
         set -x
         cd /tmp/kurl
-        bash ./install.sh 2>&1 | tee /var/log/kurl/installation.log
+        KURL_VERBOSE=1 bash ./install.sh 2>&1 | tee /var/log/kurl/installation.log
       args:
         executable: /bin/bash
         chdir: /tmp/kurl
@@ -93,67 +128,52 @@
         var: kurl_installation.stdout_lines
       when: kurl_installation.stdout is defined
 
-    - name: Display installation errors
-      debug:
-        var: kurl_installation.stderr_lines
-      when: kurl_installation.stderr is defined
-
-    - name: Verify kubectl installation
+    - name: Check installation logs for specific errors
       shell: |
-        which kubectl || echo "kubectl not found"
-        ls -l /usr/local/bin/kubectl || echo "not in /usr/local/bin"
-        ls -l /usr/bin/kubectl || echo "not in /usr/bin"
-      register: kubectl_check
+        grep -i "error\|failed\|fatal" /var/log/kurl/installation.log || true
+      register: error_check
       changed_when: false
 
-    - name: Display kubectl installation status
+    - name: Display specific errors found
       debug:
-        var: kubectl_check.stdout_lines
+        var: error_check.stdout_lines
+      when: error_check.stdout_lines is defined and error_check.stdout_lines | length > 0
 
-    - name: Add kubectl to PATH if exists in alternate location
+    - name: Collect system diagnostics
       shell: |
-        if [ -f /usr/local/bin/kubectl ]; then
-          ln -sf /usr/local/bin/kubectl /usr/bin/kubectl
-        fi
-      when: kubectl_check.stdout is defined and 'not in /usr/bin' in kubectl_check.stdout
-
-    - name: Verify final kubectl availability
-      command: which kubectl
-      register: final_kubectl_check
-      changed_when: false
-      failed_when: false
-
-    - name: Check kubernetes node status
-      shell: |
-        export PATH=$PATH:/usr/local/bin:/usr/bin
-        kubectl get nodes
-      register: node_status
-      changed_when: false
-      failed_when: false
-      when: final_kubectl_check.rc == 0
-
-    - name: Display node status
-      debug:
-        var: node_status.stdout_lines
-      when: node_status is defined and node_status.stdout_lines is defined
-
-    - name: Collect installation diagnostics on failure
-      shell: |
-        echo "=== System Info ==="
+        echo "=== System Information ==="
         uname -a
-        echo "=== Directory Listing ==="
-        ls -la /usr/bin/kubectl* /usr/local/bin/kubectl* 2>/dev/null || echo "No kubectl found"
-        echo "=== Installation Log Excerpt ==="
-        tail -n 50 /var/log/kurl/installation.log
-      register: diagnostics
-      when: final_kubectl_check.rc != 0
+        echo "=== Memory Information ==="
+        free -m
+        echo "=== Disk Information ==="
+        df -h
+        echo "=== Network Information ==="
+        ip addr show
+        echo "=== Process Information ==="
+        ps aux | grep -i kube
+        echo "=== Service Status ==="
+        systemctl status kubelet || true
+      register: system_diagnostics
+      when: kurl_installation.rc != 0
 
-    - name: Display diagnostics
+    - name: Display system diagnostics
       debug:
-        var: diagnostics.stdout_lines
-      when: diagnostics is defined and diagnostics.stdout_lines is defined
+        var: system_diagnostics.stdout_lines
+      when: system_diagnostics is defined and system_diagnostics.stdout_lines is defined
 
-    - name: Fail if installation verification failed
+    - name: Verify final installation
+      command: which kubectl
+      register: final_check
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with detailed error message
       fail:
-        msg: "Kubernetes installation failed. Check the installation logs and diagnostics above."
-      when: final_kubectl_check.rc != 0
+        msg: |
+          Kubernetes installation failed. 
+          Please check:
+          1. System requirements (4GB RAM, 2 CPUs, 20GB disk)
+          2. Network connectivity
+          3. Installation logs at /var/log/kurl/installation.log
+          4. System diagnostics above
+      when: final_check.rc != 0
