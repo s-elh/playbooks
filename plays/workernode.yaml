@@ -1,10 +1,9 @@
 ---
 - name: Install Kubernetes using kURL
-  hosts: all
+  hosts: k8s_nodes
   become: true
   vars:
     kurl_script_url: "https://kurl.sh/f2e5eda"
-    installation_timeout: 7200  # 2 hours in seconds
 
   pre_tasks:
     - name: Update apt cache (Debian/Ubuntu)
@@ -66,55 +65,44 @@
       delay: 5
       until: download_script is success
 
-    - name: Display installation script content (for debugging)
-      command: cat /tmp/kurl/install.sh
-      register: script_content
-      changed_when: false
-
-    - name: Check script content
-      debug:
-        var: script_content.stdout_lines
-
     - name: Check if Kubernetes is already installed
       stat:
         path: /usr/bin/kubectl
       register: kubectl_binary
 
-    - name: Run kURL installation script with debug output
+    - name: Create installation log directory
+      file:
+        path: /var/log/kurl
+        state: directory
+        mode: '0755'
+
+    - name: Run kURL installation script
       shell: |
         set -x
-        bash /tmp/kurl/install.sh 2>&1 | tee /tmp/kurl/installation.log
+        bash /tmp/kurl/install.sh 2>&1 | tee /var/log/kurl/installation.log
       args:
         creates: /usr/bin/kubectl
       register: kurl_installation
-      async: "{{ installation_timeout }}"
-      poll: 30
       when: not kubectl_binary.stat.exists
-
-    - name: Wait for installation to complete
-      async_status:
-        jid: "{{ kurl_installation.ansible_job_id }}"
-      register: job_result
-      until: job_result.finished
-      retries: 240  # Will check every 30 seconds for 2 hours
-      delay: 30
-      when: not kubectl_binary.stat.exists and kurl_installation is defined
-
-    - name: Capture installation logs on failure
-      command: cat /tmp/kurl/installation.log
-      register: installation_logs
-      when: job_result is failed
       ignore_errors: yes
 
-    - name: Display installation logs if failed
+    - name: Display installation output
       debug:
-        var: installation_logs.stdout_lines
-      when: installation_logs is defined
+        var: kurl_installation.stdout_lines
+      when: kurl_installation.stdout is defined
 
-    - name: Clean up installation files
-      file:
-        path: /tmp/kurl
-        state: absent
+    - name: Display installation errors
+      debug:
+        var: kurl_installation.stderr_lines
+      when: kurl_installation.stderr is defined
+
+    - name: Fail if installation failed
+      fail:
+        msg: "kURL installation failed. Check /var/log/kurl/installation.log for details"
+      when: 
+        - not kubectl_binary.stat.exists
+        - kurl_installation.rc is defined
+        - kurl_installation.rc != 0
 
     - name: Verify Kubernetes installation
       command: kubectl version --short
@@ -126,3 +114,8 @@
       debug:
         var: kubectl_version.stdout_lines
       when: kubectl_version is success
+
+    - name: Clean up installation files
+      file:
+        path: /tmp/kurl
+        state: absent
