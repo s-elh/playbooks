@@ -1,269 +1,68 @@
 ---
-- name: Comprehensive Hadoop Installation and Configuration
+- name: Install Kubernetes using kURL
   hosts: all
-  become: yes
-  become_method: sudo
-  become_user: root
-  allow_world_readable_tmpfiles: true
-
+  become: true
   vars:
-    hadoop_user: "hdoop"
-    hadoop_group: "hadoopgroup"
-    hadoop_home: "/home/{{ hadoop_user }}"
-    
-    hadoop_version: "3.3.6"
-    hadoop_install_dir: "{{ hadoop_home }}/hadoop"
-    java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
-    
-    hadoop_mirrors:
-      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-
-  pre_tasks:
-    - name: Ensure system is prepared for Hadoop installation
-      block:
-        - name: Wait for any existing package management lock
-          shell: while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 5; done;
-          changed_when: false
-          failed_when: false
-
-        - name: Update apt cache
-          apt:
-            update_cache: yes
-            cache_valid_time: 3600
-
-        - name: Install required system packages
-          apt:
-            name: 
-              - default-jdk
-              - default-jre
-              - wget
-              - openssh-server
-              - ssh
-              - rsync
-              - python3-pip
-            state: present
-            update_cache: yes
-
-    - name: Create Hadoop group
-      group:
-        name: "{{ hadoop_group }}"
-        state: present
-
-    - name: Create Hadoop user
-      user:
-        name: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        home: "{{ hadoop_home }}"
-        shell: /bin/bash
-        create_home: yes
-        state: present
+    kurl_script_url: "https://kurl.sh/f2e5eda"
+    installation_timeout: 7200  # 2 hours in seconds
 
   tasks:
-    - name: Prepare Hadoop installation directories
-      block:
-        - name: Create download and installation directories
-          file:
-            path: "{{ item }}"
-            state: directory
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
-            mode: '0755'
-          loop:
-            - "{{ hadoop_home }}/downloads"
-            - "{{ hadoop_home }}/hdfs/namenode"
-            - "{{ hadoop_home }}/hdfs/datanode"
-            - "{{ hadoop_home }}/hdfs/tmp"
-            - "/home/hdoop/dfsdata/namenode"
-            - "/home/hdoop/dfsdata/datanode"
-            - "/home/hdoop/tmpdata"
-
-    - name: Download Hadoop
-      block:
-        - name: Download Hadoop with multiple mirror fallback
-          shell: |
-            set -o pipefail
-            for mirror in {{ hadoop_mirrors | join(' ') }}; do
-              wget --tries=3 \
-                   --timeout=300 \
-                   --no-check-certificate \
-                   -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" \
-                   "$mirror" && exit 0
-            done
-            exit 1
-          args:
-            creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-            executable: /bin/bash
-          become: yes
-          become_user: "{{ hadoop_user }}"
-          register: hadoop_download
-          failed_when: hadoop_download.rc != 0
-
-    - name: Install Hadoop
-      block:
-        - name: Extract Hadoop archive
-          unarchive:
-            src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-            dest: "{{ hadoop_home }}"
-            remote_src: yes
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
-
-        - name: Create Hadoop symbolic link
-          file:
-            src: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
-            dest: "{{ hadoop_install_dir }}"
-            state: link
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
-
-    - name: Configure Hadoop Environment
-      block:
-        - name: Update .bashrc with Hadoop environment variables
-          blockinfile:
-            path: "{{ hadoop_home }}/.bashrc"
-            block: |
-              # Hadoop Environment Variables
-              export JAVA_HOME={{ java_home }}
-              export HADOOP_HOME={{ hadoop_install_dir }}
-              export HADOOP_MAPRED_HOME=$HADOOP_HOME
-              export HADOOP_COMMON_HOME=$HADOOP_HOME
-              export HADOOP_HDFS_HOME=$HADOOP_HOME
-              export YARN_HOME=$HADOOP_HOME
-              export PATH=$PATH:$HADOOP_HOME/sbin:$HADOOP_HOME/bin
-            marker: "# {mark} ANSIBLE MANAGED HADOOP BLOCK"
-            create: yes
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
-
-    - name: Ensure Hadoop configuration directory exists
+    - name: Create temporary directory for kURL script
       file:
-        path: "{{ hadoop_install_dir }}/etc/hadoop"
+        path: /tmp/kurl
         state: directory
         mode: '0755'
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
 
-    - name: Configure Hadoop files
-      block:
-        - name: Replace core-site.xml content
-          copy:
-            dest: "{{ hadoop_install_dir }}/etc/hadoop/core-site.xml"
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
-            mode: '0644'
-            force: yes
-            content: |
-              <?xml version="1.0" encoding="UTF-8"?>
-              <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-              <configuration>
-                  <property>
-                      <name>hadoop.tmp.dir</name>
-                      <value>/home/hdoop/tmpdata</value>
-                  </property>
-                  <property>
-                      <name>fs.default.name</name>
-                      <value>hdfs://127.0.0.1:9000</value>
-                  </property>
-              </configuration>
-
-        - name: Replace hdfs-site.xml content
-          copy:
-            dest: "{{ hadoop_install_dir }}/etc/hadoop/hdfs-site.xml"
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
-            mode: '0644'
-            force: yes
-            content: |
-              <?xml version="1.0" encoding="UTF-8"?>
-              <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-              <configuration>
-                  <property>
-                      <name>dfs.data.dir</name>
-                      <value>/home/hdoop/dfsdata/namenode</value>
-                  </property>
-                  <property>
-                      <name>dfs.data.dir</name>
-                      <value>/home/hdoop/dfsdata/datanode</value>
-                  </property>
-                  <property>
-                      <name>dfs.replication</name>
-                      <value>1</value>
-                  </property>
-              </configuration>
-
-        - name: Replace mapred-site.xml content
-          copy:
-            dest: "{{ hadoop_install_dir }}/etc/hadoop/mapred-site.xml"
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
-            mode: '0644'
-            force: yes
-            content: |
-              <?xml version="1.0"?>
-              <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-              <configuration>
-                  <property>
-                      <name>mapreduce.framework.name</name>
-                      <value>yarn</value>
-                  </property>
-              </configuration>
-
-        - name: Replace yarn-site.xml content
-          copy:
-            dest: "{{ hadoop_install_dir }}/etc/hadoop/yarn-site.xml"
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
-            mode: '0644'
-            force: yes
-            content: |
-              <?xml version="1.0"?>
-              <configuration>
-                  <property>
-                      <name>yarn.nodemanager.aux-services</name>
-                      <value>mapreduce_shuffle</value>
-                  </property>
-                  <property>
-                      <name>yarn.nodemanager.aux-services.mapreduce.shuffle.class</name>
-                      <value>org.apache.hadoop.mapred.ShuffleHandler</value>
-                  </property>
-                  <property>
-                      <name>yarn.resourcemanager.hostname</name>
-                      <value>127.0.0.1</value>
-                  </property>
-                  <property>
-                      <name>yarn.acl.enable</name>
-                      <value>0</value>
-                  </property>
-                  <property>
-                      <name>yarn.nodemanager.env-whitelist</name>
-                      <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PERPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
-                  </property>
-              </configuration>
-
-    - name: Set Hadoop Permissions
-      file:
-        path: "{{ hadoop_install_dir }}"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        recurse: yes
+    - name: Download kURL installation script
+      get_url:
+        url: "{{ kurl_script_url }}"
+        dest: /tmp/kurl/install.sh
         mode: '0755'
+      register: download_script
+      async: 300
+      poll: 5
 
-  post_tasks:
-    - name: Verify Hadoop Installation
-      block:
-        - name: Check Hadoop version
-          shell: sudo -u hdoop "{{ hadoop_install_dir }}/bin/hadoop version"
-          register: hadoop_version_check
-          changed_when: false
+    - name: Check if Kubernetes is already installed
+      stat:
+        path: /usr/bin/kubectl
+      register: kubectl_binary
 
-        - name: Display Hadoop version
-          debug:
-            var: hadoop_version_check.stdout_lines
+    - name: Install required packages
+      package:
+        name:
+          - curl
+          - sudo
+        state: present
+      when: not kubectl_binary.stat.exists
 
-  handlers:
-    - name: Restart SSH
-      service:
-        name: ssh
-        state: restarted
+    - name: Run kURL installation script
+      shell: bash /tmp/kurl/install.sh
+      args:
+        creates: /usr/bin/kubectl
+      register: kurl_installation
+      async: "{{ installation_timeout }}"
+      poll: 30
+      when: not kubectl_binary.stat.exists
+
+    - name: Wait for installation to complete
+      async_status:
+        jid: "{{ kurl_installation.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 240  # Will check every 30 seconds for 2 hours
+      delay: 30
+      when: not kubectl_binary.stat.exists
+
+    - name: Clean up installation files
+      file:
+        path: /tmp/kurl
+        state: absent
+
+    - name: Verify Kubernetes installation
+      command: kubectl version --short
+      register: kubectl_version
+      changed_when: false
+
+    - name: Display Kubernetes version
+      debug:
+        var: kubectl_version.stdout_lines
