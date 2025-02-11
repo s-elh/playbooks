@@ -55,20 +55,15 @@
         enabled: yes
 
     - name: Set MySQL root password
-      community.mysql.mysql_user:
-        name: "{{ mysql_user }}"
-        password: "{{ mysql_password }}"
-        login_unix_socket: /var/run/mysqld/mysqld.sock
-        state: present
-        login_user: root
-        check_implicit_admin: yes
+      shell: |
+        mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{{ mysql_password }}';"
+        mysql -u root -p'{{ mysql_password }}' -e "FLUSH PRIVILEGES;"
+      ignore_errors: yes
 
     - name: Create MySQL database
-      community.mysql.mysql_db:
-        name: "{{ mysql_database }}"
-        state: present
-        login_user: "{{ mysql_user }}"
-        login_password: "{{ mysql_password }}"
+      shell: |
+        mysql -u root -p'{{ mysql_password }}' -e "CREATE DATABASE IF NOT EXISTS {{ mysql_database }};"
+      ignore_errors: no
 
     - name: Download WordPress
       get_url:
@@ -119,23 +114,38 @@
         marker: "// ANSIBLE MANAGED BLOCK"
         insertafter: "/* Add any custom values between this line and the \"stop editing\" line. */"
 
-    - name: Create Apache virtual host
-      template:
-        src: /etc/apache2/sites-available/000-default.conf
+    - name: Create Apache virtual host configuration
+      copy:
+        content: |
+          <VirtualHost *:80>
+            ServerAdmin webmaster@localhost
+            DocumentRoot /var/www/html/wordpress
+            ServerName {{ http_host }}
+            
+            <Directory /var/www/html/wordpress/>
+              Options FollowSymLinks
+              AllowOverride All
+              Require all granted
+            </Directory>
+
+            ErrorLog ${APACHE_LOG_DIR}/error.log
+            CustomLog ${APACHE_LOG_DIR}/access.log combined
+          </VirtualHost>
         dest: "/etc/apache2/sites-available/{{ http_conf }}"
         owner: root
         group: root
         mode: '0644'
 
     - name: Enable Apache rewrite module
-      apache2_module:
-        name: rewrite
-        state: present
+      shell: a2enmod rewrite
+      notify: Reload Apache
 
     - name: Enable new site
-      shell: |
-        a2ensite {{ http_conf }}
-        a2enmod rewrite
+      shell: a2ensite {{ http_conf }}
+      notify: Reload Apache
+
+    - name: Disable default Apache site
+      shell: a2dissite 000-default.conf
       notify: Reload Apache
 
   handlers:
