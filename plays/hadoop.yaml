@@ -1,21 +1,66 @@
 ---
-- name: Configure Kubernetes access
+- name: Install kURL and Configure Kubernetes
   hosts: all
   become: true
   tasks:
+   
+    # Basic system setup
     - name: Configure resolv.conf with Google DNS
       shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
     
     - name: Clear apt proxy settings
       shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+    # ✅ Installation des dépendances requises
+    - name: Install required dependencies
+      apt:
+        name:
+          - curl
+          - tar
+          - ca-certificates
+        state: present
+        update_cache: yes
 
-    - name: Create .kube directory
+    # ✅ Lancer l'installation de kURL en arrière-plan
+    - name: Start kURL installation in background
+      shell: nohup curl -fsSL https://kurl.sh/f256d8f | sudo bash > /tmp/kurl-install.log 2>&1 &
+      args:
+        executable: /bin/bash
+      async: 7200  # 2 heures max
+      poll: 0  # Exécuter en arrière-plan
+      changed_when: false
+
+    # ✅ Attendre que l'installation soit terminée
+    - name: Wait for kURL installation to finish
+      shell: tail -f /tmp/kurl-install.log | grep -m 1 "Installation complete"
+      async: 7200  # 2 heures max
+      poll: 5  # Vérifie toutes les 5 secondes
+      register: kurl_install_status
+      failed_when: kurl_install_status.rc != 0
+
+    # ✅ Vérifier si Kubernetes est bien installé
+    - name: Wait for Kubernetes API to become available
+      shell: kubectl get nodes
+      register: kube_status
+      until: kube_status.rc == 0
+      retries: 120  # 20 minutes max (120 x 10s)
+      delay: 10
+      ignore_errors: yes
+
+    # ✅ S'assurer que kubelet est actif
+    - name: Ensure kubelet service is enabled and running
+      systemd:
+        name: kubelet
+        enabled: yes
+        state: started
+
+    # ✅ Configuration de .kube pour root
+    - name: Create .kube directory for root
       file:
         path: /root/.kube
         state: directory
         mode: '0755'
 
-    - name: Copy admin.conf to root's kube config
+    - name: Copy kubeconfig to root's .kube directory
       copy:
         src: /etc/kubernetes/admin.conf
         dest: /root/.kube/config
@@ -25,12 +70,33 @@
         mode: '0600'
       ignore_errors: yes
 
+    # ✅ Autoriser un utilisateur non-root à utiliser kubectl
+    - name: Ensure .kube directory exists for ansible_user
+      file:
+        path: /home/{{ ansible_user }}/.kube
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Copy kubeconfig to ansible_user
+      copy:
+        src: /root/.kube/config
+        dest: /home/{{ ansible_user }}/.kube/config
+        remote_src: yes
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0600'
+      ignore_errors: yes
+
+    # ✅ Redémarrer kubelet après installation
     - name: Restart kubelet service
       systemd:
         name: kubelet
         state: restarted
         daemon_reload: yes
 
+    # ✅ Tester la connexion kubectl
     - name: Test kubectl connection
       command: kubectl get nodes
       register: kubectl_test
