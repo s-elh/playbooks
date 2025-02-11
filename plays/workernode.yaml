@@ -12,6 +12,24 @@
     http_port: "80"
     disable_default: true
 
+  pre_tasks:
+    - name: Install required Python packages
+      apt:
+        name:
+          - python3-pip
+          - python3-mysqldb
+        state: present
+
+    - name: Install PyMySQL
+      pip:
+        name: pymysql
+        state: present
+
+    - name: Install MySQL collection
+      community.general.ansible_galaxy_collection:
+        name: community.mysql
+        state: present
+
   tasks:
     - name: Update apt cache
       apt:
@@ -33,7 +51,6 @@
           - php-soap
           - php-intl
           - php-zip
-          - python3-pymysql
         state: present
 
     - name: Start and enable Apache service
@@ -49,7 +66,7 @@
         enabled: yes
 
     - name: Set MySQL root password
-      mysql_user:
+      community.mysql.mysql_user:
         name: "{{ mysql_user }}"
         password: "{{ mysql_password }}"
         login_unix_socket: /var/run/mysqld/mysqld.sock
@@ -58,7 +75,7 @@
         check_implicit_admin: yes
 
     - name: Create MySQL database
-      mysql_db:
+      community.mysql.mysql_db:
         name: "{{ mysql_database }}"
         state: present
         login_user: "{{ mysql_user }}"
