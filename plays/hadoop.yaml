@@ -1,160 +1,98 @@
 ---
-- name: Comprehensive Hadoop Installation and Configuration
+- name: Configure Kubernetes Worker Node on Ubuntu using kURL
   hosts: all
-  become: yes
-  become_method: sudo
-  become_user: root
+  become: true
 
-  vars:
-    hadoop_user: "hdoop"
-    hadoop_group: "hadoopgroup"
-    hadoop_home: "/home/{{ hadoop_user }}"
-    
-    hadoop_version: "3.3.6"
-    hadoop_install_dir: "{{ hadoop_home }}/hadoop"
-    java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
-    
-    hadoop_mirrors:
-      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+    # === Fix DNS issue ===
+    - name: Stop and disable systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: no
 
-  pre_tasks:
-    - name: Ensure system is prepared for Hadoop installation
-      block:
-        - name: Wait for any existing package management lock
-          shell: while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 5; done;
-          changed_when: false
-          failed_when: false
+    - name: Remove symbolic link for /etc/resolv.conf
+      ansible.builtin.file:
+        path: /etc/resolv.conf
+        state: absent
 
-        - name: Update apt cache
-          apt:
-            update_cache: yes
-            cache_valid_time: 3600
+    - name: Set a valid DNS resolver
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 8.8.8.8
+          nameserver 1.1.1.1
+          options edns0 trust-ad
+        mode: '0644'
 
-        - name: Install required system packages
-          apt:
-            name: 
-              - default-jdk
-              - default-jre
-              - wget
-              - openssh-server
-              - ssh
-              - rsync
-              - python3-pip
-            state: present
-            update_cache: yes
+    - name: Verify DNS resolution
+      ansible.builtin.command: nslookup google.com
+      register: dns_test
+      ignore_errors: true
 
-    - name: Create Hadoop group
-      group:
-        name: "{{ hadoop_group }}"
+    - name: Show DNS resolution result
+      debug:
+        var: dns_test.stdout
+
+    # === Installation des prérequis ===
+    - name: Update APT package index
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install required dependencies
+      ansible.builtin.apt:
+        name: 
+          - curl 
+          - tar 
+          - socat 
+          - jq 
+          - iptables 
         state: present
 
-    - name: Create Hadoop user
-      user:
-        name: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        home: "{{ hadoop_home }}"
-        shell: /bin/bash
-        create_home: yes
-        state: present
+    - name: Disable swap
+      ansible.builtin.command: swapoff -a
 
-  tasks:
-    - name: Prepare Hadoop installation directories
-      block:
-        - name: Create download and installation directories
-          file:
-            path: "{{ item }}"
-            state: directory
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
-            mode: '0755'
-          loop:
-            - "{{ hadoop_home }}/downloads"
-            - "{{ hadoop_home }}/hdfs/namenode"
-            - "{{ hadoop_home }}/hdfs/datanode"
-            - "{{ hadoop_home }}/hdfs/tmp"
+    - name: Ensure swap is disabled permanently
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '.*swap.*'
+        state: absent
 
-    - name: Download Hadoop
-      block:
-        - name: Download Hadoop with multiple mirror fallback
-          shell: |
-            set -o pipefail
-            for mirror in {{ hadoop_mirrors | join(' ') }}; do
-              wget --tries=3 \
-                   --timeout=300 \
-                   --no-check-certificate \
-                   -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" \
-                   "$mirror" && exit 0
-            done
-            exit 1
-          args:
-            creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-            executable: /bin/bash
-          become: yes
-          become_user: "{{ hadoop_user }}"
-          register: hadoop_download
-          failed_when: hadoop_download.rc != 0
+    # === Configuration du noyau et des modules nécessaires ===
+    - name: Load required kernel modules
+      ansible.builtin.shell: |
+        modprobe br_netfilter
+        modprobe overlay
 
-    - name: Install Hadoop
-      block:
-        - name: Extract Hadoop archive
-          unarchive:
-            src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-            dest: "{{ hadoop_home }}"
-            remote_src: yes
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
+    - name: Ensure br_netfilter and overlay modules are loaded
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          br_netfilter
+          overlay
 
-        - name: Create Hadoop symbolic link
-          file:
-            src: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
-            dest: "{{ hadoop_install_dir }}"
-            state: link
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
+    - name: Set sysctl params for Kubernetes
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/k8s.conf
+        content: |
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.bridge.bridge-nf-call-iptables = 1
+          net.ipv4.ip_forward = 1
 
-    - name: Configure Hadoop Environment
-      block:
-        - name: Update .bashrc with Hadoop environment variables
-          blockinfile:
-            path: "{{ hadoop_home }}/.bashrc"
-            block: |
-              # Hadoop Environment Variables
-              export JAVA_HOME={{ java_home }}
-              export HADOOP_HOME={{ hadoop_install_dir }}
-              export HADOOP_MAPRED_HOME=$HADOOP_HOME
-              export HADOOP_COMMON_HOME=$HADOOP_HOME
-              export HADOOP_HDFS_HOME=$HADOOP_HOME
-              export YARN_HOME=$HADOOP_HOME
-              export PATH=$PATH:$HADOOP_HOME/sbin:$HADOOP_HOME/bin
-            marker: "# {mark} ANSIBLE MANAGED HADOOP BLOCK"
-            create: yes
-            owner: "{{ hadoop_user }}"
-            group: "{{ hadoop_group }}"
+    - name: Apply sysctl parameters
+      ansible.builtin.command: sysctl --system
 
-    - name: Set Hadoop Permissions
-      file:
-        path: "{{ hadoop_install_dir }}"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        recurse: yes
-        mode: '0755'
+    # === Installation de kURL avec un timeout de 2 heures ===
+    - name: Download and run kURL installer (timeout 7200s)
+      ansible.builtin.shell: |
+        curl -fsSL https://kurl.sh/latest | sudo bash
+      async: 7200  # Exécuter jusqu'à 2 heures maximum
+      poll: 60      # Vérifier toutes les 60 secondes
 
-  post_tasks:
-    - name: Verify Hadoop Installation
-      block:
-        - name: Check Hadoop version
-          shell: sudo -u hdoop "{{ hadoop_install_dir }}/bin/hadoop version"
-          register: hadoop_version_check
-          changed_when: false
-
-        - name: Display Hadoop version
-          debug:
-            var: hadoop_version_check.stdout_lines
-
-  handlers:
-    - name: Restart SSH
-      service:
-        name: ssh
-        state: restarted
+    # === Ajout du Worker Node au Cluster Kubernetes ===
+    - name: Join Kubernetes cluster using token from master
+      ansible.builtin.shell: |
+        if [ -f /root/join-command.sh ]; then
+          bash /root/join-command.sh
+        else
+          echo "Join command not found. Ensure it is created on the master."
+        fi
