@@ -3,7 +3,7 @@
   hosts: all
   become: yes
   vars:
-    mysql_root_password: “{{ lookup('cypher','secret=secret/mysqlpw') }}"
+    mysql_password: “{{ lookup('cypher','secret=secret/mysqlpw') }}"
     mysql_user: root 
     mysql_database: wordpress_db
     http_host: your_domain
