@@ -33,19 +33,14 @@
           - php-soap
           - php-intl
           - php-zip
+          - python3-pip
           - python3-mysqldb
-          - ufw
         state: present
 
-    - name: Allow port 80 through UFW
-      ufw:
-        rule: allow
-        port: '80'
-        proto: tcp
-
-    - name: Reload UFW
-      ufw:
-        state: reloaded
+    - name: Install PyMySQL
+      pip:
+        name: pymysql
+        state: present
 
     - name: Start and enable Apache service
       service:
@@ -59,18 +54,16 @@
         state: started
         enabled: yes
 
-    - name: Initialize MySQL root password
+    - name: Set MySQL root password
       shell: |
-        mysql --user=root <<EOF
-        ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '{{ mysql_password }}';
-        FLUSH PRIVILEGES;
-        EOF
+        mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{{ mysql_password }}';"
+        mysql -u root -p'{{ mysql_password }}' -e "FLUSH PRIVILEGES;"
       ignore_errors: yes
 
     - name: Create MySQL database
       shell: |
-        mysql --user=root --password='{{ mysql_password }}' -e "CREATE DATABASE IF NOT EXISTS {{ mysql_database }};"
-      ignore_errors: yes
+        mysql -u root -p'{{ mysql_password }}' -e "CREATE DATABASE IF NOT EXISTS {{ mysql_database }};"
+      ignore_errors: no
 
     - name: Download WordPress
       get_url:
@@ -93,8 +86,7 @@
         recurse: yes
 
     - name: Copy WordPress config file
-      copy:
-        remote_src: yes
+      template:
         src: /var/www/html/wordpress/wp-config-sample.php
         dest: /var/www/html/wordpress/wp-config.php
         owner: www-data
