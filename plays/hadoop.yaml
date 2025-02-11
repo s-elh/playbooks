@@ -3,6 +3,12 @@
   hosts: all
   become: true
   tasks:
+    # Basic system setup
+    - name: Configure resolv.conf with Google DNS
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
+    - name: Clear apt proxy settings
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
     # Configuration du répertoire .kube
     - name: Create .kube directory
       file:
