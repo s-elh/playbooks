@@ -34,7 +34,18 @@
           - php-intl
           - php-zip
           - python3-mysqldb
+          - ufw
         state: present
+
+    - name: Allow port 80 through UFW
+      ufw:
+        rule: allow
+        port: '80'
+        proto: tcp
+
+    - name: Reload UFW
+      ufw:
+        state: reloaded
 
     - name: Start and enable Apache service
       service:
