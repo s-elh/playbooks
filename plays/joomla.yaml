@@ -7,7 +7,7 @@
     php_version: "8.1"
     joomla_version: "5-2-3"
     web_root: "/var/www/html"
-    mysql_root_password: "ACSCloud!2021!"
+    mysql_root_password: "{{ lookup('cypher','secret=secret/mysqlpw') }}"
     ansible_remote_tmp: "/var/tmp/.ansible/tmp"
 
   tasks:
