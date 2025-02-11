@@ -1,6 +1,6 @@
 ---
 - name: Installer WordPress sur Ubuntu
-  hosts: web
+  hosts: all
   become: yes
   tasks:
 
