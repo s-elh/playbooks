@@ -1,95 +1,131 @@
 ---
-- name: Installer WordPress sur Ubuntu
-  hosts: all
-  become: yes
+- hosts: all
+  become: true
+
   tasks:
-
-    - name: Mettre à jour le système
+    - name: Mettre à jour le système et installer les prérequis
       apt:
+        name: aptitude
         update_cache: yes
-        upgrade: dist
+        state: latest
+        force_apt_get: yes
+      tags: [ system ]
 
-    - name: Installer Apache, MySQL, PHP et dépendances
+    - name: Installer le serveur LAMP
       apt:
         name:
           - apache2
           - mysql-server
+          - python3-pymysql
           - php
           - php-mysql
           - libapache2-mod-php
-          - php-cli
-          - php-curl
-          - php-gd
-          - php-mbstring
-          - php-xml
-          - php-xmlrpc
-          - unzip
-          - wget
-        state: present
+        update_cache: yes
+        state: latest
+      tags: [ system ]
 
-    - name: Démarrer Apache et MySQL
-      service:
-        name: "{{ item }}"
-        state: started
-        enabled: yes
-      loop:
-        - apache2
-        - mysql
+  # Configuration Apache
+    - name: Créer le répertoire du site
+      file:
+        path: "/var/www/html"
+        state: directory
+        owner: "www-data"
+        group: "www-data"
+        mode: '0755'
+      tags: [ apache ]
 
-    - name: Sécuriser MySQL (désactiver l'authentification par socket pour root)
-      mysql_user:
+    - name: Activer le module rewrite d'Apache
+      shell: /usr/sbin/a2enmod rewrite
+      notify: Reload Apache
+      tags: [ apache ]
+
+    - name: Désactiver le site par défaut d'Apache
+      shell: /usr/sbin/a2dissite 000-default.conf
+      notify: Restart Apache
+      tags: [ apache ]
+
+  # Configuration MySQL
+    - name: Définir le mot de passe root de MySQL
+      community.mysql.mysql_user:
         name: root
-        host: localhost
         password: rootroot
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      tags: [ mysql ]
+
+    - name: Supprimer les utilisateurs anonymes de MySQL
+      community.mysql.mysql_user:
+        name: ''
+        host_all: yes
+        state: absent
         login_user: root
         login_password: rootroot
-        priv: "*.*:ALL,GRANT"
+      tags: [ mysql ]
 
-    - name: Créer une base de données WordPress
-      mysql_db:
+    - name: Supprimer la base de données de test
+      community.mysql.mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: rootroot
+      tags: [ mysql ]
+
+    - name: Créer la base de données WordPress
+      community.mysql.mysql_db:
         name: wordpress
         state: present
         login_user: root
         login_password: rootroot
+      tags: [ mysql ]
 
-    - name: Créer un utilisateur MySQL pour WordPress
-      mysql_user:
+    - name: Créer l'utilisateur MySQL pour WordPress
+      community.mysql.mysql_user:
         name: wp_user
         password: wp_pass
         priv: "wordpress.*:ALL"
-        host: localhost
         state: present
         login_user: root
         login_password: rootroot
+      tags: [ mysql ]
 
-    - name: Télécharger WordPress
-      get_url:
-        url: https://wordpress.org/latest.tar.gz
-        dest: /tmp/wordpress.tar.gz
-
-    - name: Extraire WordPress
+  # Configuration WordPress
+    - name: Télécharger et extraire WordPress
       unarchive:
-        src: /tmp/wordpress.tar.gz
-        dest: /var/www/html/
+        src: https://wordpress.org/latest.tar.gz
+        dest: "/var/www/html"
         remote_src: yes
+        creates: "/var/www/html/wordpress"
+      tags: [ wordpress ]
 
-    - name: Modifier les permissions de WordPress
+    - name: Changer les permissions de WordPress
       file:
-        path: /var/www/html/wordpress
-        owner: www-data
-        group: www-data
-        mode: "0755"
+        path: "/var/www/html/wordpress"
+        state: directory
         recurse: yes
-
-    - name: Copier le fichier de configuration wp-config.php
-      template:
-        src: wp-config.php.j2
-        dest: /var/www/html/wordpress/wp-config.php
         owner: www-data
         group: www-data
-        mode: "0644"
+      tags: [ wordpress ]
 
-    - name: Redémarrer Apache
+    - name: Définir les permissions des dossiers WordPress
+      shell: "/usr/bin/find /var/www/html/wordpress/ -type d -exec chmod 750 {} \\;"
+      tags: [ wordpress ]
+
+    - name: Définir les permissions des fichiers WordPress
+      shell: "/usr/bin/find /var/www/html/wordpress/ -type f -exec chmod 640 {} \\;"
+      tags: [ wordpress ]
+
+    - name: Copier wp-config.php
+      template:
+        src: "files/wp-config.php.j2"
+        dest: "/var/www/html/wordpress/wp-config.php"
+      tags: [ wordpress ]
+
+  handlers:
+    - name: Reload Apache
+      service:
+        name: apache2
+        state: reloaded
+
+    - name: Restart Apache
       service:
         name: apache2
         state: restarted
