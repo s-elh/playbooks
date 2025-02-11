@@ -9,6 +9,7 @@
     
     - name: Clear apt proxy settings
       shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+
     # Configuration du répertoire .kube
     - name: Create .kube directory
       file:
