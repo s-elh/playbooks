@@ -3,14 +3,8 @@
   hosts: all
   become: true
   tasks:
-   
-    # Basic system setup
-    - name: Configure resolv.conf with Google DNS
-      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-    
-    - name: Clear apt proxy settings
-      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
-    # ✅ Installation des dépendances requises
+
+    # ✅ Install Required Dependencies
     - name: Install required dependencies
       apt:
         name:
@@ -20,40 +14,41 @@
         state: present
         update_cache: yes
 
-    # ✅ Lancer l'installation de kURL en arrière-plan
-    - name: Start kURL installation in background
-      shell: nohup curl -fsSL https://kurl.sh/f256d8f | sudo bash > /tmp/kurl-install.log 2>&1 &
+    # ✅ Start kURL Installation in the Background
+    - name: Start kURL installation
+      shell: "curl -fsSL https://kurl.sh/f256d8f | sudo bash > /tmp/kurl-install.log 2>&1"
       args:
         executable: /bin/bash
-      async: 7200  # 2 heures max
-      poll: 0  # Exécuter en arrière-plan
-      changed_when: false
+      async: 7200  # 2 hours timeout
+      poll: 0  # Run in background
+      register: kurl_async
 
-    # ✅ Attendre que l'installation soit terminée
-    - name: Wait for kURL installation to finish
-      shell: tail -f /tmp/kurl-install.log | grep -m 1 "Installation complete"
-      async: 7200  # 2 heures max
-      poll: 5  # Vérifie toutes les 5 secondes
-      register: kurl_install_status
-      failed_when: kurl_install_status.rc != 0
+    # ✅ Wait for kURL Installation to Finish
+    - name: Check kURL installation progress
+      async_status:
+        jid: "{{ kurl_async.ansible_job_id }}"
+      register: kurl_status
+      until: kurl_status.finished
+      retries: 240  # Check for up to 40 minutes (240 retries x 10s)
+      delay: 10  # Wait 10 seconds between checks
 
-    # ✅ Vérifier si Kubernetes est bien installé
+    # ✅ Wait for Kubernetes API to be Ready
     - name: Wait for Kubernetes API to become available
       shell: kubectl get nodes
       register: kube_status
       until: kube_status.rc == 0
-      retries: 120  # 20 minutes max (120 x 10s)
+      retries: 120  # 20 minutes max (120 retries x 10s)
       delay: 10
       ignore_errors: yes
 
-    # ✅ S'assurer que kubelet est actif
+    # ✅ Ensure kubelet is Running
     - name: Ensure kubelet service is enabled and running
       systemd:
         name: kubelet
         enabled: yes
         state: started
 
-    # ✅ Configuration de .kube pour root
+    # ✅ Configure kubeconfig for Root
     - name: Create .kube directory for root
       file:
         path: /root/.kube
@@ -70,7 +65,7 @@
         mode: '0600'
       ignore_errors: yes
 
-    # ✅ Autoriser un utilisateur non-root à utiliser kubectl
+    # ✅ Configure kubeconfig for Non-Root User
     - name: Ensure .kube directory exists for ansible_user
       file:
         path: /home/{{ ansible_user }}/.kube
@@ -89,14 +84,14 @@
         mode: '0600'
       ignore_errors: yes
 
-    # ✅ Redémarrer kubelet après installation
+    # ✅ Restart kubelet After Installation
     - name: Restart kubelet service
       systemd:
         name: kubelet
         state: restarted
         daemon_reload: yes
 
-    # ✅ Tester la connexion kubectl
+    # ✅ Test Kubernetes Connection
     - name: Test kubectl connection
       command: kubectl get nodes
       register: kubectl_test
