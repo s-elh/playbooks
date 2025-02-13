@@ -1,41 +1,104 @@
 ---
-- name: Install Kubernetes using kURL
+- name: Configure Kubernetes Worker Node on Ubuntu using kURL
   hosts: all
-  become: yes
+  become: true
   tasks:
+  # Basic system setup
     - name: Configure resolv.conf with Google DNS
-      shell: echo "nameserver 8.8.8.8" > /etc/resolv.conf
-
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
     - name: Clear apt proxy settings
       shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
-
-    - name: Install required packages
-      apt:
-        name: 
-          - curl
-          - apt-transport-https
-          - ca-certificates
-        state: present
+   # === Fix DNS issue ===
+    - name: Stop and disable systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: no
+    
+    - name: Remove symbolic link for /etc/resolv.conf
+      ansible.builtin.file:
+        path: /etc/resolv.conf
+        state: absent
+    
+    - name: Set a valid DNS resolver
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 8.8.8.8
+          nameserver 1.1.1.1
+          options edns0 trust-ad
+        mode: '0644'
+    
+    - name: Verify DNS resolution
+      ansible.builtin.command: nslookup google.com
+      register: dns_test
+      ignore_errors: true
+    
+    - name: Show DNS resolution result
+      debug:
+        var: dns_test.stdout
+    
+    # === Installation des prérequis ===
+    - name: Update APT package index
+      ansible.builtin.apt:
         update_cache: yes
-
-    - name: Install Kubernetes with kURL
-      shell: curl -fsSL https://kurl.sh/2de1df0 | bash -s nameserver=8.8.8.8
-
-    - name: Create .kube directory
-      file:
-        path: /root/.kube
-        state: directory
-        mode: '0755'
-
-    - name: Copy admin.conf to .kube/config
-      copy:
-        src: /etc/kubernetes/admin.conf
-        dest: /root/.kube/config
-        remote_src: yes
-        mode: '0600'
-
-    - name: Set KUBECONFIG environment variable
-      lineinfile:
-        path: /root/.bashrc
-        line: 'export KUBECONFIG=/root/.kube/config'
+    
+    - name: Install required dependencies
+      ansible.builtin.apt:
+        name: 
+          - curl 
+          - tar 
+          - socat 
+          - jq 
+          - iptables 
         state: present
+    
+    - name: Disable swap
+      ansible.builtin.command: swapoff -a
+    
+    - name: Ensure swap is disabled permanently
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '.*swap.*'
+        state: absent
+    
+    # === Configuration du noyau et des modules nécessaires ===
+    - name: Load required kernel modules
+      ansible.builtin.shell: |
+        modprobe br_netfilter
+        modprobe overlay
+    
+    - name: Ensure br_netfilter and overlay modules are loaded
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          br_netfilter
+          overlay
+    
+    - name: Set sysctl params for Kubernetes
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/k8s.conf
+        content: |
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.bridge.bridge-nf-call-iptables = 1
+          net.ipv4.ip_forward = 1
+    
+    - name: Apply sysctl parameters
+      ansible.builtin.command: sysctl --system
+    
+    # === Installation de kURL avec un timeout de 2 heures ===
+    - name: Download and run kURL installer (timeout 7200s)
+      ansible.builtin.shell: |
+        curl -fsSL https://kurl.sh/latest | sudo bash
+      async: 7200  # Exécuter jusqu'à 2 heures maximum
+      poll: 60      # Vérifier toutes les 60 secondes
+    
+    # === Ajout du Worker Node au Cluster Kubernetes ===
+    - name: Join Kubernetes cluster using token from master
+      ansible.builtin.shell: |
+        if [ -f /root/join-command.sh ]; then
+          bash /root/join-command.sh
+        else
+          echo "Join command not found. Ensure it is created on the master."
+        fi
