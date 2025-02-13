@@ -3,14 +3,12 @@
   hosts: all
   become: yes
   tasks:
-    # System prerequisites
     - name: Configure resolv.conf with Google DNS
       shell: echo "nameserver 8.8.8.8" > /etc/resolv.conf
 
     - name: Clear apt proxy settings
       shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
 
-    # Install required packages
     - name: Install required packages
       apt:
         name: 
@@ -20,44 +18,24 @@
         state: present
         update_cache: yes
 
-    # Create temporary directory for kURL
-    - name: Create temporary directory
+    - name: Install Kubernetes with kURL
+      shell: curl -fsSL https://kurl.sh/2de1df0 | bash
+
+    - name: Create .kube directory
       file:
-        path: /tmp/kurl
+        path: /root/.kube
         state: directory
         mode: '0755'
 
-    # Download kURL installer
-    - name: Download kURL installer
-      get_url:
-        url: https://kurl.sh/2de1df0
-        dest: /tmp/kurl/install.sh
-        mode: '0755'
+    - name: Copy admin.conf to .kube/config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /root/.kube/config
+        remote_src: yes
+        mode: '0600'
 
-    # Run kURL installer
-    - name: Install Kubernetes with kURL
-      shell: bash /tmp/kurl/install.sh
-      args:
-        creates: /etc/kubernetes/admin.conf
-      register: kurl_result
-
-    # Display installation results
-    - name: Show installation output
-      debug:
-        var: kurl_result.stdout_lines
-
-    # Clean up
-    - name: Remove temporary files
-      file:
-        path: /tmp/kurl
-        state: absent
-
-    # Verify installation
-    - name: Check kubectl version
-      shell: kubectl version --short
-      register: kubectl_version
-      changed_when: false
-
-    - name: Display kubectl version
-      debug:
-        var: kubectl_version.stdout_lines
+    - name: Set KUBECONFIG environment variable
+      lineinfile:
+        path: /root/.bashrc
+        line: 'export KUBECONFIG=/root/.kube/config'
+        state: present
