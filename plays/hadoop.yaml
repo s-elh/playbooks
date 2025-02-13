@@ -1,124 +1,63 @@
 ---
-- name: Install kURL and Configure Kubernetes
+- name: Install Kubernetes using kURL
   hosts: all
-  become: true
+  become: yes
   tasks:
+    # System prerequisites
+    - name: Configure resolv.conf with Google DNS
+      shell: echo "nameserver 8.8.8.8" > /etc/resolv.conf
 
-    # ✅ Fix DNS for kURL installation
-    - name: Ensure resolv.conf has a valid nameserver
-      copy:
-        dest: /etc/resolv.conf
-        content: |
-          nameserver 8.8.8.8
-          nameserver 1.1.1.1
-      register: dns_config
+    - name: Clear apt proxy settings
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
 
-    - name: Display DNS configuration
-      debug:
-        var: dns_config
-
-    # ✅ Install required dependencies
-    - name: Install required dependencies
+    # Install required packages
+    - name: Install required packages
       apt:
-        name:
+        name: 
           - curl
-          - tar
+          - apt-transport-https
           - ca-certificates
         state: present
         update_cache: yes
 
-    # ✅ Start kURL Installation in the Background
-    - name: Start kURL installation
-      shell: curl -fsSL https://kurl.sh/726730f | sudo bash
+    # Create temporary directory for kURL
+    - name: Create temporary directory
+      file:
+        path: /tmp/kurl
+        state: directory
+        mode: '0755'
+
+    # Download kURL installer
+    - name: Download kURL installer
+      get_url:
+        url: https://kurl.sh/726730f
+        dest: /tmp/kurl/install.sh
+        mode: '0755'
+
+    # Run kURL installer
+    - name: Install Kubernetes with kURL
+      shell: bash /tmp/kurl/install.sh
       args:
-        executable: /bin/bash
-      async: 10800  # Allow up to 3 hours for installation
-      poll: 0  # Run in background
-      register: kurl_async
+        creates: /etc/kubernetes/admin.conf
+      register: kurl_result
 
-    # ✅ Wait for kURL Installation to Finish
-    - name: Wait for kURL installation to complete
-      async_status:
-        jid: "{{ kurl_async.ansible_job_id }}"
-      register: kurl_status
-      until: kurl_status.finished
-      retries: 360  # Check for up to 3 hours (360 retries x 30s)
-      delay: 30
-
-    # ✅ Display kURL Installation Logs
-    - name: Display kURL installation output
+    # Display installation results
+    - name: Show installation output
       debug:
-        var: kurl_status.stdout_lines
+        var: kurl_result.stdout_lines
 
-    - name: Display kURL installation error messages
-      debug:
-        var: kurl_status.stderr_lines
-
-    # ✅ Wait for Kubernetes API to be Ready
-    - name: Wait for Kubernetes API to become available
-      shell: kubectl get nodes
-      register: kube_status
-      until: kube_status.rc == 0
-      retries: 120  # 20 minutes max (120 retries x 10s)
-      delay: 10
-      ignore_errors: yes
-
-    # ✅ Ensure kubelet is Running
-    - name: Ensure kubelet service is enabled and running
-      systemd:
-        name: kubelet
-        enabled: yes
-        state: started
-
-    # ✅ Configure kubeconfig for Root
-    - name: Create .kube directory for root
+    # Clean up
+    - name: Remove temporary files
       file:
-        path: /root/.kube
-        state: directory
-        mode: '0755'
+        path: /tmp/kurl
+        state: absent
 
-    - name: Copy kubeconfig to root's .kube directory
-      copy:
-        src: /etc/kubernetes/admin.conf
-        dest: /root/.kube/config
-        remote_src: yes
-        owner: root
-        group: root
-        mode: '0600'
-      ignore_errors: yes
+    # Verify installation
+    - name: Check kubectl version
+      shell: kubectl version --short
+      register: kubectl_version
+      changed_when: false
 
-    # ✅ Configure kubeconfig for Non-Root User
-    - name: Ensure .kube directory exists for ansible_user
-      file:
-        path: /home/{{ ansible_user }}/.kube
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0755'
-
-    - name: Copy kubeconfig to ansible_user
-      copy:
-        src: /root/.kube/config
-        dest: /home/{{ ansible_user }}/.kube/config
-        remote_src: yes
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0600'
-      ignore_errors: yes
-
-    # ✅ Restart kubelet After Installation
-    - name: Restart kubelet service
-      systemd:
-        name: kubelet
-        state: restarted
-        daemon_reload: yes
-
-    # ✅ Test Kubernetes Connection
-    - name: Test kubectl connection
-      command: kubectl get nodes
-      register: kubectl_test
-      ignore_errors: yes
-
-    - name: Display kubectl test result
+    - name: Display kubectl version
       debug:
-        var: kubectl_test.stdout_lines
+        var: kubectl_version.stdout_lines
