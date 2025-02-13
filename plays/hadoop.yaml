@@ -19,7 +19,7 @@
         update_cache: yes
 
     - name: Install Kubernetes with kURL
-      shell: curl -fsSL https://kurl.sh/2de1df0 | bash
+      shell: curl -fsSL https://kurl.sh/2de1df0 | bash -s nameserver=8.8.8.8
 
     - name: Create .kube directory
       file:
