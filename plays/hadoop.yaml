@@ -4,24 +4,20 @@
   become: true
   tasks:
 
-    # ✅ Basic System Setup
-    - name: Configure resolv.conf with Google DNS
-      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    # ✅ Fix DNS for kURL installation
+    - name: Ensure resolv.conf has a valid nameserver
+      copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 8.8.8.8
+          nameserver 1.1.1.1
+      register: dns_config
 
-    - name: Clear apt proxy settings
-      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
-
-    # ✅ Check Network Connectivity
-    - name: Check network connectivity
-      shell: ping -c 4 8.8.8.8
-      register: ping_test
-      ignore_errors: true
-
-    - name: Display network test results
+    - name: Display DNS configuration
       debug:
-        var: ping_test.stdout_lines
+        var: dns_config
 
-    # ✅ Install Required Dependencies
+    # ✅ Install required dependencies
     - name: Install required dependencies
       apt:
         name:
