@@ -4,6 +4,13 @@
   become: true
   tasks:
 
+    # ✅ Basic System Setup
+    - name: Configure resolv.conf with Google DNS
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+
+    - name: Clear apt proxy settings
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+
     # ✅ Install Required Dependencies
     - name: Install required dependencies
       apt:
@@ -19,7 +26,7 @@
       shell: "curl -fsSL https://kurl.sh/f256d8f | sudo bash > /tmp/kurl-install.log 2>&1"
       args:
         executable: /bin/bash
-      async: 7200  # 2 hours timeout
+      async: 7200  # Allow up to 2 hours for installation
       poll: 0  # Run in background
       register: kurl_async
 
