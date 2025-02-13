@@ -4,15 +4,18 @@
   become: true
   tasks:
 
-    # ✅ Basic System Setup
-    - name: Configure resolv.conf with Google DNS
-      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    # ✅ Vérifier la connexion Internet
+    - name: Vérifier la connectivité réseau
+      shell: ping -c 4 8.8.8.8
+      register: ping_test
+      ignore_errors: true
 
-    - name: Clear apt proxy settings
-      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+    - name: Afficher les résultats du test réseau
+      debug:
+        var: ping_test.stdout_lines
 
-    # ✅ Install Required Dependencies
-    - name: Install required dependencies
+    # ✅ Installation des dépendances requises
+    - name: Installer les dépendances requises
       apt:
         name:
           - curl
@@ -21,89 +24,29 @@
         state: present
         update_cache: yes
 
-    # ✅ Start kURL Installation in the Background
-    - name: Start kURL installation
-      shell: "curl -fsSL https://kurl.sh/f256d8f | sudo bash > /tmp/kurl-install.log 2>&1"
+    # ✅ Lancer l'installation de kURL en arrière-plan
+    - name: Lancer l'installation de kURL
+      shell: curl -fsSL https://kurl.sh/726730f | sudo bash
       args:
         executable: /bin/bash
-      async: 7200  # Allow up to 2 hours for installation
-      poll: 0  # Run in background
+      async: 10800  # Timeout de 3 heures
+      poll: 0
       register: kurl_async
 
-    # ✅ Wait for kURL Installation to Finish
-    - name: Check kURL installation progress
+    # ✅ Attendre la fin de l'installation de kURL
+    - name: Attendre la fin de l'installation de kURL
       async_status:
         jid: "{{ kurl_async.ansible_job_id }}"
       register: kurl_status
       until: kurl_status.finished
-      retries: 240  # Check for up to 40 minutes (240 retries x 10s)
-      delay: 10  # Wait 10 seconds between checks
+      retries: 360  # Vérifier pendant 3 heures (360 x 30s)
+      delay: 30
 
-    # ✅ Wait for Kubernetes API to be Ready
-    - name: Wait for Kubernetes API to become available
-      shell: kubectl get nodes
-      register: kube_status
-      until: kube_status.rc == 0
-      retries: 120  # 20 minutes max (120 retries x 10s)
-      delay: 10
-      ignore_errors: yes
-
-    # ✅ Ensure kubelet is Running
-    - name: Ensure kubelet service is enabled and running
-      systemd:
-        name: kubelet
-        enabled: yes
-        state: started
-
-    # ✅ Configure kubeconfig for Root
-    - name: Create .kube directory for root
-      file:
-        path: /root/.kube
-        state: directory
-        mode: '0755'
-
-    - name: Copy kubeconfig to root's .kube directory
-      copy:
-        src: /etc/kubernetes/admin.conf
-        dest: /root/.kube/config
-        remote_src: yes
-        owner: root
-        group: root
-        mode: '0600'
-      ignore_errors: yes
-
-    # ✅ Configure kubeconfig for Non-Root User
-    - name: Ensure .kube directory exists for ansible_user
-      file:
-        path: /home/{{ ansible_user }}/.kube
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0755'
-
-    - name: Copy kubeconfig to ansible_user
-      copy:
-        src: /root/.kube/config
-        dest: /home/{{ ansible_user }}/.kube/config
-        remote_src: yes
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0600'
-      ignore_errors: yes
-
-    # ✅ Restart kubelet After Installation
-    - name: Restart kubelet service
-      systemd:
-        name: kubelet
-        state: restarted
-        daemon_reload: yes
-
-    # ✅ Test Kubernetes Connection
-    - name: Test kubectl connection
-      command: kubectl get nodes
-      register: kubectl_test
-      ignore_errors: yes
-
-    - name: Display kubectl test result
+    # ✅ Afficher les logs de l'installation kURL
+    - name: Afficher la sortie de l'installation de kURL
       debug:
-        var: kubectl_test.stdout_lines
+        var: kurl_status.stdout_lines
+
+    - name: Afficher les erreurs de l'installation de kURL
+      debug:
+        var: kurl_status.stderr_lines
