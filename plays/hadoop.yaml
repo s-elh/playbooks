@@ -30,7 +30,7 @@
     # Download kURL installer
     - name: Download kURL installer
       get_url:
-        url: https://kurl.sh/726730f
+        url: https://kurl.sh/2de1df0
         dest: /tmp/kurl/install.sh
         mode: '0755'
 
