@@ -1,6 +1,5 @@
 ---
-- name: Install hadoop
-- hosts: all
+- hosts: localhost
   become: true
   vars:
     hadoop_location: "/root/hadoop-1.2.1-1.x86_64.rpm"
@@ -10,91 +9,104 @@
     namenode_path: "/nn"
     namenode_ip: "192.168.43.4"
     datanode_path: "/dn"
-
+    hadoop_user: "hadoop"
+    hadoop_password: "ACSCloud!2021!"
   tasks:
-    - name: "Configurer resolv.conf avec Google DNS"
-      shell: echo "nameserver 8.8.8.8" > /etc/resolv.conf
-
-    - name: "Supprimer les paramètres proxy d'APT"
-      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
-
-    - name: "Copier JDK sur la machine"
+    - name: "Create Hadoop user"
+      user:
+        name: "{{ hadoop_user }}"
+        password: "{{ hadoop_password | password_hash('sha512') }}"
+        shell: "/bin/bash"
+        create_home: yes
+      
+    - name: "Configure resolv.conf with Google DNS"
       copy:
-        src: "{{ jdk_location }}"
-        dest: "/root"
-
-    - name: "Copier Hadoop sur la machine"
+        dest: "/etc/resolv.conf"
+        content: "nameserver 8.8.8.8"
+      
+    - name: "Clear apt proxy settings"
+      file:
+        path: "/etc/apt/apt.conf.d/90curtin-aptproxy"
+        state: absent
+      
+    - name: "Copy JDK and Hadoop to Hadoop user home"
       copy:
-        src: "{{ hadoop_location }}"
-        dest: "/root"
-
-    - name: "Installer JDK"
+        src: "{{ item }}"
+        dest: "/home/{{ hadoop_user }}/"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+      loop:
+        - "{{ jdk_location }}"
+        - "{{ hadoop_location }}"
+      
+    - name: "Install JDK"
       yum:
-        name: "{{ jdk_location }}"
+        name: "/home/{{ hadoop_user }}/{{ jdk_software }}"
         state: present
         disable_gpg_check: yes
-
-    - name: "Installer Hadoop"
-      shell: "rpm -ivh {{ hadoop_software }} --force"
-
-    - name: "Créer le dossier du namenode"
+      become: true
+      
+    - name: "Install Hadoop"
+      shell: "rpm -ivh /home/{{ hadoop_user }}/{{ hadoop_software }} --force"
+      become: true
+      
+    - name: "Create directories for Namenode and Datanode"
       file:
-        path: "{{ namenode_path }}"
+        path: "{{ item }}"
         state: directory
-        mode: '0755'
-
-    - name: "Créer le dossier du datanode"
-      file:
-        path: "{{ datanode_path }}"
-        state: directory
-        mode: '0755'
-
-    - name: "Configurer hdfs-site.xml"
-      copy:
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+      loop:
+        - "{{ namenode_path }}"
+        - "{{ datanode_path }}"
+      
+    - name: "Configure hdfs-site.xml"
+      template:
         dest: "/etc/hadoop/hdfs-site.xml"
         content: |
           <?xml version="1.0"?>
           <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
           <configuration>
-            <property>
-              <name>dfs.name.dir</name>
-              <value>{{ namenode_path }}</value>
-            </property>
-            <property>
-              <name>dfs.data.dir</name>
-              <value>{{ datanode_path }}</value>
-            </property>
+          <property>
+          <name>dfs.name.dir</name>
+          <value>{{ namenode_path }}</value>
+          </property>
+          <property>
+          <name>dfs.data.dir</name>
+          <value>{{ datanode_path }}</value>
+          </property>
           </configuration>
-
-    - name: "Configurer core-site.xml"
-      copy:
+      
+    - name: "Configure core-site.xml"
+      template:
         dest: "/etc/hadoop/core-site.xml"
         content: |
           <?xml version="1.0"?>
           <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
           <configuration>
-            <property>
-              <name>fs.default.name</name>
-              <value>hdfs://{{ namenode_ip }}:9001</value>
-            </property>
+          <property>
+          <name>fs.default.name</name>
+          <value>hdfs://{{ namenode_ip }}:9001</value>
+          </property>
           </configuration>
-
-    - name: "Désactiver le pare-feu"
-      service:
-        name: "firewalld"
-        state: stopped
-        enabled: false
-
-    - name: "Désactiver SELinux"
-      ansible.posix.selinux:
-        state: disabled
-
-    - name: "Formater le Namenode"
+      
+    - name: "Disable Firewall and SELinux"
+      block:
+        - name: "Stop and disable firewalld"
+          service:
+            name: "firewalld"
+            state: stopped
+            enabled: no
+        - name: "Disable SELinux"
+          ansible.posix.selinux:
+            state: disabled
+      
+    - name: "Format the Namenode"
       shell: "echo Y | hadoop namenode -format"
-
-    - name: "Redémarrer les services Hadoop"
-      shell: |
-        hadoop-daemon.sh stop namenode
-        hadoop-daemon.sh start namenode
-        hadoop-daemon.sh stop datanode
-        hadoop-daemon.sh start datanode
+      become: true
+      become_user: "{{ hadoop_user }}"
+      
+    - name: "Start Hadoop Services"
+      shell: "hadoop-daemon.sh start namenode && hadoop-daemon.sh start datanode"
+      become: true
+      become_user: "{{ hadoop_user }}"
