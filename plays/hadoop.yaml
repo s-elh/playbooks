@@ -1,4 +1,4 @@
-- hosts: localhost
+- hosts: all
   become: true
   vars:
     hadoop_location: "/root/hadoop-1.2.1-1.x86_64.rpm"
