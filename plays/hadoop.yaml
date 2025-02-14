@@ -1,104 +1,98 @@
----
-- name: Configure Kubernetes Worker Node on Ubuntu using kURL
-  hosts: all
+- hosts: localhost
   become: true
+  vars:
+    hadoop_location: "/root/hadoop-1.2.1-1.x86_64.rpm"
+    jdk_location: "/root/jdk-8u171-linux-x64.rpm"
+    jdk_software: "jdk-8u171-linux-x64.rpm"
+    hadoop_software: "hadoop-1.2.1-1.x86_64.rpm"
+    namenode_path: "/nn"
+    namenode_ip: "192.168.43.4"
+    datanode_path: "/dn"
+
   tasks:
-  # Basic system setup
-    - name: Configure resolv.conf with Google DNS
-      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-    
-    - name: Clear apt proxy settings
+    - name: "Configurer resolv.conf avec Google DNS"
+      shell: echo "nameserver 8.8.8.8" > /etc/resolv.conf
+
+    - name: "Supprimer les paramètres proxy d'APT"
       shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
-   # === Fix DNS issue ===
-    - name: Stop and disable systemd-resolved
-      ansible.builtin.systemd:
-        name: systemd-resolved
-        state: stopped
-        enabled: no
-    
-    - name: Remove symbolic link for /etc/resolv.conf
-      ansible.builtin.file:
-        path: /etc/resolv.conf
-        state: absent
-    
-    - name: Set a valid DNS resolver
-      ansible.builtin.copy:
-        dest: /etc/resolv.conf
-        content: |
-          nameserver 8.8.8.8
-          nameserver 1.1.1.1
-          options edns0 trust-ad
-        mode: '0644'
-    
-    - name: Verify DNS resolution
-      ansible.builtin.command: nslookup google.com
-      register: dns_test
-      ignore_errors: true
-    
-    - name: Show DNS resolution result
-      debug:
-        var: dns_test.stdout
-    
-    # === Installation des prérequis ===
-    - name: Update APT package index
-      ansible.builtin.apt:
-        update_cache: yes
-    
-    - name: Install required dependencies
-      ansible.builtin.apt:
-        name: 
-          - curl 
-          - tar 
-          - socat 
-          - jq 
-          - iptables 
+
+    - name: "Copier JDK sur la machine"
+      copy:
+        src: "{{ jdk_location }}"
+        dest: "/root"
+
+    - name: "Copier Hadoop sur la machine"
+      copy:
+        src: "{{ hadoop_location }}"
+        dest: "/root"
+
+    - name: "Installer JDK"
+      yum:
+        name: "{{ jdk_location }}"
         state: present
-    
-    - name: Disable swap
-      ansible.builtin.command: swapoff -a
-    
-    - name: Ensure swap is disabled permanently
-      ansible.builtin.lineinfile:
-        path: /etc/fstab
-        regexp: '.*swap.*'
-        state: absent
-    
-    # === Configuration du noyau et des modules nécessaires ===
-    - name: Load required kernel modules
-      ansible.builtin.shell: |
-        modprobe br_netfilter
-        modprobe overlay
-    
-    - name: Ensure br_netfilter and overlay modules are loaded
-      ansible.builtin.copy:
-        dest: /etc/modules-load.d/k8s.conf
+        disable_gpg_check: yes
+
+    - name: "Installer Hadoop"
+      shell: "rpm -ivh {{ hadoop_software }} --force"
+
+    - name: "Créer le dossier du namenode"
+      file:
+        path: "{{ namenode_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Créer le dossier du datanode"
+      file:
+        path: "{{ datanode_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Configurer hdfs-site.xml"
+      copy:
+        dest: "/etc/hadoop/hdfs-site.xml"
         content: |
-          br_netfilter
-          overlay
-    
-    - name: Set sysctl params for Kubernetes
-      ansible.builtin.copy:
-        dest: /etc/sysctl.d/k8s.conf
+          <?xml version="1.0"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+          <configuration>
+            <property>
+              <name>dfs.name.dir</name>
+              <value>{{ namenode_path }}</value>
+            </property>
+            <property>
+              <name>dfs.data.dir</name>
+              <value>{{ datanode_path }}</value>
+            </property>
+          </configuration>
+
+    - name: "Configurer core-site.xml"
+      copy:
+        dest: "/etc/hadoop/core-site.xml"
         content: |
-          net.bridge.bridge-nf-call-ip6tables = 1
-          net.bridge.bridge-nf-call-iptables = 1
-          net.ipv4.ip_forward = 1
-    
-    - name: Apply sysctl parameters
-      ansible.builtin.command: sysctl --system
-    
-    # === Installation de kURL avec un timeout de 2 heures ===
-    - name: Download and run kURL installer (timeout 7200s)
-      ansible.builtin.shell: |
-        curl -fsSL https://kurl.sh/latest | sudo bash
-      async: 7200  # Exécuter jusqu'à 2 heures maximum
-      poll: 60      # Vérifier toutes les 60 secondes
-    
-    # === Ajout du Worker Node au Cluster Kubernetes ===
-    - name: Join Kubernetes cluster using token from master
-      ansible.builtin.shell: |
-        if [ -f /root/join-command.sh ]; then
-          bash /root/join-command.sh
-        else
-          echo "Join command not found. Ensure it is created on the master."
-        fi
+          <?xml version="1.0"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+          <configuration>
+            <property>
+              <name>fs.default.name</name>
+              <value>hdfs://{{ namenode_ip }}:9001</value>
+            </property>
+          </configuration>
+
+    - name: "Désactiver le pare-feu"
+      service:
+        name: "firewalld"
+        state: stopped
+        enabled: false
+
+    - name: "Désactiver SELinux"
+      ansible.posix.selinux:
+        state: disabled
+
+    - name: "Formater le Namenode"
+      shell: "echo Y | hadoop namenode -format"
+
+    - name: "Redémarrer les services Hadoop"
+      shell: |
+        hadoop-daemon.sh stop namenode
+        hadoop-daemon.sh start namenode
+        hadoop-daemon.sh stop datanode
+        hadoop-daemon.sh start datanode
