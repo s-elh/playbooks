@@ -62,17 +62,20 @@
     # Configuration SSH
     - name: Génération des clés SSH
       become_user: "{{ hadoop_user }}"
-      openssh_keypair:
-        path: "/home/{{ hadoop_user }}/.ssh/id_rsa"
-        type: rsa
-        state: present
+      shell: |
+        ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa
+        cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+        chmod 600 ~/.ssh/authorized_keys
+      args:
+        creates: "/home/{{ hadoop_user }}/.ssh/id_rsa"
 
-    - name: Configuration authorized_keys
-      become_user: "{{ hadoop_user }}"
-      authorized_key:
-        user: "{{ hadoop_user }}"
-        state: present
-        key: "{{ lookup('file', '/home/' + hadoop_user + '/.ssh/id_rsa.pub') }}"
+    - name: Configuration des permissions SSH
+      file:
+        path: "/home/{{ hadoop_user }}/.ssh"
+        state: directory
+        mode: '0700'
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"ub') }}"
 
     # Configuration de l'environnement
     - name: Configuration des variables d'environnement
