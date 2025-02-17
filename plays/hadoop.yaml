@@ -1,112 +1,107 @@
 ---
-- hosts: all
-  become: true
+- name: Prepare Hadoop Installation for Ubuntu
+  hosts: all
+  become: yes
   vars:
-    hadoop_location: "/root/hadoop-1.2.1-1.x86_64.rpm"
-    jdk_location: "/root/jdk-8u171-linux-x64.rpm"
-    jdk_software: "jdk-8u171-linux-x64.rpm"
-    hadoop_software: "hadoop-1.2.1-1.x86_64.rpm"
-    namenode_path: "/nn"
-    namenode_ip: "192.168.43.4"
-    datanode_path: "/dn"
-    hadoop_user: "hadoop"
-    hadoop_password: "ACSCloud!2021!"
-  tasks:
-    - name: "Create Hadoop user"
+    hadoop_user: "hdoop"
+    hadoop_group: "hadoopgroup"
+    hadoop_home: "/home/hdoop"
+    hadoop_version: "3.3.6"
+    hadoop_mirrors:
+      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+
+  pre_tasks:
+    - name: Update Ubuntu apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Java and required packages for Ubuntu
+      apt:
+        name: 
+          - default-jdk
+          - default-jre
+          - wget
+          - openssh-server
+          - ssh
+        state: present
+
+    - name: Ensure group exists
+      group:
+        name: "{{ hadoop_group }}"
+        state: present
+
+    - name: Create Hadoop user
       user:
         name: "{{ hadoop_user }}"
-        password: "{{ hadoop_password | password_hash('sha512') }}"
-        shell: "/bin/bash"
+        group: "{{ hadoop_group }}"
+        home: "{{ hadoop_home }}"
+        shell: /bin/bash
         create_home: yes
-      
-    - name: "Configure resolv.conf with Google DNS"
-      copy:
-        dest: "/etc/resolv.conf"
-        content: "nameserver 8.8.8.8"
-      
-    - name: "Clear apt proxy settings"
-      file:
-        path: "/etc/apt/apt.conf.d/90curtin-aptproxy"
-        state: absent
-      
-    - name: "Copy JDK and Hadoop to Hadoop user home"
-      copy:
-        src: "{{ item }}"
-        dest: "/home/{{ hadoop_user }}/"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-      loop:
-        - "{{ jdk_location }}"
-        - "{{ hadoop_location }}"
-      
-    - name: "Install JDK"
-      yum:
-        name: "/home/{{ hadoop_user }}/{{ jdk_software }}"
         state: present
-        disable_gpg_check: yes
-      become: true
-      
-    - name: "Install Hadoop"
-      shell: "rpm -ivh /home/{{ hadoop_user }}/{{ hadoop_software }} --force"
-      become: true
-      
-    - name: "Create directories for Namenode and Datanode"
+
+  tasks:
+    - name: Create Hadoop download directory
       file:
-        path: "{{ item }}"
+        path: "{{ hadoop_home }}/downloads"
         state: directory
         owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-      loop:
-        - "{{ namenode_path }}"
-        - "{{ datanode_path }}"
-      
-    - name: "Configure hdfs-site.xml"
-      template:
-        dest: "/etc/hadoop/hdfs-site.xml"
-        content: |
-          <?xml version="1.0"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-          <property>
-          <name>dfs.name.dir</name>
-          <value>{{ namenode_path }}</value>
-          </property>
-          <property>
-          <name>dfs.data.dir</name>
-          <value>{{ datanode_path }}</value>
-          </property>
-          </configuration>
-      
-    - name: "Configure core-site.xml"
-      template:
-        dest: "/etc/hadoop/core-site.xml"
-        content: |
-          <?xml version="1.0"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-          <property>
-          <name>fs.default.name</name>
-          <value>hdfs://{{ namenode_ip }}:9001</value>
-          </property>
-          </configuration>
-      
-    - name: "Disable Firewall and SELinux"
-      block:
-        - name: "Stop and disable firewalld"
-          service:
-            name: "firewalld"
-            state: stopped
-            enabled: no
-        - name: "Disable SELinux"
-          ansible.posix.selinux:
-            state: disabled
-      
-    - name: "Format the Namenode"
-      shell: "echo Y | hadoop namenode -format"
-      become: true
-      become_user: "{{ hadoop_user }}"
-      
-    - name: "Start Hadoop Services"
-      shell: "hadoop-daemon.sh start namenode && hadoop-daemon.sh start datanode"
-      become: true
-      become_user: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0755'
+
+    - name: Download Hadoop using wget with multiple mirrors
+      shell: |
+        set -o pipefail
+        for mirror in {{ hadoop_mirrors | join(' ') }}; do
+          wget --tries=3 \
+               --timeout=300 \
+               --no-check-certificate \
+               -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" \
+               "$mirror" && exit 0
+        done
+        exit 1
+      args:
+        creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+        executable: /bin/bash
+      register: wget_download
+      changed_when: wget_download.rc == 0
+      failed_when: wget_download.rc != 0
+
+    - name: Verify downloaded file
+      stat:
+        path: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+      register: hadoop_download_file
+
+    - name: Check download file size
+      assert:
+        that:
+          - hadoop_download_file.stat.exists
+          - hadoop_download_file.stat.size > 100000000  # Check if file is larger than 100MB
+        fail_msg: "Download failed or file is too small"
+
+    - name: Extract Hadoop archive
+      unarchive:
+        src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "{{ hadoop_home }}"
+        remote_src: yes
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Create symbolic link for Hadoop
+      file:
+        src: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
+        dest: "{{ hadoop_home }}/hadoop"
+        state: link
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+
+    - name: Verify Hadoop installation
+      stat:
+        path: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
+      register: hadoop_dir
+
+    - name: Fail if Hadoop directory does not exist
+      fail:
+        msg: "Hadoop installation failed - directory not found"
+      when: not hadoop_dir.stat.exists
