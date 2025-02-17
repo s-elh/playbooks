@@ -1,107 +1,179 @@
 ---
-- name: Prepare Hadoop Installation for Ubuntu
+- name: Installation complète de Hadoop
   hosts: all
   become: yes
   vars:
-    hadoop_user: "hdoop"
-    hadoop_group: "hadoopgroup"
-    hadoop_home: "/home/hdoop"
     hadoop_version: "3.3.6"
-    hadoop_mirrors:
-      - "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-      - "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-
-  pre_tasks:
-    - name: Update Ubuntu apt cache
-      apt:
-        update_cache: yes
-
-    - name: Install Java and required packages for Ubuntu
-      apt:
-        name: 
-          - default-jdk
-          - default-jre
-          - wget
-          - openssh-server
-          - ssh
-        state: present
-
-    - name: Ensure group exists
-      group:
-        name: "{{ hadoop_group }}"
-        state: present
-
-    - name: Create Hadoop user
-      user:
-        name: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        home: "{{ hadoop_home }}"
-        shell: /bin/bash
-        create_home: yes
-        state: present
+    hadoop_user: "hadoop"
+    hadoop_password: "ACSCloud!2021!"
+    hadoop_home: "/usr/local/hadoop"
+    download_url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 
   tasks:
-    - name: Create Hadoop download directory
+    # Mise à jour du système
+    - name: Mise à jour du système
+      apt:
+        update_cache: yes
+        upgrade: yes
+        
+    # Installation des paquets requis
+    - name: Installation des paquets nécessaires
+      apt:
+        name: 
+          - openjdk-8-jdk
+          - ssh
+          - pdsh
+          - wget
+        state: present
+
+    # Création de l'utilisateur
+    - name: Création de l'utilisateur hadoop
+      user:
+        name: "{{ hadoop_user }}"
+        password: "{{ hadoop_password | password_hash('sha512') }}"
+        shell: /bin/bash
+        createhome: yes
+        state: present
+
+    # Téléchargement et installation de Hadoop
+    - name: Création du répertoire Hadoop
       file:
-        path: "{{ hadoop_home }}/downloads"
+        path: "{{ hadoop_home }}"
         state: directory
         owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: '0755'
+        group: "{{ hadoop_user }}"
 
-    - name: Download Hadoop using wget with multiple mirrors
-      shell: |
-        set -o pipefail
-        for mirror in {{ hadoop_mirrors | join(' ') }}; do
-          wget --tries=3 \
-               --timeout=300 \
-               --no-check-certificate \
-               -O "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz" \
-               "$mirror" && exit 0
-        done
-        exit 1
-      args:
-        creates: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-        executable: /bin/bash
-      register: wget_download
-      changed_when: wget_download.rc == 0
-      failed_when: wget_download.rc != 0
+    - name: Téléchargement de Hadoop
+      get_url:
+        url: "{{ download_url }}"
+        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
 
-    - name: Verify downloaded file
-      stat:
-        path: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-      register: hadoop_download_file
-
-    - name: Check download file size
-      assert:
-        that:
-          - hadoop_download_file.stat.exists
-          - hadoop_download_file.stat.size > 100000000  # Check if file is larger than 100MB
-        fail_msg: "Download failed or file is too small"
-
-    - name: Extract Hadoop archive
+    - name: Extraction de Hadoop
       unarchive:
-        src: "{{ hadoop_home }}/downloads/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "{{ hadoop_home }}"
+        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        dest: "/tmp"
         remote_src: yes
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
 
-    - name: Create symbolic link for Hadoop
+    - name: Déplacement des fichiers Hadoop
+      command: "cp -r /tmp/hadoop-{{ hadoop_version }}/* {{ hadoop_home }}"
+      args:
+        creates: "{{ hadoop_home }}/bin/hadoop"
+
+    # Configuration SSH
+    - name: Génération des clés SSH
+      become_user: "{{ hadoop_user }}"
+      openssh_keypair:
+        path: "/home/{{ hadoop_user }}/.ssh/id_rsa"
+        type: rsa
+        state: present
+
+    - name: Configuration authorized_keys
+      become_user: "{{ hadoop_user }}"
+      authorized_key:
+        user: "{{ hadoop_user }}"
+        state: present
+        key: "{{ lookup('file', '/home/' + hadoop_user + '/.ssh/id_rsa.pub') }}"
+
+    # Configuration de l'environnement
+    - name: Configuration des variables d'environnement
+      blockinfile:
+        path: "/home/{{ hadoop_user }}/.bashrc"
+        block: |
+          export HADOOP_HOME={{ hadoop_home }}
+          export PATH=$PATH:$HADOOP_HOME/bin
+          export PATH=$PATH:$HADOOP_HOME/sbin
+          export HADOOP_MAPRED_HOME=$HADOOP_HOME
+          export HADOOP_COMMON_HOME=$HADOOP_HOME
+          export HADOOP_HDFS_HOME=$HADOOP_HOME
+          export YARN_HOME=$HADOOP_HOME
+          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+
+    # Configuration des fichiers XML
+    - name: Configuration de core-site.xml
+      copy:
+        dest: "{{ hadoop_home }}/etc/hadoop/core-site.xml"
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+          <configuration>
+              <property>
+                  <name>fs.defaultFS</name>
+                  <value>hdfs://localhost:9000</value>
+              </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+
+    - name: Configuration de hdfs-site.xml
+      copy:
+        dest: "{{ hadoop_home }}/etc/hadoop/hdfs-site.xml"
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+          <configuration>
+              <property>
+                  <name>dfs.replication</name>
+                  <value>1</value>
+              </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+
+    - name: Configuration de mapred-site.xml
+      copy:
+        dest: "{{ hadoop_home }}/etc/hadoop/mapred-site.xml"
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+          <configuration>
+              <property>
+                  <name>mapreduce.framework.name</name>
+                  <value>yarn</value>
+              </property>
+              <property>
+                  <name>mapreduce.application.classpath</name>
+                  <value>$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/*:$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/lib/*</value>
+              </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+
+    - name: Configuration de yarn-site.xml
+      copy:
+        dest: "{{ hadoop_home }}/etc/hadoop/yarn-site.xml"
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+          <configuration>
+              <property>
+                  <name>yarn.nodemanager.aux-services</name>
+                  <value>mapreduce_shuffle</value>
+              </property>
+              <property>
+                  <name>yarn.nodemanager.env-whitelist</name>
+                  <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_HOME,PATH,LANG,TZ,HADOOP_MAPRED_HOME</value>
+              </property>
+          </configuration>
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_user }}"
+
+    # Nettoyage
+    - name: Nettoyage des fichiers temporaires
       file:
-        src: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
-        dest: "{{ hadoop_home }}/hadoop"
-        state: link
+        path: "/tmp/hadoop-{{ hadoop_version }}"
+        state: absent
+
+    # Configuration des permissions
+    - name: Configuration des permissions Hadoop
+      file:
+        path: "{{ hadoop_home }}"
         owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+        group: "{{ hadoop_user }}"
+        recurse: yes
 
-    - name: Verify Hadoop installation
-      stat:
-        path: "{{ hadoop_home }}/hadoop-{{ hadoop_version }}"
-      register: hadoop_dir
-
-    - name: Fail if Hadoop directory does not exist
-      fail:
-        msg: "Hadoop installation failed - directory not found"
-      when: not hadoop_dir.stat.exists
+    # Format du NameNode
+    - name: Format du NameNode
+      become_user: "{{ hadoop_user }}"
+      command: "{{ hadoop_home }}/bin/hdfs namenode -format"
+      args:
+        creates: "{{ hadoop_home }}/data/namenode"
