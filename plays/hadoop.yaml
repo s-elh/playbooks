@@ -1,32 +1,49 @@
-- name: Installation et Configuration de Hadoop en mode Pseudo-distribué sur Ubuntu
-  hosts: all
-  become: yes
+---
+# Playbook d'installation et configuration de Hadoop en mode Pseudo-distribué sur Ubuntu
+# =====================================================================================
+# Utilise un utilisateur unique 'hadoop' pour toutes les opérations
+- hosts: all
+  become: true
+  vars:
+    - authorized_rsa_key: "{{ lookup('file', 'ansible_rsa.pub') }}"
   tasks:
-
+    - name: hostname should match inventory name
+      hostname: 
+        name: "{{ inventory_hostname }}"
+    
     - name: Mettre à jour les paquets
       apt:
         update_cache: yes
-
+        
     - name: Installer OpenJDK 11
       apt:
         name: openjdk-11-jdk
         state: present
-
+        
     - name: Vérifier la version de Java installée
       command: java -version
       register: java_version
       changed_when: false
-
+      
     - name: Afficher la version de Java
       debug:
         msg: "{{ java_version.stderr_lines }}"
-
-    - name: Créer un utilisateur Hadoop
+        
+    - name: Créer un utilisateur Hadoop avec privilèges sudo
       user:
         name: hadoop
         shell: /bin/bash
         createhome: yes
-
+        groups: sudo
+        
+    - name: change sudoers to contains NOPASSWD for sudo group
+      shell: "creates=/etc/sudoers.bak chdir=/etc cp sudoers sudoers.bak && sed -ri -e 's/(%sudo\\s+ALL=\\(ALL:ALL\\))\\s+ALL/\\1 NOPASSWD: ALL/' /etc/sudoers"
+    
+    - name: add ansible RSA SSH key to hadoop user
+      authorized_key: 
+        user: hadoop 
+        key: "{{ authorized_rsa_key }}"
+        
     - name: Télécharger Hadoop (avant-dernière version)
       get_url:
         url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz"
@@ -34,17 +51,17 @@
         mode: '0644'
         owner: hadoop
         group: hadoop
-
+        
     - name: Extraire Hadoop
       command: "tar -xvzf /home/hadoop/hadoop-3.3.6.tar.gz -C /home/hadoop/"
       args:
         creates: "/home/hadoop/hadoop-3.3.6"
-
+        
     - name: Renommer le dossier Hadoop
       command: "mv /home/hadoop/hadoop-3.3.6 /home/hadoop/hadoop"
       args:
         creates: "/home/hadoop/hadoop"
-
+        
     - name: Ajouter les variables d'environnement Hadoop
       blockinfile:
         path: /home/hadoop/.bashrc
@@ -54,10 +71,10 @@
           export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
           export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
       become_user: hadoop
-
+      
     - name: Configurer SSH sans mot de passe pour Hadoop
       shell: sudo su - hadoop -c "ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa && cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys"
-
+      
     - name: Configurer core-site.xml
       copy:
         dest: "/home/hadoop/hadoop/etc/hadoop/core-site.xml"
@@ -70,7 +87,7 @@
           </configuration>
         owner: hadoop
         group: hadoop
-
+        
     - name: Configurer hdfs-site.xml
       copy:
         dest: "/home/hadoop/hadoop/etc/hadoop/hdfs-site.xml"
@@ -83,7 +100,7 @@
           </configuration>
         owner: hadoop
         group: hadoop
-
+        
     - name: Configurer mapred-site.xml
       copy:
         dest: "/home/hadoop/hadoop/etc/hadoop/mapred-site.xml"
@@ -96,7 +113,7 @@
           </configuration>
         owner: hadoop
         group: hadoop
-
+        
     - name: Configurer yarn-site.xml
       copy:
         dest: "/home/hadoop/hadoop/etc/hadoop/yarn-site.xml"
@@ -109,20 +126,20 @@
           </configuration>
         owner: hadoop
         group: hadoop
-
+        
     - name: Formater le NameNode
       shell: sudo su - hadoop -c "/home/hadoop/hadoop/bin/hdfs namenode -format"
-
+      
     - name: Démarrer HDFS
       shell: sudo su - hadoop -c "/home/hadoop/hadoop/sbin/start-dfs.sh"
-
+      
     - name: Démarrer YARN
       shell: sudo su - hadoop -c "/home/hadoop/hadoop/sbin/start-yarn.sh"
-
+      
     - name: Vérifier les services en cours d'exécution (JPS)
       shell: sudo su - hadoop -c "jps"
       register: jps_output
-
+      
     - name: Afficher les services Hadoop actifs
       debug:
         msg: "{{ jps_output.stdout_lines }}"
