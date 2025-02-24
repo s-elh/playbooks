@@ -12,15 +12,6 @@
         name: openjdk-11-jdk
         state: present
 
-    - name: Vérifier la version de Java installée
-      command: java -version
-      register: java_version
-      changed_when: false
-
-    - name: Afficher la version de Java
-      debug:
-        msg: "{{ java_version.stderr_lines }}"
-
     - name: Créer un utilisateur Hadoop
       user:
         name: hadoop
@@ -32,12 +23,16 @@
         url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz"
         dest: "/home/hadoop/hadoop-3.3.6.tar.gz"
         mode: '0644'
+        owner: hadoop
+        group: hadoop
 
     - name: Extraire Hadoop
       unarchive:
         src: "/home/hadoop/hadoop-3.3.6.tar.gz"
         dest: "/home/hadoop/"
         remote_src: yes
+        owner: hadoop
+        group: hadoop
 
     - name: Renommer le dossier Hadoop
       command: mv /home/hadoop/hadoop-3.3.6 /home/hadoop/hadoop
@@ -53,19 +48,20 @@
         mode: '0755'
 
     - name: Ajouter les variables d'environnement Hadoop
-      blockinfile:
+      lineinfile:
         path: /home/hadoop/.bashrc
-        block: |
+        line: |
           export HADOOP_HOME=/home/hadoop/hadoop
           export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
           export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
           export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
       become_user: hadoop
 
-    - name: Configurer SSH sans mot de passe pour Hadoop
-      user:
-        name: hadoop
-        generate_ssh_key: yes
+    - name: Générer une clé SSH pour Hadoop
+      command: "ssh-keygen -t rsa -N '' -f /home/hadoop/.ssh/id_rsa"
+      args:
+        creates: /home/hadoop/.ssh/id_rsa
+      become_user: hadoop
 
     - name: Copier la clé publique dans authorized_keys
       copy:
@@ -75,13 +71,3 @@
         owner: hadoop
         group: hadoop
         mode: '0600'
-
-    - name: Démarrer Hadoop
-      command: "/home/hadoop/hadoop/bin/hadoop version"
-      become_user: hadoop
-      register: hadoop_version
-      changed_when: false
-
-    - name: Afficher la version de Hadoop
-      debug:
-        msg: "{{ hadoop_version.stdout_lines }}"
