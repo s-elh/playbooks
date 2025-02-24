@@ -1,5 +1,5 @@
 - name: Installation et Configuration de Hadoop Pseudo-distribué sur Ubuntu
-  hosts: localhost
+  hosts: all
   become: yes
   tasks:
 
