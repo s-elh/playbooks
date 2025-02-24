@@ -39,10 +39,21 @@
     - name: change sudoers to contains NOPASSWD for sudo group
       shell: "creates=/etc/sudoers.bak chdir=/etc cp sudoers sudoers.bak && sed -ri -e 's/(%sudo\\s+ALL=\\(ALL:ALL\\))\\s+ALL/\\1 NOPASSWD: ALL/' /etc/sudoers"
     
-    - name: add ansible RSA SSH key to hadoop user
-      authorized_key: 
-        user: hadoop 
-        key: "{{ authorized_rsa_key }}"
+    - name: Create .ssh directory for hadoop user
+      file:
+        path: /home/hadoop/.ssh
+        state: directory
+        mode: '0700'
+        owner: hadoop
+        group: hadoop
+        
+    - name: Add ansible RSA SSH key to hadoop user's authorized_keys
+      copy:
+        content: "{{ authorized_rsa_key }}"
+        dest: /home/hadoop/.ssh/authorized_keys
+        mode: '0600'
+        owner: hadoop
+        group: hadoop
         
     - name: Télécharger Hadoop (avant-dernière version)
       get_url:
