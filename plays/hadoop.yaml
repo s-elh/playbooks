@@ -1,4 +1,4 @@
-- name: Installation et Configuration de Hadoop Pseudo-distribué sur Ubuntu
+- name: Installation et Configuration de Hadoop en mode Pseudo-distribué sur Ubuntu
   hosts: all
   become: yes
   tasks:
@@ -36,17 +36,14 @@
         group: hadoop
 
     - name: Extraire Hadoop
-      unarchive:
-        src: "/home/hadoop/hadoop-3.3.6.tar.gz"
-        dest: "/home/hadoop/"
-        remote_src: yes
-        owner: hadoop
-        group: hadoop
+      command: "tar -xvzf /home/hadoop/hadoop-3.3.6.tar.gz -C /home/hadoop/"
+      args:
+        creates: "/home/hadoop/hadoop-3.3.6"
 
     - name: Renommer le dossier Hadoop
-      command: mv /home/hadoop/hadoop-3.3.6 /home/hadoop/hadoop
+      command: "mv /home/hadoop/hadoop-3.3.6 /home/hadoop/hadoop"
       args:
-        creates: /home/hadoop/hadoop
+        creates: "/home/hadoop/hadoop"
 
     - name: Ajouter les variables d'environnement Hadoop
       blockinfile:
@@ -58,20 +55,8 @@
           export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
       become_user: hadoop
 
-    - name: Générer une clé SSH pour Hadoop
-      command: "ssh-keygen -t rsa -N '' -f /home/hadoop/.ssh/id_rsa"
-      args:
-        creates: /home/hadoop/.ssh/id_rsa
-      become_user: hadoop
-
-    - name: Copier la clé publique dans authorized_keys
-      copy:
-        src: "/home/hadoop/.ssh/id_rsa.pub"
-        dest: "/home/hadoop/.ssh/authorized_keys"
-        remote_src: yes
-        owner: hadoop
-        group: hadoop
-        mode: '0600'
+    - name: Configurer SSH sans mot de passe pour Hadoop
+      shell: sudo su - hadoop -c "ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa && cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys"
 
     - name: Configurer core-site.xml
       copy:
@@ -126,22 +111,16 @@
         group: hadoop
 
     - name: Formater le NameNode
-      command: "/home/hadoop/hadoop/bin/hdfs namenode -format"
-      become_user: hadoop
-      args:
-        creates: "/home/hadoop/hadoop_tmp/dfs/name"
+      shell: sudo su - hadoop -c "/home/hadoop/hadoop/bin/hdfs namenode -format"
 
     - name: Démarrer HDFS
-      command: "/home/hadoop/hadoop/sbin/start-dfs.sh"
-      become_user: hadoop
+      shell: sudo su - hadoop -c "/home/hadoop/hadoop/sbin/start-dfs.sh"
 
     - name: Démarrer YARN
-      command: "/home/hadoop/hadoop/sbin/start-yarn.sh"
-      become_user: hadoop
+      shell: sudo su - hadoop -c "/home/hadoop/hadoop/sbin/start-yarn.sh"
 
     - name: Vérifier les services en cours d'exécution (JPS)
-      command: "jps"
-      become_user: hadoop
+      shell: sudo su - hadoop -c "jps"
       register: jps_output
 
     - name: Afficher les services Hadoop actifs
