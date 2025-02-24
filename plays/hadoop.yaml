@@ -1,5 +1,5 @@
-- name: Installation de Hadoop en mode Pseudo-distribué
-  hosts: all
+- name: Installation et Configuration de Hadoop Pseudo-distribué sur Ubuntu
+  hosts: localhost
   become: yes
   tasks:
 
@@ -11,6 +11,15 @@
       apt:
         name: openjdk-11-jdk
         state: present
+
+    - name: Vérifier la version de Java installée
+      command: java -version
+      register: java_version
+      changed_when: false
+
+    - name: Afficher la version de Java
+      debug:
+        msg: "{{ java_version.stderr_lines }}"
 
     - name: Créer un utilisateur Hadoop
       user:
@@ -39,18 +48,10 @@
       args:
         creates: /home/hadoop/hadoop
 
-    - name: Définir les permissions sur Hadoop
-      file:
-        path: "/home/hadoop/hadoop"
-        state: directory
-        owner: hadoop
-        group: hadoop
-        mode: '0755'
-
     - name: Ajouter les variables d'environnement Hadoop
-      lineinfile:
+      blockinfile:
         path: /home/hadoop/.bashrc
-        line: |
+        block: |
           export HADOOP_HOME=/home/hadoop/hadoop
           export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
           export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
@@ -71,3 +72,78 @@
         owner: hadoop
         group: hadoop
         mode: '0600'
+
+    - name: Configurer core-site.xml
+      copy:
+        dest: "/home/hadoop/hadoop/etc/hadoop/core-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://localhost:9000</value>
+            </property>
+          </configuration>
+        owner: hadoop
+        group: hadoop
+
+    - name: Configurer hdfs-site.xml
+      copy:
+        dest: "/home/hadoop/hadoop/etc/hadoop/hdfs-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>dfs.replication</name>
+              <value>1</value>
+            </property>
+          </configuration>
+        owner: hadoop
+        group: hadoop
+
+    - name: Configurer mapred-site.xml
+      copy:
+        dest: "/home/hadoop/hadoop/etc/hadoop/mapred-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>mapreduce.framework.name</name>
+              <value>yarn</value>
+            </property>
+          </configuration>
+        owner: hadoop
+        group: hadoop
+
+    - name: Configurer yarn-site.xml
+      copy:
+        dest: "/home/hadoop/hadoop/etc/hadoop/yarn-site.xml"
+        content: |
+          <configuration>
+            <property>
+              <name>yarn.nodemanager.aux-services</name>
+              <value>mapreduce_shuffle</value>
+            </property>
+          </configuration>
+        owner: hadoop
+        group: hadoop
+
+    - name: Formater le NameNode
+      command: "/home/hadoop/hadoop/bin/hdfs namenode -format"
+      become_user: hadoop
+      args:
+        creates: "/home/hadoop/hadoop_tmp/dfs/name"
+
+    - name: Démarrer HDFS
+      command: "/home/hadoop/hadoop/sbin/start-dfs.sh"
+      become_user: hadoop
+
+    - name: Démarrer YARN
+      command: "/home/hadoop/hadoop/sbin/start-yarn.sh"
+      become_user: hadoop
+
+    - name: Vérifier les services en cours d'exécution (JPS)
+      command: "jps"
+      become_user: hadoop
+      register: jps_output
+
+    - name: Afficher les services Hadoop actifs
+      debug:
+        msg: "{{ jps_output.stdout_lines }}"
