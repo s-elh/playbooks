@@ -1,182 +1,87 @@
----
-- name: Installation complète de Hadoop
+- name: Installation de Hadoop en mode Pseudo-distribué
   hosts: all
   become: yes
-  vars:
-    hadoop_version: "3.3.6"
-    hadoop_user: "hadoop"
-    hadoop_password: "ACSCloud!2021!"
-    hadoop_home: "/usr/local/hadoop"
-    download_url: "https://dlcdn.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
-
   tasks:
-    # Mise à jour du système
-    - name: Mise à jour du système
+
+    - name: Mettre à jour les paquets
       apt:
         update_cache: yes
-        upgrade: yes
-        
-    # Installation des paquets requis
-    - name: Installation des paquets nécessaires
+
+    - name: Installer OpenJDK 11
       apt:
-        name: 
-          - openjdk-8-jdk
-          - ssh
-          - pdsh
-          - wget
+        name: openjdk-11-jdk
         state: present
 
-    # Création de l'utilisateur
-    - name: Création de l'utilisateur hadoop
+    - name: Vérifier la version de Java installée
+      command: java -version
+      register: java_version
+      changed_when: false
+
+    - name: Afficher la version de Java
+      debug:
+        msg: "{{ java_version.stderr_lines }}"
+
+    - name: Créer un utilisateur Hadoop
       user:
-        name: "{{ hadoop_user }}"
-        password: "{{ hadoop_password | password_hash('sha512') }}"
+        name: hadoop
         shell: /bin/bash
         createhome: yes
-        state: present
 
-    # Téléchargement et installation de Hadoop
-    - name: Création du répertoire Hadoop
-      file:
-        path: "{{ hadoop_home }}"
-        state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-
-    - name: Téléchargement de Hadoop
+    - name: Télécharger Hadoop (avant-dernière version)
       get_url:
-        url: "{{ download_url }}"
-        dest: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
+        url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz"
+        dest: "/home/hadoop/hadoop-3.3.6.tar.gz"
+        mode: '0644'
 
-    - name: Extraction de Hadoop
+    - name: Extraire Hadoop
       unarchive:
-        src: "/tmp/hadoop-{{ hadoop_version }}.tar.gz"
-        dest: "/tmp"
+        src: "/home/hadoop/hadoop-3.3.6.tar.gz"
+        dest: "/home/hadoop/"
         remote_src: yes
 
-    - name: Déplacement des fichiers Hadoop
-      command: "cp -r /tmp/hadoop-{{ hadoop_version }}/* {{ hadoop_home }}"
+    - name: Renommer le dossier Hadoop
+      command: mv /home/hadoop/hadoop-3.3.6 /home/hadoop/hadoop
       args:
-        creates: "{{ hadoop_home }}/bin/hadoop"
+        creates: /home/hadoop/hadoop
 
-    # Configuration SSH
-    - name: Génération des clés SSH
-      become_user: "{{ hadoop_user }}"
-      shell: |
-        ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa
-        cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
-        chmod 600 ~/.ssh/authorized_keys
-      args:
-        creates: "/home/{{ hadoop_user }}/.ssh/id_rsa"
-
-    - name: Configuration des permissions SSH
+    - name: Définir les permissions sur Hadoop
       file:
-        path: "/home/{{ hadoop_user }}/.ssh"
+        path: "/home/hadoop/hadoop"
         state: directory
-        mode: '0700'
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"ub') }}"
+        owner: hadoop
+        group: hadoop
+        mode: '0755'
 
-    # Configuration de l'environnement
-    - name: Configuration des variables d'environnement
+    - name: Ajouter les variables d'environnement Hadoop
       blockinfile:
-        path: "/home/{{ hadoop_user }}/.bashrc"
+        path: /home/hadoop/.bashrc
         block: |
-          export HADOOP_HOME={{ hadoop_home }}
-          export PATH=$PATH:$HADOOP_HOME/bin
-          export PATH=$PATH:$HADOOP_HOME/sbin
-          export HADOOP_MAPRED_HOME=$HADOOP_HOME
-          export HADOOP_COMMON_HOME=$HADOOP_HOME
-          export HADOOP_HDFS_HOME=$HADOOP_HOME
-          export YARN_HOME=$HADOOP_HOME
-          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+          export HADOOP_HOME=/home/hadoop/hadoop
+          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+          export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
+          export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+      become_user: hadoop
 
-    # Configuration des fichiers XML
-    - name: Configuration de core-site.xml
+    - name: Configurer SSH sans mot de passe pour Hadoop
+      user:
+        name: hadoop
+        generate_ssh_key: yes
+
+    - name: Copier la clé publique dans authorized_keys
       copy:
-        dest: "{{ hadoop_home }}/etc/hadoop/core-site.xml"
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-              <property>
-                  <name>fs.defaultFS</name>
-                  <value>hdfs://localhost:9000</value>
-              </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
+        src: "/home/hadoop/.ssh/id_rsa.pub"
+        dest: "/home/hadoop/.ssh/authorized_keys"
+        remote_src: yes
+        owner: hadoop
+        group: hadoop
+        mode: '0600'
 
-    - name: Configuration de hdfs-site.xml
-      copy:
-        dest: "{{ hadoop_home }}/etc/hadoop/hdfs-site.xml"
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-              <property>
-                  <name>dfs.replication</name>
-                  <value>1</value>
-              </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
+    - name: Démarrer Hadoop
+      command: "/home/hadoop/hadoop/bin/hadoop version"
+      become_user: hadoop
+      register: hadoop_version
+      changed_when: false
 
-    - name: Configuration de mapred-site.xml
-      copy:
-        dest: "{{ hadoop_home }}/etc/hadoop/mapred-site.xml"
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-              <property>
-                  <name>mapreduce.framework.name</name>
-                  <value>yarn</value>
-              </property>
-              <property>
-                  <name>mapreduce.application.classpath</name>
-                  <value>$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/*:$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/lib/*</value>
-              </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-
-    - name: Configuration de yarn-site.xml
-      copy:
-        dest: "{{ hadoop_home }}/etc/hadoop/yarn-site.xml"
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-              <property>
-                  <name>yarn.nodemanager.aux-services</name>
-                  <value>mapreduce_shuffle</value>
-              </property>
-              <property>
-                  <name>yarn.nodemanager.env-whitelist</name>
-                  <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_HOME,PATH,LANG,TZ,HADOOP_MAPRED_HOME</value>
-              </property>
-          </configuration>
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-
-    # Nettoyage
-    - name: Nettoyage des fichiers temporaires
-      file:
-        path: "/tmp/hadoop-{{ hadoop_version }}"
-        state: absent
-
-    # Configuration des permissions
-    - name: Configuration des permissions Hadoop
-      file:
-        path: "{{ hadoop_home }}"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_user }}"
-        recurse: yes
-
-    # Format du NameNode
-    - name: Format du NameNode
-      become_user: "{{ hadoop_user }}"
-      command: "{{ hadoop_home }}/bin/hdfs namenode -format"
-      args:
-        creates: "{{ hadoop_home }}/data/namenode"
+    - name: Afficher la version de Hadoop
+      debug:
+        msg: "{{ hadoop_version.stdout_lines }}"
