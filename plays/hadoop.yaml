@@ -1,6 +1,6 @@
 ---
 - name: Install Hadoop on Ubuntu
-  hosts: hadoop
+  hosts: all
   become: yes
   tasks:
     - name: Install required packages
