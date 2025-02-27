@@ -1,6 +1,6 @@
 ---
 - name: Install Hadoop on Ubuntu
-  hosts: hadoop_nodes
+  hosts: all
   become: yes
   vars:
     hadoop_version: "3.3.1"
