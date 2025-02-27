@@ -1,86 +1,102 @@
 ---
 - name: Install Hadoop on Ubuntu
-  hosts: all
+  hosts: hadoop
   become: yes
-  vars:
-    java_version: openjdk-11-jdk
-    hadoop_version: 3.3.1
-    hadoop_user: hadoop
-    hadoop_group: hadoop
-    hadoop_install_dir: /usr/local/hadoop
-    hadoop_download_url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}-tar.gz"
-    hadoop_tar: "hadoop-{{ hadoop_version }}-tar.gz"
-  
   tasks:
-    - name: Update apt repository
+    - name: Install required packages
       apt:
-        update_cache: yes
-
-    - name: Install Java
-      apt:
-        name: "{{ java_version }}"
+        name:
+          - openjdk-11-jdk
+          - ssh
+          - rsync
+          - wget
         state: present
+        update_cache: yes
 
     - name: Create Hadoop group
       group:
-        name: "{{ hadoop_group }}"
+        name: hadoop
         state: present
 
     - name: Create Hadoop user
       user:
-        name: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+        name: hadoop
+        group: hadoop
         shell: /bin/bash
         create_home: yes
+        state: present
 
     - name: Download Hadoop
       get_url:
-        url: "{{ hadoop_download_url }}"
-        dest: /tmp/{{ hadoop_tar }}
+        url: https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz
+        dest: /tmp/hadoop.tar.gz
 
     - name: Extract Hadoop
       unarchive:
-        src: /tmp/{{ hadoop_tar }}
-        dest: "{{ hadoop_install_dir }}"
+        src: /tmp/hadoop.tar.gz
+        dest: /usr/local/
         remote_src: yes
+
+    - name: Create Hadoop symlink
+      file:
+        src: /usr/local/hadoop-3.3.6
+        dest: /usr/local/hadoop
+        state: link
 
     - name: Set Hadoop environment variables
       lineinfile:
-        path: /etc/profile
+        path: /etc/profile.d/hadoop.sh
         line: "{{ item }}"
-        state: present
-      with_items:
-        - "export HADOOP_HOME={{ hadoop_install_dir }}/hadoop-{{ hadoop_version }}"
-        - "export PATH=$PATH:$HADOOP_HOME/bin"
-        - "export PATH=$PATH:$HADOOP_HOME/sbin"
+        create: yes
+      loop:
+        - 'export HADOOP_HOME=/usr/local/hadoop'
+        - 'export PATH=$PATH:$HADOOP_HOME/bin'
+        - 'export PATH=$PATH:$HADOOP_HOME/sbin'
 
-    - name: Source profile
-      shell: source /etc/profile
-      args:
-        executable: /bin/bash
+    - name: Ensure environment variables are loaded
+      shell: source /etc/profile.d/hadoop.sh
 
-    - name: Create Hadoop directory structure
+    - name: Create Hadoop directories
       file:
-        path: "{{ hadoop_install_dir }}/hadoop-{{ hadoop_version }}/{{ item }}"
+        path: "{{ item }}"
         state: directory
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
+        owner: hadoop
+        group: hadoop
         mode: '0755'
       loop:
-        - etc
-        - data
-        - logs
+        - /usr/local/hadoop/tmp
+        - /usr/local/hadoop/logs
+        - /usr/local/hadoop/data
+        - /usr/local/hadoop/name
+        - /usr/local/hadoop/data/datanode
 
-    - name: Create Hadoop environment configuration file
-      copy:
-        dest: "{{ hadoop_install_dir }}/hadoop-{{ hadoop_version }}/etc/hadoop/hadoop-env.sh"
-        content: |
-          export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: '0644'
+    - name: Configure Hadoop core-site.xml
+      template:
+        src: templates/core-site.xml.j2
+        dest: /usr/local/hadoop/etc/hadoop/core-site.xml
 
-    - name: Clean up downloaded files
-      file:
-        path: /tmp/{{ hadoop_tar }}
-        state: absent
+    - name: Configure Hadoop hdfs-site.xml
+      template:
+        src: templates/hdfs-site.xml.j2
+        dest: /usr/local/hadoop/etc/hadoop/hdfs-site.xml
+
+    - name: Configure Hadoop mapred-site.xml
+      template:
+        src: templates/mapred-site.xml.j2
+        dest: /usr/local/hadoop/etc/hadoop/mapred-site.xml
+
+    - name: Configure Hadoop yarn-site.xml
+      template:
+        src: templates/yarn-site.xml.j2
+        dest: /usr/local/hadoop/etc/hadoop/yarn-site.xml
+
+    - name: Format the HDFS NameNode
+      command: "/usr/local/hadoop/bin/hdfs namenode -format"
+      when: ansible_hostname == 'hadoop'  # Only format on the master node
+
+    - name: Start Hadoop services
+      shell: |
+        /usr/local/hadoop/sbin/start-dfs.sh
+        /usr/local/hadoop/sbin/start-yarn.sh
+      async: 10
+      poll: 0
