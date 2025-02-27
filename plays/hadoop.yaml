@@ -1,212 +1,85 @@
 ---
-# Playbook d'installation et configuration de Hadoop en mode Pseudo-distribué sur Ubuntu
-# =====================================================================================
-# Utilise un utilisateur unique 'hadoop' pour toutes les opérations
-- hosts: all
-  become: true
+- name: Install Hadoop on Ubuntu
+  hosts: hadoop_nodes
+  become: yes
   vars:
-    # Suppression de la référence à la clé qui cause l'erreur
+    hadoop_version: "3.3.1"
+    java_version: "openjdk-11-jdk"
+    hadoop_user: "hadoop"
+    hadoop_group: "hadoop"
+
   tasks:
-    - name: hostname should match inventory name
-      hostname: 
-        name: "{{ inventory_hostname }}"
-    
-    - name: Attendre que le verrou apt se libère
-      shell: while lsof /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 5; done;
-      changed_when: false
-      timeout: 300
-    
-    - name: Attendre que les processus apt se terminent
-      shell: while pgrep -u root apt-get >/dev/null 2>&1; do sleep 5; done;
-      changed_when: false
-      timeout: 300
-    
-    - name: Mettre à jour les paquets
+    - name: Update apt repository
       apt:
         update_cache: yes
-      register: apt_update_result
-      retries: 5
-      delay: 20
-      until: apt_update_result is success
-        
-    - name: Installer OpenJDK 11
+
+    - name: Install Java
       apt:
-        name: openjdk-11-jdk
+        name: "{{ java_version }}"
         state: present
-      register: apt_install_result
-      retries: 5
-      delay: 20
-      until: apt_install_result is success
-        
-    - name: Vérifier la version de Java installée
-      command: java -version
-      register: java_version
-      changed_when: false
-      
-    - name: Afficher la version de Java
-      debug:
-        msg: "{{ java_version.stderr_lines }}"
-        
-    - name: Créer un utilisateur Hadoop avec privilèges sudo
+
+    - name: Create Hadoop user and group
       user:
-        name: hadoop
+        name: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
         shell: /bin/bash
-        createhome: yes
-        groups: sudo
-        
-    - name: change sudoers to contains NOPASSWD for sudo group
-      shell: "creates=/etc/sudoers.bak chdir=/etc cp sudoers sudoers.bak && sed -ri -e 's/(%sudo\\s+ALL=\\(ALL:ALL\\))\\s+ALL/\\1 NOPASSWD: ALL/' /etc/sudoers"
-    
-    - name: Create .ssh directory for hadoop user
-      file:
-        path: /home/hadoop/.ssh
-        state: directory
-        mode: '0700'
-        owner: hadoop
-        group: hadoop
-        
-    # Utilisation de ssh-keygen pour générer automatiquement la clé SSH pour hadoop
-    - name: Générer une paire de clés SSH pour l'utilisateur hadoop
-      shell: sudo -u hadoop ssh-keygen -t rsa -f /home/hadoop/.ssh/id_rsa -N ""
-      args:
-        creates: /home/hadoop/.ssh/id_rsa
-        
-    - name: Ajouter la clé publique aux clés autorisées
-      shell: sudo -u hadoop cat /home/hadoop/.ssh/id_rsa.pub >> /home/hadoop/.ssh/authorized_keys
-      args:
-        creates: /home/hadoop/.ssh/authorized_keys
-        
-    - name: Set proper permissions on authorized_keys
-      file:
-        path: /home/hadoop/.ssh/authorized_keys
-        mode: '0600'
-        owner: hadoop
-        group: hadoop
-        
-    - name: Télécharger Hadoop (avant-dernière version)
+        create_home: yes
+
+    - name: Download Hadoop
       get_url:
-        url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz"
-        dest: "/home/hadoop/hadoop-3.3.6.tar.gz"
-        mode: '0644'
-        owner: hadoop
-        group: hadoop
-      register: download_result
-      retries: 3
-      delay: 10
-      until: download_result is success
-        
-    - name: Extraire Hadoop
-      command: "tar -xvzf /home/hadoop/hadoop-3.3.6.tar.gz -C /home/hadoop/"
-      args:
-        creates: "/home/hadoop/hadoop-3.3.6"
-        
-    - name: Renommer le dossier Hadoop
-      command: "mv /home/hadoop/hadoop-3.3.6 /home/hadoop/hadoop"
-      args:
-        creates: "/home/hadoop/hadoop"
-        
-    - name: Ajouter les variables d'environnement Hadoop
-      blockinfile:
-        path: /home/hadoop/.bashrc
-        block: |
-          export HADOOP_HOME=/home/hadoop/hadoop
-          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
-          export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
-          export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-      become_user: hadoop
-      
-    - name: Configurer SSH sans mot de passe pour Hadoop (déjà fait à l'étape précédente)
-      
-    - name: Configurer core-site.xml
-      copy:
-        dest: "/home/hadoop/hadoop/etc/hadoop/core-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>fs.defaultFS</name>
-              <value>hdfs://localhost:9000</value>
-            </property>
-          </configuration>
-        owner: hadoop
-        group: hadoop
-        
-    - name: Configurer hdfs-site.xml
-      copy:
-        dest: "/home/hadoop/hadoop/etc/hadoop/hdfs-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>dfs.replication</name>
-              <value>1</value>
-            </property>
-            <property>
-              <name>dfs.namenode.name.dir</name>
-              <value>/home/hadoop/hadoop/data/namenode</value>
-            </property>
-            <property>
-              <name>dfs.datanode.data.dir</name>
-              <value>/home/hadoop/hadoop/data/datanode</value>
-            </property>
-          </configuration>
-        owner: hadoop
-        group: hadoop
-        
-    - name: Configurer mapred-site.xml
-      copy:
-        dest: "/home/hadoop/hadoop/etc/hadoop/mapred-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>mapreduce.framework.name</name>
-              <value>yarn</value>
-            </property>
-          </configuration>
-        owner: hadoop
-        group: hadoop
-        
-    - name: Configurer yarn-site.xml
-      copy:
-        dest: "/home/hadoop/hadoop/etc/hadoop/yarn-site.xml"
-        content: |
-          <configuration>
-            <property>
-              <name>yarn.nodemanager.aux-services</name>
-              <value>mapreduce_shuffle</value>
-            </property>
-          </configuration>
-        owner: hadoop
-        group: hadoop
-        
-    - name: Créer les répertoires pour namenode et datanode
+        url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}-tar.gz"
+        dest: /tmp/hadoop-{{ hadoop_version }}.tar.gz
+
+    - name: Extract Hadoop
+      unarchive:
+        src: /tmp/hadoop-{{ hadoop_version }}.tar.gz
+        dest: /opt/
+        remote_src: yes
+
+    - name: Set Hadoop environment variables
+      lineinfile:
+        path: /etc/profile
+        line: "{{ item }}"
+        state: present
+      with_items:
+        - "export HADOOP_HOME=/opt/hadoop-{{ hadoop_version }}"
+        - "export PATH=$PATH:$HADOOP_HOME/bin"
+        - "export PATH=$PATH:$HADOOP_HOME/sbin"
+
+    - name: Load Hadoop environment variables
+      shell: source /etc/profile
+
+    - name: Change ownership of Hadoop directory
+      file:
+        path: /opt/hadoop-{{ hadoop_version }}
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        state: directory
+
+    - name: Create Hadoop data directories
       file:
         path: "{{ item }}"
         state: directory
-        owner: hadoop
-        group: hadoop
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
         mode: '0755'
       with_items:
-        - /home/hadoop/hadoop/data/namenode
-        - /home/hadoop/hadoop/data/datanode
-        
-    - name: Formater le NameNode
-      shell: sudo -u hadoop /home/hadoop/hadoop/bin/hdfs namenode -format -force
-      register: format_result
-      changed_when: "'Formatting using clusterid' in format_result.stdout"
-      
-    - name: Démarrer HDFS
-      shell: sudo -u hadoop /home/hadoop/hadoop/sbin/start-dfs.sh
-      environment:
-        JAVA_HOME: "{{ ansible_env.JAVA_HOME | default('/usr/lib/jvm/java-11-openjdk-amd64') }}"
-      
-    - name: Démarrer YARN
-      shell: sudo -u hadoop /home/hadoop/hadoop/sbin/start-yarn.sh
-      environment:
-        JAVA_HOME: "{{ ansible_env.JAVA_HOME | default('/usr/lib/jvm/java-11-openjdk-amd64') }}"
-      
-    - name: Vérifier les services en cours d'exécution (JPS)
-      shell: sudo -u hadoop jps
-      register: jps_output
-      
-    - name: Afficher les services Hadoop actifs
-      debug:
-        msg: "{{ jps_output.stdout_lines }}"
+        - "/opt/hadoop-{{ hadoop_version }}/data"
+        - "/opt/hadoop-{{ hadoop_version }}/data/hdfs"
+        - "/opt/hadoop-{{ hadoop_version }}/data/hdfs/namenode"
+        - "/opt/hadoop-{{ hadoop_version }}/data/hdfs/datanode"
+
+    - name: Configure Hadoop core-site.xml
+      template:
+        src: core-site.xml.j2
+        dest: /opt/hadoop-{{ hadoop_version }}/etc/hadoop/core-site.xml
+
+    - name: Configure Hadoop hdfs-site.xml
+      template:
+        src: hdfs-site.xml.j2
+        dest: /opt/hadoop-{{ hadoop_version }}/etc/hadoop/hdfs-site.xml
+
+    - name: Start Hadoop services
+      shell: "{{ hadoop_home }}/sbin/start-dfs.sh && {{ hadoop_home }}/sbin/start-yarn.sh"
+      args:
+        chdir: /opt/hadoop-{{ hadoop_version }}
