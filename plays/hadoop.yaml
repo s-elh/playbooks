@@ -1,6 +1,6 @@
 ---
 - name: Install Hadoop on Ubuntu
-  hosts: all
+  hosts: hadoop
   become: yes
   tasks:
     - name: Install required packages
@@ -52,9 +52,6 @@
         - 'export HADOOP_HOME=/usr/local/hadoop'
         - 'export PATH=$PATH:$HADOOP_HOME/bin'
         - 'export PATH=$PATH:$HADOOP_HOME/sbin'
-
-    - name: Ensure environment variables are loaded
-      shell: source /etc/profile.d/hadoop.sh
 
     - name: Create Hadoop directories
       file:
