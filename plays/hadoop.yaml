@@ -3,11 +3,14 @@
   hosts: all
   become: yes
   vars:
-    hadoop_version: "3.3.1"
-    java_version: "openjdk-11-jdk"
-    hadoop_user: "hadoop"
-    hadoop_group: "hadoop"
-
+    java_version: openjdk-11-jdk
+    hadoop_version: 3.3.1
+    hadoop_user: hadoop
+    hadoop_group: hadoop
+    hadoop_install_dir: /usr/local/hadoop
+    hadoop_download_url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}-tar.gz"
+    hadoop_tar: "hadoop-{{ hadoop_version }}-tar.gz"
+  
   tasks:
     - name: Update apt repository
       apt:
@@ -18,7 +21,12 @@
         name: "{{ java_version }}"
         state: present
 
-    - name: Create Hadoop user and group
+    - name: Create Hadoop group
+      group:
+        name: "{{ hadoop_group }}"
+        state: present
+
+    - name: Create Hadoop user
       user:
         name: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
@@ -27,13 +35,13 @@
 
     - name: Download Hadoop
       get_url:
-        url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}-tar.gz"
-        dest: /tmp/hadoop-{{ hadoop_version }}.tar.gz
+        url: "{{ hadoop_download_url }}"
+        dest: /tmp/{{ hadoop_tar }}
 
     - name: Extract Hadoop
       unarchive:
-        src: /tmp/hadoop-{{ hadoop_version }}.tar.gz
-        dest: /opt/
+        src: /tmp/{{ hadoop_tar }}
+        dest: "{{ hadoop_install_dir }}"
         remote_src: yes
 
     - name: Set Hadoop environment variables
@@ -42,44 +50,37 @@
         line: "{{ item }}"
         state: present
       with_items:
-        - "export HADOOP_HOME=/opt/hadoop-{{ hadoop_version }}"
+        - "export HADOOP_HOME={{ hadoop_install_dir }}/hadoop-{{ hadoop_version }}"
         - "export PATH=$PATH:$HADOOP_HOME/bin"
         - "export PATH=$PATH:$HADOOP_HOME/sbin"
 
-    - name: Load Hadoop environment variables
+    - name: Source profile
       shell: source /etc/profile
+      args:
+        executable: /bin/bash
 
-    - name: Change ownership of Hadoop directory
+    - name: Create Hadoop directory structure
       file:
-        path: /opt/hadoop-{{ hadoop_version }}
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        state: directory
-
-    - name: Create Hadoop data directories
-      file:
-        path: "{{ item }}"
+        path: "{{ hadoop_install_dir }}/hadoop-{{ hadoop_version }}/{{ item }}"
         state: directory
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
         mode: '0755'
-      with_items:
-        - "/opt/hadoop-{{ hadoop_version }}/data"
-        - "/opt/hadoop-{{ hadoop_version }}/data/hdfs"
-        - "/opt/hadoop-{{ hadoop_version }}/data/hdfs/namenode"
-        - "/opt/hadoop-{{ hadoop_version }}/data/hdfs/datanode"
+      loop:
+        - etc
+        - data
+        - logs
 
-    - name: Configure Hadoop core-site.xml
-      template:
-        src: core-site.xml.j2
-        dest: /opt/hadoop-{{ hadoop_version }}/etc/hadoop/core-site.xml
+    - name: Create Hadoop environment configuration file
+      copy:
+        dest: "{{ hadoop_install_dir }}/hadoop-{{ hadoop_version }}/etc/hadoop/hadoop-env.sh"
+        content: |
+          export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0644'
 
-    - name: Configure Hadoop hdfs-site.xml
-      template:
-        src: hdfs-site.xml.j2
-        dest: /opt/hadoop-{{ hadoop_version }}/etc/hadoop/hdfs-site.xml
-
-    - name: Start Hadoop services
-      shell: "{{ hadoop_home }}/sbin/start-dfs.sh && {{ hadoop_home }}/sbin/start-yarn.sh"
-      args:
-        chdir: /opt/hadoop-{{ hadoop_version }}
+    - name: Clean up downloaded files
+      file:
+        path: /tmp/{{ hadoop_tar }}
+        state: absent
