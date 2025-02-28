@@ -5,7 +5,6 @@
     hadoop_version: "3.3.6"
     hadoop_url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz"
     hadoop_home: "/opt/hadoop"
-    hadoop_user: "hadoop"
     hadoop_group: "hadoop"
 
   tasks:
@@ -18,20 +17,6 @@
           - rsync
         state: present
         update_cache: yes
-
-    # Créer le groupe Hadoop
-    - name: Create Hadoop group
-      group:
-        name: "{{ hadoop_group }}"
-        state: present
-
-    # Créer l'utilisateur Hadoop
-    - name: Create Hadoop user
-      user:
-        name: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        create_home: yes
-        shell: /bin/bash
 
     # Télécharger Hadoop
     - name: Download Hadoop
@@ -51,7 +36,7 @@
     - name: Set ownership of Hadoop directory
       file:
         path: "{{ hadoop_home }}"
-        owner: "{{ hadoop_user }}"
+        owner: "{{ ansible_user }}"
         group: "{{ hadoop_group }}"
         state: directory
         recurse: yes
@@ -61,7 +46,7 @@
       file:
         path: "/etc/hadoop"
         state: directory
-        owner: "{{ hadoop_user }}"
+        owner: "{{ ansible_user }}"
         group: "{{ hadoop_group }}"
 
     # Copier les fichiers de configuration Hadoop
@@ -142,13 +127,13 @@
     # Formater le namenode
     - name: Format the HDFS namenode
       command: "{{ hadoop_home }}/bin/hdfs namenode -format"
-      become_user: "{{ hadoop_user }}"
+      become_user: "{{ ansible_user }}"
 
     # Démarrer les services Hadoop
     - name: Start Hadoop services
       command: "{{ hadoop_home }}/sbin/start-dfs.sh"
-      become_user: "{{ hadoop_user }}"
+      become_user: "{{ ansible_user }}"
 
     - name: Start YARN
       command: "{{ hadoop_home }}/sbin/start-yarn.sh"
-      become_user: "{{ hadoop_user }}"
+      become_user: "{{ ansible_user }}"
