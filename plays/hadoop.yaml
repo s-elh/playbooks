@@ -1,181 +1,145 @@
 ---
-- name: Install and Configure Hadoop on Ubuntu
-  hosts: all
+- name: Installer et configurer Hadoop
+  hosts: hadoop.localdomain
   become: yes
-  vars:
-    hadoop_version: "3.3.6"
-    hadoop_download_url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz"
-    hadoop_install_dir: "/opt"
-    hadoop_tarball: "/tmp/hadoop-3.3.6-aarch64.tar.gz"
-    hadoop_home: "/opt/hadoop-{{ hadoop_version }}"
-    hadoop_user: hadoop
-    hadoop_group: hadoop
-    hadoop_java_home: "/usr/lib/jvm/java-8-openjdk-amd64"
-    hadoop_conf_dir: "/opt/hadoop-{{ hadoop_version }}/etc/hadoop"
-    
+  become_method: sudo
+  remote_user: "{{ ansible_user }}"  # Utilise l'utilisateur qui lance le playbook
+
   tasks:
-    # Step 1: Update apt cache and install required dependencies
-    - name: Update apt cache
-      apt:
-        update_cache: yes
 
-    - name: Install required dependencies
-      apt:
-        name:
-          - openjdk-8-jdk
-          - ssh
-          - rsync
-          - curl
-          - wget
-          - tar
-        state: present
-
-    # Step 2: Create Hadoop group and user
-    - name: Create Hadoop group
-      group:
-        name: "{{ hadoop_group }}"
-        state: present
-
-    - name: Create Hadoop user
-      user:
-        name: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        state: present
-        shell: /bin/bash
-
-    # Step 3: Download Hadoop tarball
-    - name: Download Hadoop tarball
+    # Étape 1: Télécharger Hadoop
+    - name: Télécharger Hadoop
       get_url:
-        url: "{{ hadoop_download_url }}"
-        dest: "{{ hadoop_tarball }}"
+        url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz"
+        dest: "/opt/hadoop-3.3.6-aarch64.tar.gz"
         mode: '0644'
 
-    # Step 4: Extract Hadoop tarball
-    - name: Extract Hadoop tarball
+    # Étape 2: Extraire Hadoop
+    - name: Extraire Hadoop
       unarchive:
-        src: "{{ hadoop_tarball }}"
-        dest: "{{ hadoop_install_dir }}"
+        src: "/opt/hadoop-3.3.6-aarch64.tar.gz"
+        dest: "/opt/"
         remote_src: yes
-        creates: "{{ hadoop_home }}"
-
-    # Step 5: Set Hadoop directory permissions
-    - name: Set Hadoop directory permissions
-      file:
-        path: "{{ hadoop_home }}"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: '0755'
-        recurse: yes
-
-    # Step 6: Configure Hadoop environment variables
-    - name: Configure Hadoop environment variables
-      copy:
-        content: |
-          # Set Hadoop environment variables
-          export HADOOP_HOME={{ hadoop_home }}
-          export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
-          export YARN_HOME=$HADOOP_HOME
-          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
-
-          # Java setup
-          export JAVA_HOME={{ hadoop_java_home }}
-          export PATH=$PATH:$JAVA_HOME/bin
-        dest: "/etc/profile.d/hadoop.sh"
         mode: '0755'
 
-    # Step 7: Create Hadoop configuration files (core-site.xml, hdfs-site.xml, yarn-site.xml, mapred-site.xml)
-    - name: Create core-site.xml
-      copy:
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <configuration>
-              <property>
-                  <name>fs.defaultFS</name>
-                  <value>hdfs://localhost:9000</value>
-              </property>
-          </configuration>
-        dest: "{{ hadoop_conf_dir }}/core-site.xml"
-        mode: '0644'
-
-    - name: Create hdfs-site.xml
-      copy:
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <configuration>
-              <property>
-                  <name>dfs.replication</name>
-                  <value>1</value>
-              </property>
-              <property>
-                  <name>dfs.namenode.name.dir</name>
-                  <value>file:/opt/hadoop-{{ hadoop_version }}/data/name</value>
-              </property>
-              <property>
-                  <name>dfs.datanode.data.dir</name>
-                  <value>file:/opt/hadoop-{{ hadoop_version }}/data/data</value>
-              </property>
-          </configuration>
-        dest: "{{ hadoop_conf_dir }}/hdfs-site.xml"
-        mode: '0644'
-
-    - name: Create yarn-site.xml
-      copy:
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <configuration>
-              <property>
-                  <name>yarn.resourcemanager.hostname</name>
-                  <value>localhost</value>
-              </property>
-              <property>
-                  <name>yarn.nodemanager.aux-services</name>
-                  <value>mapreduce_shuffle</value>
-              </property>
-          </configuration>
-        dest: "{{ hadoop_conf_dir }}/yarn-site.xml"
-        mode: '0644'
-
-    - name: Create mapred-site.xml
-      copy:
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <configuration>
-              <property>
-                  <name>mapreduce.framework.name</name>
-                  <value>yarn</value>
-              </property>
-          </configuration>
-        dest: "{{ hadoop_conf_dir }}/mapred-site.xml"
-        mode: '0644'
-
-    # Step 8: Format HDFS Namenode (only on the first node or the namenode)
-    - name: Format HDFS NameNode
-      command: "{{ hadoop_home }}/bin/hdfs namenode -format"
-      become_user: "{{ hadoop_user }}"
-      when: ansible_hostname == "namenode"
-
-    # Step 9: Start Hadoop services
-    - name: Start Hadoop services
-      systemd:
+    # Étape 3: Créer l'utilisateur Hadoop
+    - name: Créer un utilisateur Hadoop
+      user:
         name: hadoop
-        state: started
-        enabled: yes
-      become_user: "{{ hadoop_user }}"
+        group: hadoop
+        shell: /bin/bash
+        create_home: yes
+        state: present
+        append: yes
 
-    # Step 10: Check Hadoop status and verify services
-    - name: Check Hadoop status
-      command: "{{ hadoop_home }}/sbin/start-dfs.sh"
-      become_user: "{{ hadoop_user }}"
+    # Étape 4: Créer le répertoire Hadoop
+    - name: Créer le répertoire pour Hadoop
+      file:
+        path: "/opt/hadoop"
+        state: directory
+        owner: hadoop
+        group: hadoop
+        mode: '0755'
 
-    # Step 11: Start YARN services
-    - name: Start YARN services
-      command: "{{ hadoop_home }}/sbin/start-yarn.sh"
-      become_user: "{{ hadoop_user }}"
+    # Étape 5: Télécharger et copier les fichiers de configuration Hadoop
+    - name: Copier le fichier hadoop-env.sh
+      copy:
+        content: |
+          #!/bin/bash
+          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+          export HADOOP_HOME=/opt/hadoop
+          export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
+          export HADOOP_MAPRED_HOME=$HADOOP_HOME
+          export YARN_HOME=$HADOOP_HOME
+          export PATH=$PATH:$HADOOP_HOME/sbin:$HADOOP_HOME/bin
+        dest: "/opt/hadoop/etc/hadoop/hadoop-env.sh"
+        owner: hadoop
+        group: hadoop
+        mode: '0644'
 
-    # Step 12: Wait for services to start
-    - name: Wait for Hadoop services to start
-      wait_for:
-        host: "{{ ansible_hostname }}"
-        port: 50070
-        delay: 10
-        timeout: 300
+    - name: Copier le fichier core-site.xml
+      copy:
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <configuration>
+            <property>
+              <name>fs.defaultFS</name>
+              <value>hdfs://localhost:9000</value>
+            </property>
+          </configuration>
+        dest: "/opt/hadoop/etc/hadoop/core-site.xml"
+        owner: hadoop
+        group: hadoop
+        mode: '0644'
+
+    - name: Copier le fichier hdfs-site.xml
+      copy:
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <configuration>
+            <property>
+              <name>dfs.replication</name>
+              <value>1</value>
+            </property>
+            <property>
+              <name>dfs.namenode.name.dir</name>
+              <value>file:/opt/hadoop/hadoop_data/hdfs/namenode</value>
+            </property>
+            <property>
+              <name>dfs.datanode.data.dir</name>
+              <value>file:/opt/hadoop/hadoop_data/hdfs/datanode</value>
+            </property>
+          </configuration>
+        dest: "/opt/hadoop/etc/hadoop/hdfs-site.xml"
+        owner: hadoop
+        group: hadoop
+        mode: '0644'
+
+    - name: Copier le fichier yarn-site.xml
+      copy:
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <configuration>
+            <property>
+              <name>yarn.resourcemanager.address</name>
+              <value>localhost:8032</value>
+            </property>
+            <property>
+              <name>yarn.nodemanager.aux-services</name>
+              <value>mapreduce_shuffle</value>
+            </property>
+          </configuration>
+        dest: "/opt/hadoop/etc/hadoop/yarn-site.xml"
+        owner: hadoop
+        group: hadoop
+        mode: '0644'
+
+    # Étape 6: Modifier les permissions sur Hadoop
+    - name: Modifier les permissions sur Hadoop
+      command: sudo chmod -R 755 /opt/hadoop
+      become: yes
+      become_method: sudo
+
+    # Étape 7: Formater le Namenode HDFS
+    - name: Formater le Namenode HDFS
+      command: sudo /opt/hadoop/bin/hdfs namenode -format
+      become: yes
+      become_method: sudo
+
+    # Étape 8: Démarrer le HDFS
+    - name: Démarrer le HDFS
+      command: sudo /opt/hadoop/sbin/start-dfs.sh
+      become: yes
+      become_method: sudo
+
+    # Étape 9: Démarrer YARN
+    - name: Démarrer YARN
+      command: sudo /opt/hadoop/sbin/start-yarn.sh
+      become: yes
+      become_method: sudo
+
+    # Étape 10: Vérifier le statut de Hadoop
+    - name: Vérifier le statut de Hadoop
+      command: sudo jps
+      become: yes
+      become_method: sudo
