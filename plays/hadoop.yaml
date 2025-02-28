@@ -1,104 +1,154 @@
----
-- name: Installation et configuration de Hadoop
-  hosts: hadoop
+- name: Install and Configure Hadoop
+  hosts: all
   become: yes
   vars:
     hadoop_version: "3.3.6"
+    hadoop_url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz"
+    hadoop_home: "/opt/hadoop"
     hadoop_user: "hadoop"
     hadoop_group: "hadoop"
-    hadoop_home: "/usr/local/hadoop"
-    hadoop_tarball: "hadoop-{{ hadoop_version }}-aarch64.tar.gz"
-    hadoop_download_url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/{{ hadoop_tarball }}"
-    java_home: "/usr/lib/jvm/java-8-openjdk-amd64"
 
   tasks:
-
-    - name: Mettre à jour les paquets
-      apt:
-        update_cache: yes
-
-    - name: Installer les dépendances requises
+    # Installer les dépendances nécessaires
+    - name: Install required dependencies
       apt:
         name:
-          - openjdk-8-jdk
+          - openjdk-11-jdk
           - ssh
           - rsync
         state: present
+        update_cache: yes
 
-    - name: Vérifier si le groupe Hadoop existe
+    # Créer le groupe Hadoop
+    - name: Create Hadoop group
       group:
         name: "{{ hadoop_group }}"
         state: present
 
-    - name: Créer l'utilisateur Hadoop
+    # Créer l'utilisateur Hadoop
+    - name: Create Hadoop user
       user:
         name: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
-        shell: /bin/bash
-        home: "/home/{{ hadoop_user }}"
         create_home: yes
+        shell: /bin/bash
 
-    - name: Télécharger Hadoop
+    # Télécharger Hadoop
+    - name: Download Hadoop
       get_url:
-        url: "{{ hadoop_download_url }}"
-        dest: "/tmp/{{ hadoop_tarball }}"
-        mode: '0644'
+        url: "{{ hadoop_url }}"
+        dest: "/tmp/hadoop.tar.gz"
 
-    - name: Extraire Hadoop
+    # Extraire Hadoop
+    - name: Extract Hadoop
       unarchive:
-        src: "/tmp/{{ hadoop_tarball }}"
-        dest: "/usr/local"
+        src: "/tmp/hadoop.tar.gz"
+        dest: "/opt/"
         remote_src: yes
-        creates: "/usr/local/hadoop-{{ hadoop_version }}"
+        extra_opts: [--strip-components=1]
 
-    - name: Créer un lien symbolique vers Hadoop
-      file:
-        src: "/usr/local/hadoop-{{ hadoop_version }}"
-        dest: "{{ hadoop_home }}"
-        state: link
-
-    - name: Définir les permissions pour Hadoop
+    # Définir les permissions sur le dossier Hadoop
+    - name: Set ownership of Hadoop directory
       file:
         path: "{{ hadoop_home }}"
         owner: "{{ hadoop_user }}"
         group: "{{ hadoop_group }}"
-        mode: '0755'
+        state: directory
         recurse: yes
 
-    - name: Configurer les variables d'environnement Hadoop
-      template:
-        src: templates/hadoop.sh.j2
-        dest: /etc/profile.d/hadoop.sh
-        mode: '0644'
+    # Créer le répertoire de configuration
+    - name: Create configuration directory
+      file:
+        path: "/etc/hadoop"
+        state: directory
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
 
-    - name: Charger les variables d'environnement
-      shell: source /etc/profile.d/hadoop.sh
+    # Copier les fichiers de configuration Hadoop
+    - name: Deploy core-site.xml
+      copy:
+        dest: "/etc/hadoop/core-site.xml"
+        content: |
+          <configuration>
+              <property>
+                  <name>fs.defaultFS</name>
+                  <value>hdfs://localhost:9000</value>
+              </property>
+          </configuration>
+
+    - name: Deploy hdfs-site.xml
+      copy:
+        dest: "/etc/hadoop/hdfs-site.xml"
+        content: |
+          <configuration>
+              <property>
+                  <name>dfs.replication</name>
+                  <value>1</value>
+              </property>
+              <property>
+                  <name>dfs.namenode.name.dir</name>
+                  <value>/opt/hadoop/dfs/name</value>
+              </property>
+              <property>
+                  <name>dfs.datanode.data.dir</name>
+                  <value>/opt/hadoop/dfs/data</value>
+              </property>
+          </configuration>
+
+    - name: Deploy mapred-site.xml
+      copy:
+        dest: "/etc/hadoop/mapred-site.xml"
+        content: |
+          <configuration>
+              <property>
+                  <name>mapreduce.framework.name</name>
+                  <value>yarn</value>
+              </property>
+          </configuration>
+
+    - name: Deploy yarn-site.xml
+      copy:
+        dest: "/etc/hadoop/yarn-site.xml"
+        content: |
+          <configuration>
+              <property>
+                  <name>yarn.nodemanager.aux-services</name>
+                  <value>mapreduce_shuffle</value>
+              </property>
+          </configuration>
+
+    - name: Deploy hadoop-env.sh
+      copy:
+        dest: "/etc/hadoop/hadoop-env.sh"
+        content: |
+          export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+          export HADOOP_HOME={{ hadoop_home }}
+          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+        mode: '0755'
+
+    # Ajouter les variables d'environnement Hadoop
+    - name: Configure environment variables for Hadoop
+      lineinfile:
+        path: /etc/profile.d/hadoop.sh
+        line: 'export HADOOP_HOME={{ hadoop_home }}'
+        create: yes
+
+    # Appliquer les variables d'environnement
+    - name: Load environment variables
+      shell: "source /etc/profile.d/hadoop.sh"
       args:
         executable: /bin/bash
 
-    - name: Copier les fichiers de configuration Hadoop
-      template:
-        src: "templates/{{ item }}.j2"
-        dest: "{{ hadoop_home }}/etc/hadoop/{{ item }}"
-        owner: "{{ hadoop_user }}"
-        group: "{{ hadoop_group }}"
-        mode: '0644'
-      loop:
-        - core-site.xml
-        - hdfs-site.xml
-        - mapred-site.xml
-        - yarn-site.xml
-        - hadoop-env.sh
-
-    - name: Formater le NameNode
+    # Formater le namenode
+    - name: Format the HDFS namenode
       command: "{{ hadoop_home }}/bin/hdfs namenode -format"
       become_user: "{{ hadoop_user }}"
-      when: not ansible_check_mode
 
-    - name: Démarrer le NameNode et le DataNode
+    # Démarrer les services Hadoop
+    - name: Start Hadoop services
       command: "{{ hadoop_home }}/sbin/start-dfs.sh"
       become_user: "{{ hadoop_user }}"
 
-    - name: Démarrer YARN
+    - name: Start YARN
       command: "{{ hadoop_home }}/sbin/start-yarn.sh"
       become_user: "{{ hadoop_user }}"
