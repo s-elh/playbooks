@@ -1,69 +1,104 @@
 ---
-- name: Install Hadoop on Ubuntu
-  hosts: all
+- name: Installation et configuration de Hadoop
+  hosts: hadoop
   become: yes
+  vars:
+    hadoop_version: "3.3.6"
+    hadoop_user: "hadoop"
+    hadoop_group: "hadoop"
+    hadoop_home: "/usr/local/hadoop"
+    hadoop_tarball: "hadoop-{{ hadoop_version }}-aarch64.tar.gz"
+    hadoop_download_url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/{{ hadoop_tarball }}"
+    java_home: "/usr/lib/jvm/java-8-openjdk-amd64"
+
   tasks:
-    - name: Install required packages
+
+    - name: Mettre à jour les paquets
       apt:
-        name:
-          - openjdk-11-jdk
-          - ssh
-          - rsync
-          - wget
-        state: present
         update_cache: yes
 
-    - name: Create Hadoop group
+    - name: Installer les dépendances requises
+      apt:
+        name:
+          - openjdk-8-jdk
+          - ssh
+          - rsync
+        state: present
+
+    - name: Vérifier si le groupe Hadoop existe
       group:
-        name: hadoop
+        name: "{{ hadoop_group }}"
         state: present
 
-    - name: Create Hadoop user
+    - name: Créer l'utilisateur Hadoop
       user:
-        name: hadoop
-        group: hadoop
+        name: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
         shell: /bin/bash
+        home: "/home/{{ hadoop_user }}"
         create_home: yes
-        state: present
 
-    - name: Download Hadoop
+    - name: Télécharger Hadoop
       get_url:
-        url: https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz
-        dest: /tmp/hadoop.tar.gz
+        url: "{{ hadoop_download_url }}"
+        dest: "/tmp/{{ hadoop_tarball }}"
+        mode: '0644'
 
-    - name: Extract Hadoop
+    - name: Extraire Hadoop
       unarchive:
-        src: /tmp/hadoop.tar.gz
-        dest: /usr/local/
+        src: "/tmp/{{ hadoop_tarball }}"
+        dest: "/usr/local"
         remote_src: yes
+        creates: "/usr/local/hadoop-{{ hadoop_version }}"
 
-    - name: Create Hadoop symlink
+    - name: Créer un lien symbolique vers Hadoop
       file:
-        src: /usr/local/hadoop-3.3.6
-        dest: /usr/local/hadoop
+        src: "/usr/local/hadoop-{{ hadoop_version }}"
+        dest: "{{ hadoop_home }}"
         state: link
 
-    - name: Set Hadoop environment variables
-      lineinfile:
-        path: /etc/profile.d/hadoop.sh
-        line: "{{ item }}"
-        create: yes
-      loop:
-        - 'export HADOOP_HOME=/usr/local/hadoop'
-        - 'export PATH=$PATH:$HADOOP_HOME/bin'
-        - 'export PATH=$PATH:$HADOOP_HOME/sbin'
-
-    - name: Create Hadoop directories
+    - name: Définir les permissions pour Hadoop
       file:
-        path: "{{ item }}"
-        state: directory
-        owner: hadoop
-        group: hadoop
+        path: "{{ hadoop_home }}"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
         mode: '0755'
-      loop:
-        - /usr/local/hadoop/tmp
-        - /usr/local/hadoop/logs
-        - /usr/local/hadoop/data
-        - /usr/local/hadoop/name
-        - /usr/local/hadoop/data/datanode
+        recurse: yes
 
+    - name: Configurer les variables d'environnement Hadoop
+      template:
+        src: templates/hadoop.sh.j2
+        dest: /etc/profile.d/hadoop.sh
+        mode: '0644'
+
+    - name: Charger les variables d'environnement
+      shell: source /etc/profile.d/hadoop.sh
+      args:
+        executable: /bin/bash
+
+    - name: Copier les fichiers de configuration Hadoop
+      template:
+        src: "templates/{{ item }}.j2"
+        dest: "{{ hadoop_home }}/etc/hadoop/{{ item }}"
+        owner: "{{ hadoop_user }}"
+        group: "{{ hadoop_group }}"
+        mode: '0644'
+      loop:
+        - core-site.xml
+        - hdfs-site.xml
+        - mapred-site.xml
+        - yarn-site.xml
+        - hadoop-env.sh
+
+    - name: Formater le NameNode
+      command: "{{ hadoop_home }}/bin/hdfs namenode -format"
+      become_user: "{{ hadoop_user }}"
+      when: not ansible_check_mode
+
+    - name: Démarrer le NameNode et le DataNode
+      command: "{{ hadoop_home }}/sbin/start-dfs.sh"
+      become_user: "{{ hadoop_user }}"
+
+    - name: Démarrer YARN
+      command: "{{ hadoop_home }}/sbin/start-yarn.sh"
+      become_user: "{{ hadoop_user }}"
