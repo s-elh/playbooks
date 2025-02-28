@@ -41,7 +41,16 @@
         group: hadoop
         mode: '0755'
 
-    # Étape 5: Télécharger et copier les fichiers de configuration Hadoop
+    # Étape 5: Créer le répertoire pour les fichiers de configuration Hadoop
+    - name: Créer le répertoire pour les fichiers de configuration Hadoop
+      file:
+        path: "/opt/hadoop/etc/hadoop"
+        state: directory
+        owner: hadoop
+        group: hadoop
+        mode: '0755'
+
+    # Étape 6: Télécharger et copier les fichiers de configuration Hadoop
     - name: Copier le fichier hadoop-env.sh
       copy:
         content: |
@@ -114,31 +123,31 @@
         group: hadoop
         mode: '0644'
 
-    # Étape 6: Modifier les permissions sur Hadoop
+    # Étape 7: Modifier les permissions sur Hadoop
     - name: Modifier les permissions sur Hadoop
       command: sudo chmod -R 755 /opt/hadoop
       become: yes
       become_method: sudo
 
-    # Étape 7: Formater le Namenode HDFS
+    # Étape 8: Formater le Namenode HDFS
     - name: Formater le Namenode HDFS
       command: sudo /opt/hadoop/bin/hdfs namenode -format
       become: yes
       become_method: sudo
 
-    # Étape 8: Démarrer le HDFS
+    # Étape 9: Démarrer le HDFS
     - name: Démarrer le HDFS
       command: sudo /opt/hadoop/sbin/start-dfs.sh
       become: yes
       become_method: sudo
 
-    # Étape 9: Démarrer YARN
+    # Étape 10: Démarrer YARN
     - name: Démarrer YARN
       command: sudo /opt/hadoop/sbin/start-yarn.sh
       become: yes
       become_method: sudo
 
-    # Étape 10: Vérifier le statut de Hadoop
+    # Étape 11: Vérifier le statut de Hadoop
     - name: Vérifier le statut de Hadoop
       command: sudo jps
       become: yes
