@@ -1,6 +1,6 @@
 ---
 - name: Installer et configurer Hadoop
-  hosts: hadoop.localdomain
+  hosts: all
   become: yes
   become_method: sudo
   remote_user: "{{ ansible_user }}"  # Utilise l'utilisateur qui lance le playbook
