@@ -18,7 +18,7 @@
     # Étape 1: Télécharger Hadoop
     - name: Télécharger Hadoop
       get_url:
-        url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+        url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz"
         dest: "/opt/hadoop-{{ hadoop_version }}.tar.gz"
         mode: '0644'
 
