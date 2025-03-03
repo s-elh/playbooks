@@ -7,11 +7,15 @@
 
   vars:
     java_home: "/usr/lib/jvm/java-8-openjdk-amd64"
-    hadoop_version: "3.3.6-aarch64"
-    hadoop_dir: "/opt/hadoop-{{ hadoop_version }}"
-    hadoop_tmp_dir: "/opt/hadoop-{{ hadoop_version }}/tmp"
-    hadoop_namedir: "/opt/hadoop-{{ hadoop_version }}/data/namedir"
-    hadoop_datanode_dir: "/opt/hadoop-{{ hadoop_version }}/data/datanode"
+    hadoop_version: "3.3.6"
+    hadoop_arch: "aarch64"
+    hadoop_full_version: "{{ hadoop_version }}-{{ hadoop_arch }}"
+    hadoop_archive: "hadoop-{{ hadoop_full_version }}.tar.gz"
+    hadoop_download_url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/{{ hadoop_archive }}"
+    hadoop_dir: "/opt/hadoop-{{ hadoop_full_version }}"
+    hadoop_tmp_dir: "/opt/hadoop-{{ hadoop_full_version }}/tmp"
+    hadoop_namedir: "/opt/hadoop-{{ hadoop_full_version }}/data/namedir"
+    hadoop_datanode_dir: "/opt/hadoop-{{ hadoop_full_version }}/data/datanode"
   
   tasks:
     # Vérification préalable de Java
@@ -28,24 +32,80 @@
         update_cache: yes
       when: java_installed.rc != 0
     
-    # Étape 1: Télécharger Hadoop avec timeout augmenté
+    # Étape 1: Préparer le répertoire d'installation
+    - name: Créer le répertoire /opt si nécessaire
+      file:
+        path: /opt
+        state: directory
+        mode: '0755'
+
+    # Étape 2: Vérifier si Hadoop existe déjà
+    - name: Vérifier si le répertoire Hadoop existe
+      stat:
+        path: "{{ hadoop_dir }}"
+      register: hadoop_directory
+    
+    # Étape 3: Télécharger Hadoop avec timeout augmenté
     - name: Télécharger Hadoop
       get_url:
-        url: "https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz"
-        dest: "/opt/hadoop-{{ hadoop_version }}.tar.gz"
+        url: "{{ hadoop_download_url }}"
+        dest: "/opt/{{ hadoop_archive }}"
         mode: '0644'
         timeout: 600  # Augmenter le timeout à 10 minutes
+      when: not hadoop_directory.stat.exists
+      register: download_result
+      ignore_errors: yes
 
-    # Étape 2: Extraire Hadoop
+    # Alternative: Télécharger depuis un miroir si le téléchargement principal échoue
+    - name: Télécharger Hadoop depuis un miroir alternatif
+      get_url:
+        url: "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/{{ hadoop_archive }}"
+        dest: "/opt/{{ hadoop_archive }}"
+        mode: '0644'
+        timeout: 600
+      when: download_result is defined and download_result.failed
+    
+    # Étape 4: Vérifier si l'archive existe
+    - name: Vérifier si l'archive Hadoop existe
+      stat:
+        path: "/opt/{{ hadoop_archive }}"
+      register: hadoop_archive_exists
+
+    # Étape 5: Extraire Hadoop
     - name: Extraire Hadoop
       unarchive:
-        src: "/opt/hadoop-{{ hadoop_version }}.tar.gz"
+        src: "/opt/{{ hadoop_archive }}"
         dest: "/opt/"
         remote_src: yes
-        mode: '0755'
-        creates: "{{ hadoop_dir }}"  # Évite de réextraire si le répertoire existe déjà
+        creates: "{{ hadoop_dir }}"
+      when: hadoop_archive_exists.stat.exists and not hadoop_directory.stat.exists
+      
+    # Étape 6: Vérifier la structure des répertoires après extraction
+    - name: Trouver le binaire hdfs
+      find:
+        paths: "/opt"
+        patterns: "hdfs"
+        recurse: yes
+        file_type: file
+      register: hdfs_binary
 
-    # Étape 3: Créer les répertoires nécessaires
+    - name: Afficher l'emplacement du binaire hdfs
+      debug:
+        var: hdfs_binary.files
+        verbosity: 0
+
+    # Mettre à jour le chemin hadoop_dir si nécessaire
+    - name: Mettre à jour le chemin hadoop_dir si différent
+      set_fact:
+        hadoop_dir: "{{ hdfs_binary.files[0].path | dirname | dirname }}"
+      when: hdfs_binary.files | length > 0
+      
+    - name: Afficher le répertoire Hadoop détecté
+      debug:
+        msg: "Répertoire Hadoop détecté: {{ hadoop_dir }}"
+        verbosity: 0
+
+    # Étape 7: Créer les répertoires nécessaires
     - name: Créer les répertoires nécessaires pour Hadoop
       file:
         path: "{{ item }}"
@@ -56,15 +116,15 @@
         - "{{ hadoop_namedir }}"
         - "{{ hadoop_datanode_dir }}"
 
-    # Étape 4: Configurer hadoop-env.sh
+    # Étape 8: Configurer hadoop-env.sh
     - name: Configurer hadoop-env.sh
       lineinfile:
         path: "{{ hadoop_dir }}/etc/hadoop/hadoop-env.sh"
         regexp: "^#?export JAVA_HOME="
         line: "export JAVA_HOME={{ java_home }}"
-        create: yes  # Crée le fichier s'il n'existe pas
+        create: yes
 
-    # Étape 5: Configurer core-site.xml
+    # Étape 9: Configurer core-site.xml
     - name: Configurer core-site.xml
       copy:
         content: |
@@ -83,7 +143,7 @@
         dest: "{{ hadoop_dir }}/etc/hadoop/core-site.xml"
         mode: '0644'
 
-    # Étape 6: Configurer hdfs-site.xml
+    # Étape 10: Configurer hdfs-site.xml
     - name: Configurer hdfs-site.xml
       copy:
         content: |
@@ -110,7 +170,7 @@
         dest: "{{ hadoop_dir }}/etc/hadoop/hdfs-site.xml"
         mode: '0644'
 
-    # Étape 7: Configurer yarn-site.xml
+    # Étape 11: Configurer yarn-site.xml
     - name: Configurer yarn-site.xml
       copy:
         content: |
@@ -137,7 +197,7 @@
         dest: "{{ hadoop_dir }}/etc/hadoop/yarn-site.xml"
         mode: '0644'
 
-    # Étape 8: Configurer mapred-site.xml
+    # Étape 12: Configurer mapred-site.xml
     - name: Configurer mapred-site.xml
       copy:
         content: |
@@ -160,19 +220,24 @@
         dest: "{{ hadoop_dir }}/etc/hadoop/mapred-site.xml"
         mode: '0644'
 
-    # Étape 9: Formater le Namenode HDFS (seulement s'il n'a pas déjà été formaté)
+    # Étape 13: Formater le Namenode HDFS avec le chemin du binaire
     - name: Vérifier si le Namenode est déjà formaté
       stat:
         path: "{{ hadoop_namedir }}/current/VERSION"
       register: namenode_version
-
-    - name: Formater le Namenode HDFS
-      command: "{{ hadoop_dir }}/bin/hdfs namenode -format -force"
+      
+    - name: Formater le Namenode HDFS avec le chemin correct
+      shell: "find {{ hadoop_dir }} -name hdfs -type f -executable | head -1 | xargs -I {} {} namenode -format -force"
       when: not namenode_version.stat.exists
       register: format_result
-      changed_when: format_result.rc == 0
+      ignore_errors: yes
 
-    # Étape 10: Configurer SSH sans mot de passe (requis pour les scripts de démarrage)
+    - name: Afficher le résultat du formatage
+      debug:
+        var: format_result
+        verbosity: 0
+
+    # Étape 14: Configurer SSH sans mot de passe
     - name: Vérifier la présence de clés SSH
       stat:
         path: "~/.ssh/id_rsa"
@@ -194,38 +259,51 @@
         state: touch
       when: key_add.changed
 
-    # Étape 11: Démarrer le HDFS
+    # Étape 15: Configurer SSH pour accepter localhost
+    - name: Configurer SSH pour accepter localhost
+      lineinfile:
+        path: ~/.ssh/config
+        line: "Host localhost\n  StrictHostKeyChecking no\n  UserKnownHostsFile=/dev/null"
+        create: yes
+        mode: '0600'
+
+    # Étape 16: Démarrer les services Hadoop en utilisant les scripts trouvés
+    - name: Trouver le script start-dfs.sh
+      find:
+        paths: "{{ hadoop_dir }}"
+        patterns: "start-dfs.sh"
+        recurse: yes
+        file_type: file
+      register: start_dfs_script
+
     - name: Démarrer le HDFS
-      command: "{{ hadoop_dir }}/sbin/start-dfs.sh"
-      args:
-        creates: /tmp/hadoop-dfs-started
+      command: "{{ start_dfs_script.files[0].path }}"
+      when: start_dfs_script.files | length > 0
+      ignore_errors: yes
       register: hdfs_start
 
-    - name: Marquer le démarrage de HDFS
-      file:
-        path: /tmp/hadoop-dfs-started
-        state: touch
-      when: hdfs_start.changed
+    - name: Trouver le script start-yarn.sh
+      find:
+        paths: "{{ hadoop_dir }}"
+        patterns: "start-yarn.sh"
+        recurse: yes
+        file_type: file
+      register: start_yarn_script
 
-    # Étape 12: Démarrer YARN
     - name: Démarrer YARN
-      command: "{{ hadoop_dir }}/sbin/start-yarn.sh"
-      args:
-        creates: /tmp/hadoop-yarn-started
+      command: "{{ start_yarn_script.files[0].path }}"
+      when: start_yarn_script.files | length > 0
+      ignore_errors: yes
       register: yarn_start
 
-    - name: Marquer le démarrage de YARN
-      file:
-        path: /tmp/hadoop-yarn-started
-        state: touch
-      when: yarn_start.changed
-
-    # Étape 13: Vérifier le statut de Hadoop
+    # Étape 17: Vérifier le statut de Hadoop
     - name: Vérifier le statut de Hadoop
       command: jps
       register: hadoop_status
       changed_when: false
+      ignore_errors: yes
 
     - name: Afficher le statut des processus Hadoop
       debug:
         var: hadoop_status.stdout_lines
+        verbosity: 0
