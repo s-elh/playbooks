@@ -63,7 +63,7 @@
         dest: "/opt/{{ hadoop_archive }}"
         mode: '0644'
         timeout: 600
-      when: download_result is defined and download_result.failed
+      when: download_result is defined and download_result.get('failed', False) or download_result.get('status', 0) != 200
     
     # Étape 4: Vérifier si l'archive existe
     - name: Vérifier si l'archive Hadoop existe
