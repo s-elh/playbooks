@@ -1,309 +1,68 @@
 ---
-- name: Installer et configurer Hadoop
+- name: Install Hadoop on Ubuntu
   hosts: all
   become: yes
-  become_method: sudo
-  remote_user: "{{ ansible_user }}"  # Utilise l'utilisateur qui lance le playbook
-
-  vars:
-    java_home: "/usr/lib/jvm/java-8-openjdk-amd64"
-    hadoop_version: "3.3.6"
-    hadoop_arch: "aarch64"
-    hadoop_full_version: "{{ hadoop_version }}-{{ hadoop_arch }}"
-    hadoop_archive: "hadoop-{{ hadoop_full_version }}.tar.gz"
-    hadoop_download_url: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/{{ hadoop_archive }}"
-    hadoop_dir: "/opt/hadoop-{{ hadoop_full_version }}"
-    hadoop_tmp_dir: "/opt/hadoop-{{ hadoop_full_version }}/tmp"
-    hadoop_namedir: "/opt/hadoop-{{ hadoop_full_version }}/data/namedir"
-    hadoop_datanode_dir: "/opt/hadoop-{{ hadoop_full_version }}/data/datanode"
-  
   tasks:
-    # Vérification préalable de Java
-    - name: Vérifier si Java est installé
-      command: which java
-      register: java_installed
-      ignore_errors: yes
-      changed_when: false
-
-    - name: Installer OpenJDK 8 si Java n'est pas installé
+    - name: Install required packages
       apt:
-        name: openjdk-8-jdk
+        name:
+          - openjdk-11-jdk
+          - ssh
+          - rsync
+          - wget
         state: present
         update_cache: yes
-      when: java_installed.rc != 0
-    
-    # Étape 1: Préparer le répertoire d'installation
-    - name: Créer le répertoire /opt si nécessaire
-      file:
-        path: /opt
-        state: directory
-        mode: '0755'
 
-    # Étape 2: Vérifier si Hadoop existe déjà
-    - name: Vérifier si le répertoire Hadoop existe
-      stat:
-        path: "{{ hadoop_dir }}"
-      register: hadoop_directory
-    
-    # Étape 3: Télécharger Hadoop avec timeout augmenté
-    - name: Télécharger Hadoop
+    - name: Create Hadoop group
+      group:
+        name: hadoop
+        state: present
+
+    - name: Create Hadoop user
+      user:
+        name: hadoop
+        group: hadoop
+        shell: /bin/bash
+        create_home: yes
+        state: present
+
+    - name: Download Hadoop
       get_url:
-        url: "{{ hadoop_download_url }}"
-        dest: "/opt/{{ hadoop_archive }}"
-        mode: '0644'
-        timeout: 600  # Augmenter le timeout à 10 minutes
-      when: not hadoop_directory.stat.exists
-      register: download_result
-      ignore_errors: yes
+        url: https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz
+        dest: /tmp/hadoop.tar.gz
 
-    # Alternative: Télécharger depuis un miroir si le téléchargement principal échoue
-    - name: Télécharger Hadoop depuis un miroir alternatif
-      get_url:
-        url: "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/{{ hadoop_archive }}"
-        dest: "/opt/{{ hadoop_archive }}"
-        mode: '0644'
-        timeout: 600
-      when: download_result is defined and download_result.get('failed', False) or download_result.get('status', 0) != 200
-    
-    # Étape 4: Vérifier si l'archive existe
-    - name: Vérifier si l'archive Hadoop existe
-      stat:
-        path: "/opt/{{ hadoop_archive }}"
-      register: hadoop_archive_exists
-
-    # Étape 5: Extraire Hadoop
-    - name: Extraire Hadoop
+    - name: Extract Hadoop
       unarchive:
-        src: "/opt/{{ hadoop_archive }}"
-        dest: "/opt/"
+        src: /tmp/hadoop.tar.gz
+        dest: /usr/local/
         remote_src: yes
-        creates: "{{ hadoop_dir }}"
-      when: hadoop_archive_exists.stat.exists and not hadoop_directory.stat.exists
-      
-    # Étape 6: Vérifier la structure des répertoires après extraction
-    - name: Trouver le binaire hdfs
-      find:
-        paths: "/opt"
-        patterns: "hdfs"
-        recurse: yes
-        file_type: file
-      register: hdfs_binary
 
-    - name: Afficher l'emplacement du binaire hdfs
-      debug:
-        var: hdfs_binary.files
-        verbosity: 0
+    - name: Create Hadoop symlink
+      file:
+        src: /usr/local/hadoop-3.3.6
+        dest: /usr/local/hadoop
+        state: link
 
-    # Mettre à jour le chemin hadoop_dir si nécessaire
-    - name: Mettre à jour le chemin hadoop_dir si différent
-      set_fact:
-        hadoop_dir: "{{ hdfs_binary.files[0].path | dirname | dirname }}"
-      when: hdfs_binary.files | length > 0
-      
-    - name: Afficher le répertoire Hadoop détecté
-      debug:
-        msg: "Répertoire Hadoop détecté: {{ hadoop_dir }}"
-        verbosity: 0
+    - name: Set Hadoop environment variables
+      lineinfile:
+        path: /etc/profile.d/hadoop.sh
+        line: "{{ item }}"
+        create: yes
+      loop:
+        - 'export HADOOP_HOME=/usr/local/hadoop'
+        - 'export PATH=$PATH:$HADOOP_HOME/bin'
+        - 'export PATH=$PATH:$HADOOP_HOME/sbin'
 
-    # Étape 7: Créer les répertoires nécessaires
-    - name: Créer les répertoires nécessaires pour Hadoop
+    - name: Create Hadoop directories
       file:
         path: "{{ item }}"
         state: directory
+        owner: hadoop
+        group: hadoop
         mode: '0755'
       loop:
-        - "{{ hadoop_tmp_dir }}"
-        - "{{ hadoop_namedir }}"
-        - "{{ hadoop_datanode_dir }}"
-
-    # Étape 8: Configurer hadoop-env.sh
-    - name: Configurer hadoop-env.sh
-      lineinfile:
-        path: "{{ hadoop_dir }}/etc/hadoop/hadoop-env.sh"
-        regexp: "^#?export JAVA_HOME="
-        line: "export JAVA_HOME={{ java_home }}"
-        create: yes
-
-    # Étape 9: Configurer core-site.xml
-    - name: Configurer core-site.xml
-      copy:
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-              <property>
-                  <name>fs.defaultFS</name>
-                  <value>hdfs://{{ ansible_hostname }}:9000</value>
-              </property>
-              <property>
-                  <name>hadoop.tmp.dir</name>
-                  <value>{{ hadoop_tmp_dir }}</value>
-              </property>
-          </configuration>
-        dest: "{{ hadoop_dir }}/etc/hadoop/core-site.xml"
-        mode: '0644'
-
-    # Étape 10: Configurer hdfs-site.xml
-    - name: Configurer hdfs-site.xml
-      copy:
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-              <property>
-                  <name>dfs.replication</name>
-                  <value>1</value>
-              </property>
-              <property>
-                  <name>dfs.namenode.name.dir</name>
-                  <value>{{ hadoop_namedir }}</value>
-              </property>
-              <property>
-                  <name>dfs.datanode.data.dir</name>
-                  <value>{{ hadoop_datanode_dir }}</value>
-              </property>
-              <property>
-                  <name>dfs.webhdfs.enabled</name>
-                  <value>true</value>
-              </property>
-          </configuration>
-        dest: "{{ hadoop_dir }}/etc/hadoop/hdfs-site.xml"
-        mode: '0644'
-
-    # Étape 11: Configurer yarn-site.xml
-    - name: Configurer yarn-site.xml
-      copy:
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-              <property>
-                  <name>yarn.resourcemanager.hostname</name>
-                  <value>{{ ansible_hostname }}</value>
-              </property>
-              <property>
-                  <name>yarn.resourcemanager.address</name>
-                  <value>{{ ansible_hostname }}:8032</value>
-              </property>
-              <property>
-                  <name>yarn.nodemanager.aux-services</name>
-                  <value>mapreduce_shuffle</value>
-              </property>
-              <property>
-                  <name>yarn.nodemanager.env-whitelist</name>
-                  <value>HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_YARN_HOME</value>
-              </property>
-          </configuration>
-        dest: "{{ hadoop_dir }}/etc/hadoop/yarn-site.xml"
-        mode: '0644'
-
-    # Étape 12: Configurer mapred-site.xml
-    - name: Configurer mapred-site.xml
-      copy:
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-          <configuration>
-              <property>
-                  <name>mapreduce.framework.name</name>
-                  <value>yarn</value>
-              </property>
-              <property>
-                  <name>mapreduce.jobhistory.address</name>
-                  <value>{{ ansible_hostname }}:10020</value>
-              </property>
-              <property>
-                  <name>mapreduce.jobhistory.webapp.address</name>
-                  <value>{{ ansible_hostname }}:19888</value>
-              </property>
-          </configuration>
-        dest: "{{ hadoop_dir }}/etc/hadoop/mapred-site.xml"
-        mode: '0644'
-
-    # Étape 13: Formater le Namenode HDFS avec le chemin du binaire
-    - name: Vérifier si le Namenode est déjà formaté
-      stat:
-        path: "{{ hadoop_namedir }}/current/VERSION"
-      register: namenode_version
-      
-    - name: Formater le Namenode HDFS avec le chemin correct
-      shell: "find {{ hadoop_dir }} -name hdfs -type f -executable | head -1 | xargs -I {} {} namenode -format -force"
-      when: not namenode_version.stat.exists
-      register: format_result
-      ignore_errors: yes
-
-    - name: Afficher le résultat du formatage
-      debug:
-        var: format_result
-        verbosity: 0
-
-    # Étape 14: Configurer SSH sans mot de passe
-    - name: Vérifier la présence de clés SSH
-      stat:
-        path: "~/.ssh/id_rsa"
-      register: ssh_key_exists
-
-    - name: Générer une paire de clés SSH si nécessaire
-      command: ssh-keygen -t rsa -f ~/.ssh/id_rsa -N ""
-      when: not ssh_key_exists.stat.exists
-
-    - name: Ajouter la clé publique aux clés autorisées
-      shell: cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
-      args:
-        creates: ~/.ssh/authorized_keys.added
-      register: key_add
-      
-    - name: Marquer l'ajout de clé comme effectué
-      file:
-        path: ~/.ssh/authorized_keys.added
-        state: touch
-      when: key_add.changed
-
-    # Étape 15: Configurer SSH pour accepter localhost
-    - name: Configurer SSH pour accepter localhost
-      lineinfile:
-        path: ~/.ssh/config
-        line: "Host localhost\n  StrictHostKeyChecking no\n  UserKnownHostsFile=/dev/null"
-        create: yes
-        mode: '0600'
-
-    # Étape 16: Démarrer les services Hadoop en utilisant les scripts trouvés
-    - name: Trouver le script start-dfs.sh
-      find:
-        paths: "{{ hadoop_dir }}"
-        patterns: "start-dfs.sh"
-        recurse: yes
-        file_type: file
-      register: start_dfs_script
-
-    - name: Démarrer le HDFS
-      command: "{{ start_dfs_script.files[0].path }}"
-      when: start_dfs_script.files | length > 0
-      ignore_errors: yes
-      register: hdfs_start
-
-    - name: Trouver le script start-yarn.sh
-      find:
-        paths: "{{ hadoop_dir }}"
-        patterns: "start-yarn.sh"
-        recurse: yes
-        file_type: file
-      register: start_yarn_script
-
-    - name: Démarrer YARN
-      command: "{{ start_yarn_script.files[0].path }}"
-      when: start_yarn_script.files | length > 0
-      ignore_errors: yes
-      register: yarn_start
-
-    # Étape 17: Vérifier le statut de Hadoop
-    - name: Vérifier le statut de Hadoop
-      command: jps
-      register: hadoop_status
-      changed_when: false
-      ignore_errors: yes
-
-    - name: Afficher le statut des processus Hadoop
-      debug:
-        var: hadoop_status.stdout_lines
-        verbosity: 0
+        - /usr/local/hadoop/tmp
+        - /usr/local/hadoop/logs
+        - /usr/local/hadoop/data
+        - /usr/local/hadoop/name
+        - /usr/local/hadoop/data/datanode
