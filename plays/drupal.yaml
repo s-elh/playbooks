@@ -2,7 +2,7 @@
 - name: Install Basic Drupal on Ubuntu
   hosts: all
   become: true
-  gather_facts: true
+  gather_facts: false
   vars:
     php_version: "8.1"
     drupal_version: "10.4.2"
