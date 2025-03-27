@@ -1,5 +1,5 @@
 ---
-- hosts: database_servers
+- hosts: all
   become: yes
   vars:
     edb_version: 17
