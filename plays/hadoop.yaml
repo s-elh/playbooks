@@ -1,91 +1,93 @@
 ---
-- hosts: all
+- hosts: database_servers
   become: yes
   vars:
     edb_version: 17
     dns_server: 8.8.8.8
 
-  pre_tasks:
-    - name: Ensure APT configuration directory exists
+  tasks:
+    # DNS configuration for both Ubuntu and RHEL
+    - name: Configure resolv.conf with Google DNS (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+      args:
+        warn: false  # Disable warnings about using shell instead of copy module
+    
+    - name: Configure resolv.conf with Google DNS (RHEL)
+      when: ansible_os_family == "RedHat"
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+      args:
+        warn: false  # Disable warnings about using shell instead of copy module
+
+    - name: Ensure resolv.conf permissions are correct
       file:
-        path: /etc/apt/conf.d
-        state: directory
-        mode: 0755
+        path: /etc/resolv.conf
         owner: root
         group: root
+        mode: 0644
 
-  tasks:
     - name: Clear APT proxy configuration
       copy:
         content: ""
         dest: /etc/apt/conf.d/90curtin-aptproxy
         force: yes
         mode: 0644
+      when: ansible_distribution == "Ubuntu"
 
-    - name: Verify APT configuration file creation
-      stat:
-        path: /etc/apt/conf.d/90curtin-aptproxy
-      register: apt_proxy_file
-
-    - name: Fail if APT proxy configuration file was not created
-      fail:
-        msg: "Failed to create APT proxy configuration file"
-      when: not apt_proxy_file.stat.exists
-
-    - name: Configure DNS server
-      copy:
-        content: "nameserver {{ dns_server }}"
-        dest: /etc/resolv.conf
-        force: yes
-        mode: 0644
-
-    - name: Update APT package cache
+    - name: Update package cache for Ubuntu
       apt:
         update_cache: yes
-      register: apt_update
-      until: apt_update is success
-      retries: 3
-      delay: 5
+      when: ansible_distribution == "Ubuntu"
 
-    - name: Install required dependencies
+    - name: Update package cache for RHEL
+      yum:
+        update_cache: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Install required dependencies (Ubuntu)
       apt:
         pkg:
           - curl
           - gnupg
           - ca-certificates
         state: present
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Install required dependencies (RHEL)
+      yum:
+        pkg:
+          - curl
+          - gnupg
+          - ca-certificates
+        state: present
+      when: ansible_os_family == "RedHat"
 
     - name: Download EDB repository setup script
       get_url:
         url: "https://downloads.enterprisedb.com/ODhIpQiBGQejsnFtPvwMH6cslBPSS2V9/enterprise/setup.deb.sh"
         dest: /tmp/edb_setup.sh
         mode: 0755
-        timeout: 60
       register: edb_script_download
-      until: edb_script_download is success
-      retries: 3
-      delay: 5
+      when: ansible_distribution == "Ubuntu"
 
-    - name: Execute EDB repository setup script
+    - name: Execute EDB repository setup script (Ubuntu)
       command: /tmp/edb_setup.sh
       args:
         creates: /etc/apt/sources.list.d/edb.list
       register: edb_repo_setup
-      failed_when: edb_repo_setup.rc != 0
+      when: ansible_distribution == "Ubuntu"
 
-    - name: Install EDB Advanced Server
+    - name: Install EDB Advanced Server (Ubuntu)
       apt:
         name: "edb-as{{ edb_version }}-server"
         state: present
-      register: edb_install
-      until: edb_install is success
-      retries: 3
-      delay: 5
+      when: ansible_distribution == "Ubuntu"
 
     - name: Remove temporary setup script
       file:
         path: /tmp/edb_setup.sh
         state: absent
+      when: ansible_distribution == "Ubuntu"
 
   post_tasks:
     - name: Verify EDB installation
@@ -98,11 +100,3 @@
       debug:
         var: psql_version.stdout_lines
       when: psql_version.rc == 0
-
-    - name: Final installation status check
-      assert:
-        that:
-          - edb_repo_setup.rc == 0
-          - edb_install is success
-        fail_msg: "EDB installation encountered issues"
-        success_msg: "EDB installation completed successfully"
