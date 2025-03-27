@@ -1,0 +1,106 @@
+---
+- hosts: all
+  become: yes
+  vars:
+    edb_version: 17
+    dns_server: 8.8.8.8
+
+  pre_tasks:
+    - name: Remove existing proxy configuration
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/apt.conf.d/proxy.conf
+        - /etc/environment
+
+    - name: Unset proxy environment variables
+      lineinfile:
+        path: /etc/environment
+        state: absent
+        regexp: "{{ item }}"
+      loop:
+        - '^HTTP_PROXY='
+        - '^HTTPS_PROXY='
+        - '^http_proxy='
+        - '^https_proxy='
+
+    - name: Configure direct APT access
+      copy:
+        content: |
+          Acquire::http::Proxy "false";
+          Acquire::https::Proxy "false";
+        dest: /etc/apt/apt.conf.d/99no-proxy
+        mode: 0644
+
+  tasks:
+    # DNS configuration
+    - name: Configure resolv.conf with Google DNS
+      copy:
+        content: "nameserver {{ dns_server }}\n"
+        dest: /etc/resolv.conf
+        mode: 0644
+
+    - name: Prepare APT for package installation
+      block:
+        - name: Clean APT lists
+          command: rm -rf /var/lib/apt/lists/*
+
+        - name: Update APT cache forcefully
+          apt:
+            update_cache: yes
+            force_apt_get: yes
+          register: apt_update
+          retries: 3
+          delay: 5
+          until: apt_update is success
+
+    - name: Install core dependencies
+      apt:
+        pkg:
+          - curl
+          - gnupg
+          - ca-certificates
+          - apt-transport-https
+        state: present
+        force_apt_get: yes
+
+    - name: Download EDB repository setup script
+      get_url:
+        url: "https://downloads.enterprisedb.com/ODhIpQiBGQejsnFtPvwMH6cslBPSS2V9/enterprise/setup.deb.sh"
+        dest: /tmp/edb_setup.sh
+        mode: 0755
+        timeout: 60
+
+    - name: Execute EDB repository setup script
+      command: /tmp/edb_setup.sh
+      args:
+        creates: /etc/apt/sources.list.d/edb.list
+      register: edb_repo_setup
+
+    - name: Install EDB Advanced Server
+      apt:
+        name: "edb-as{{ edb_version }}-server"
+        state: present
+        force_apt_get: yes
+      register: edb_install
+      retries: 3
+      delay: 5
+      until: edb_install is success
+
+    - name: Remove temporary setup script
+      file:
+        path: /tmp/edb_setup.sh
+        state: absent
+
+  post_tasks:
+    - name: Verify EDB installation
+      command: psql -V
+      register: psql_version
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Display EDB version
+      debug:
+        var: psql_version.stdout_lines
+      when: psql_version.rc == 0
