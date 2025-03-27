@@ -1,125 +1,102 @@
 ---
-- name: Install Coolify
-  hosts: all
-  become: true
+- hosts: all
+  become: yes
   vars:
-    rhel_username: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelEmail'] | default('') }}"
-    rhel_password: "{{ hostvars[inventory_hostname]['morpheus']['customOptions']['rhelPw'] | default('') }}"
-    
+    edb_version: 17
+    dns_server: 8.8.8.8
+
   tasks:
     # DNS configuration for both Ubuntu and RHEL
     - name: Configure resolv.conf with Google DNS (Ubuntu)
       when: ansible_distribution == "Ubuntu"
       shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+      args:
+        warn: false  # Disable warnings about using shell instead of copy module
     
     - name: Configure resolv.conf with Google DNS (RHEL)
       when: ansible_os_family == "RedHat"
       shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-    
-    # Clear proxy settings
-    - name: Clear apt proxy settings (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
-      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
-    
-    - name: Clear yum proxy settings (RHEL)
-      when: ansible_os_family == "RedHat"
-      shell: echo > /etc/yum.conf.d/90curtin-aptproxy
+      args:
+        warn: false  # Disable warnings about using shell instead of copy module
 
-    - name: Update apt cache (Ubuntu)
+    - name: Ensure resolv.conf permissions are correct
+      file:
+        path: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Clear APT proxy configuration
+      copy:
+        content: ""
+        dest: /etc/apt/conf.d/90curtin-aptproxy
+        force: yes
+        mode: 0644
       when: ansible_distribution == "Ubuntu"
+
+    - name: Update package cache for Ubuntu
       apt:
         update_cache: yes
-        cache_valid_time: 3600
-
-    # RHEL-specific tasks
-    - name: Configure HTTP proxy for yum (RHEL)
-      when: ansible_os_family == "RedHat"
-      lineinfile:
-        path: /etc/yum.conf
-        line: 'proxy={{ proxy_url }}'
-        create: yes
-
-    - name: Register and subscribe RHEL system
-      when: ansible_os_family == "RedHat"
-      command: subscription-manager register --username {{ rhel_username }} --password {{ rhel_password }} --auto-attach
-      register: subscription_result
-      failed_when: subscription_result.rc != 0 and 'This system is already registered' not in subscription_result.stderr
-      changed_when: subscription_result.rc == 0
-
-    - name: Enable required RHEL repositories
-      when: ansible_os_family == "RedHat"
-      command: subscription-manager repos --enable rhel-{{ ansible_distribution_major_version }}-for-x86_64-appstream-rpms
-      register: repo_result
-      failed_when: repo_result.rc != 0 and 'already enabled' not in repo_result.stderr
-      changed_when: repo_result.rc == 0
-
-    # Install required packages
-    - name: Install required packages (Ubuntu)
       when: ansible_distribution == "Ubuntu"
-      apt:
-        name:
-          - curl
-          - wget
-          - git
-          - jq
-          - openssl
-          - docker.io
-        state: present
 
-    - name: Install required packages (RHEL)
+    - name: Update package cache for RHEL
+      yum:
+        update_cache: yes
       when: ansible_os_family == "RedHat"
-      dnf:
-        name:
+
+    - name: Install required dependencies (Ubuntu)
+      apt:
+        pkg:
           - curl
-          - wget
-          - git
-          - jq
-          - openssl
-          - docker
+          - gnupg
+          - ca-certificates
         state: present
+      when: ansible_distribution == "Ubuntu"
 
-    - name: Start and enable Docker service
-      systemd:
-        name: docker
-        state: started
-        enabled: yes
+    - name: Install required dependencies (RHEL)
+      yum:
+        pkg:
+          - curl
+          - gnupg
+          - ca-certificates
+        state: present
+      when: ansible_os_family == "RedHat"
 
-    - name: Create required directories
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      with_items:
-        - /coolify
-        - /coolify/data
+    - name: Download EDB repository setup script
+      get_url:
+        url: "https://downloads.enterprisedb.com/ODhIpQiBGQejsnFtPvwMH6cslBPSS2V9/enterprise/setup.deb.sh"
+        dest: /tmp/edb_setup.sh
+        mode: 0755
+      register: edb_script_download
+      when: ansible_distribution == "Ubuntu"
 
-    # Download script using command to ensure proxy settings are used
-    - name: Download Coolify install script
-      command: curl https://cdn.coollabs.io/coolify/install.sh -o /tmp/coolify_install.sh
+    - name: Execute EDB repository setup script (Ubuntu)
+      command: /tmp/edb_setup.sh
       args:
-        creates: /tmp/coolify_install.sh
+        creates: /etc/apt/sources.list.d/edb.list
+      register: edb_repo_setup
+      when: ansible_distribution == "Ubuntu"
 
-    # Set execute permissions
-    - name: Set execute permission on install script
+    - name: Install EDB Advanced Server (Ubuntu)
+      apt:
+        name: "edb-as{{ edb_version }}-server"
+        state: present
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Remove temporary setup script
       file:
-        path: /tmp/coolify_install.sh
-        mode: '0755'
+        path: /tmp/edb_setup.sh
+        state: absent
+      when: ansible_distribution == "Ubuntu"
 
-    # Execute script with proper environment variables
-    - name: Execute Coolify installation
-      shell: |
-        bash /tmp/coolify_install.sh --non-interactive
-      args:
-        executable: /bin/bash
-      async: 1800
-      poll: 30
+  post_tasks:
+    - name: Verify EDB installation
+      command: psql -V
+      register: psql_version
+      changed_when: false
+      ignore_errors: yes
 
-    - name: Wait for Coolify to be available
-      wait_for:
-        port: 8000
-        timeout: 300
-        delay: 10
-
-    - name: Print installation complete message
+    - name: Display EDB version
       debug:
-        msg: "Coolify has been installed successfully. Access it at https://{{ morpheus['server']['internalIp'] }}:8000"
+        var: psql_version.stdout_lines
+      when: psql_version.rc == 0
