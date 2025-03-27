@@ -45,8 +45,6 @@
       block:
         - name: Clean APT lists
           command: rm -rf /var/lib/apt/lists/*
-          args:
-            warn: no
 
         - name: Update APT cache forcefully
           apt:
