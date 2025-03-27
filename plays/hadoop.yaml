@@ -1,96 +1,78 @@
 ---
-- hosts: all
+- hosts: database_servers
   become: yes
   vars:
     edb_version: 17
     dns_server: 8.8.8.8
 
   pre_tasks:
-    - name: Ensure required packages for APT are installed
-      apt:
-        pkg:
-          - apt-transport-https
-          - ca-certificates
-          - gnupg
-        state: present
+    - name: Remove existing proxy configuration
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/apt.conf.d/proxy.conf
+        - /etc/environment
 
-    - name: Check APT configuration
-      command: apt-config dump
-      register: apt_config
-      changed_when: false
-      failed_when: false
+    - name: Unset proxy environment variables
+      lineinfile:
+        path: /etc/environment
+        state: absent
+        regexp: "{{ item }}"
+      loop:
+        - '^HTTP_PROXY='
+        - '^HTTPS_PROXY='
+        - '^http_proxy='
+        - '^https_proxy='
 
-    - name: Debug APT configuration
-      debug:
-        var: apt_config.stdout_lines
-      when: apt_config.rc == 0
+    - name: Configure direct APT access
+      copy:
+        content: |
+          Acquire::http::Proxy "false";
+          Acquire::https::Proxy "false";
+        dest: /etc/apt/apt.conf.d/99no-proxy
+        mode: 0644
 
   tasks:
-    # DNS configuration for Ubuntu
+    # DNS configuration
     - name: Configure resolv.conf with Google DNS
-      shell: echo nameserver {{ dns_server }} > /etc/resolv.conf
-      args:
-        executable: /bin/bash
-
-    - name: Ensure resolv.conf permissions are correct
-      file:
-        path: /etc/resolv.conf
-        owner: root
-        group: root
-        mode: 0644
-
-    - name: Clear APT proxy configuration
       copy:
-        content: ""
-        dest: /etc/apt/conf.d/90curtin-aptproxy
-        force: yes
+        content: "nameserver {{ dns_server }}\n"
+        dest: /etc/resolv.conf
         mode: 0644
 
-    - name: Update APT package cache with detailed error handling
+    - name: Prepare APT for package installation
       block:
-        - name: Refresh APT cache
+        - name: Clean APT lists
+          command: rm -rf /var/lib/apt/lists/*
+          args:
+            warn: no
+
+        - name: Update APT cache forcefully
           apt:
             update_cache: yes
             force_apt_get: yes
-            cache_valid_time: 0
           register: apt_update
           retries: 3
           delay: 5
           until: apt_update is success
-      rescue:
-        - name: Check APT lock
-          stat:
-            path: /var/lib/dpkg/lock
-          register: apt_lock
 
-        - name: Remove APT lock if exists
-          file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /var/lib/dpkg/lock
-            - /var/lib/apt/lists/lock
-          when: apt_lock.stat.exists
-
-        - name: Force APT cache update after lock removal
-          apt:
-            update_cache: yes
-            force_apt_get: yes
-
-    - name: Install required dependencies
+    - name: Install core dependencies
       apt:
         pkg:
           - curl
           - gnupg
           - ca-certificates
+          - apt-transport-https
         state: present
+        force_apt_get: yes
 
     - name: Download EDB repository setup script
       get_url:
         url: "https://downloads.enterprisedb.com/ODhIpQiBGQejsnFtPvwMH6cslBPSS2V9/enterprise/setup.deb.sh"
         dest: /tmp/edb_setup.sh
         mode: 0755
-      register: edb_script_download
+        timeout: 60
 
     - name: Execute EDB repository setup script
       command: /tmp/edb_setup.sh
@@ -102,6 +84,7 @@
       apt:
         name: "edb-as{{ edb_version }}-server"
         state: present
+        force_apt_get: yes
       register: edb_install
       retries: 3
       delay: 5
@@ -123,9 +106,3 @@
       debug:
         var: psql_version.stdout_lines
       when: psql_version.rc == 0
-
-  handlers:
-    - name: Restart networking
-      service:
-        name: networking
-        state: restarted
