@@ -1,68 +1,70 @@
 ---
-- name: Install Hadoop on Ubuntu
-  hosts: all
+- hosts: all
   become: yes
+  vars:
+    edb_version: 17
+    dns_server: 8.8.8.8
+
   tasks:
-    - name: Install required packages
+    - name: Clear APT proxy configuration
+      copy:
+        content: ""
+        dest: /etc/apt/conf.d/90curtin-aptproxy
+        force: yes
+
+    - name: Configure DNS server
+      copy:
+        content: "nameserver {{ dns_server }}"
+        dest: /etc/resolv.conf
+        force: yes
+
+    - name: Update APT package cache
       apt:
-        name:
-          - openjdk-11-jdk
-          - ssh
-          - rsync
-          - wget
-        state: present
         update_cache: yes
 
-    - name: Create Hadoop group
-      group:
-        name: hadoop
+    - name: Install required dependencies
+      apt:
+        pkg:
+          - curl
+          - gnupg
+          - ca-certificates
         state: present
 
-    - name: Create Hadoop user
-      user:
-        name: hadoop
-        group: hadoop
-        shell: /bin/bash
-        create_home: yes
-        state: present
-
-    - name: Download Hadoop
+    - name: Download EDB repository setup script
       get_url:
-        url: https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6-aarch64.tar.gz
-        dest: /tmp/hadoop.tar.gz
+        url: "https://downloads.enterprisedb.com/ODhIpQiBGQejsnFtPvwMH6cslBPSS2V9/enterprise/setup.deb.sh"
+        dest: /tmp/edb_setup.sh
+        mode: 0755
 
-    - name: Extract Hadoop
-      unarchive:
-        src: /tmp/hadoop.tar.gz
-        dest: /usr/local/
-        remote_src: yes
+    - name: Execute EDB repository setup script
+      command: /tmp/edb_setup.sh
+      args:
+        creates: /etc/apt/sources.list.d/edb.list
 
-    - name: Create Hadoop symlink
+    - name: Install EDB Advanced Server
+      apt:
+        name: "edb-as{{ edb_version }}-server"
+        state: present
+
+    - name: Remove temporary setup script
       file:
-        src: /usr/local/hadoop-3.3.6
-        dest: /usr/local/hadoop
-        state: link
+        path: /tmp/edb_setup.sh
+        state: absent
 
-    - name: Set Hadoop environment variables
-      lineinfile:
-        path: /etc/profile.d/hadoop.sh
-        line: "{{ item }}"
-        create: yes
-      loop:
-        - 'export HADOOP_HOME=/usr/local/hadoop'
-        - 'export PATH=$PATH:$HADOOP_HOME/bin'
-        - 'export PATH=$PATH:$HADOOP_HOME/sbin'
+  handlers:
+    - name: restart networking
+      service:
+        name: networking
+        state: restarted
 
-    - name: Create Hadoop directories
-      file:
-        path: "{{ item }}"
-        state: directory
-        owner: hadoop
-        group: hadoop
-        mode: '0755'
-      loop:
-        - /usr/local/hadoop/tmp
-        - /usr/local/hadoop/logs
-        - /usr/local/hadoop/data
-        - /usr/local/hadoop/name
-        - /usr/local/hadoop/data/datanode
+  post_tasks:
+    - name: Verify EDB installation
+      command: psql -V
+      register: psql_version
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Display EDB version
+      debug:
+        var: psql_version.stdout_lines
+      when: psql_version.rc == 0
