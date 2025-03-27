@@ -5,15 +5,32 @@
     edb_version: 17
     dns_server: 8.8.8.8
 
+  pre_tasks:
+    - name: Ensure required packages for APT are installed
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - gnupg
+        state: present
+
+    - name: Check APT configuration
+      command: apt-config dump
+      register: apt_config
+      changed_when: false
+      failed_when: false
+
+    - name: Debug APT configuration
+      debug:
+        var: apt_config.stdout_lines
+      when: apt_config.rc == 0
+
   tasks:
-    # DNS configuration for both Ubuntu and RHEL
-    - name: Configure resolv.conf with Google DNS (Ubuntu)
-      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-      when: ansible_distribution == "Ubuntu"
-    
-    - name: Configure resolv.conf with Google DNS (RHEL)
-      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-      when: ansible_os_family == "RedHat"
+    # DNS configuration for Ubuntu
+    - name: Configure resolv.conf with Google DNS
+      shell: echo nameserver {{ dns_server }} > /etc/resolv.conf
+      args:
+        executable: /bin/bash
 
     - name: Ensure resolv.conf permissions are correct
       file:
@@ -28,35 +45,45 @@
         dest: /etc/apt/conf.d/90curtin-aptproxy
         force: yes
         mode: 0644
-      when: ansible_distribution == "Ubuntu"
 
-    - name: Update package cache for Ubuntu
-      apt:
-        update_cache: yes
-      when: ansible_distribution == "Ubuntu"
+    - name: Update APT package cache with detailed error handling
+      block:
+        - name: Refresh APT cache
+          apt:
+            update_cache: yes
+            force_apt_get: yes
+            cache_valid_time: 0
+          register: apt_update
+          retries: 3
+          delay: 5
+          until: apt_update is success
+      rescue:
+        - name: Check APT lock
+          stat:
+            path: /var/lib/dpkg/lock
+          register: apt_lock
 
-    - name: Update package cache for RHEL
-      yum:
-        update_cache: yes
-      when: ansible_os_family == "RedHat"
+        - name: Remove APT lock if exists
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /var/lib/dpkg/lock
+            - /var/lib/apt/lists/lock
+          when: apt_lock.stat.exists
 
-    - name: Install required dependencies (Ubuntu)
+        - name: Force APT cache update after lock removal
+          apt:
+            update_cache: yes
+            force_apt_get: yes
+
+    - name: Install required dependencies
       apt:
         pkg:
           - curl
           - gnupg
           - ca-certificates
         state: present
-      when: ansible_distribution == "Ubuntu"
-
-    - name: Install required dependencies (RHEL)
-      yum:
-        pkg:
-          - curl
-          - gnupg
-          - ca-certificates
-        state: present
-      when: ansible_os_family == "RedHat"
 
     - name: Download EDB repository setup script
       get_url:
@@ -64,26 +91,26 @@
         dest: /tmp/edb_setup.sh
         mode: 0755
       register: edb_script_download
-      when: ansible_distribution == "Ubuntu"
 
-    - name: Execute EDB repository setup script (Ubuntu)
+    - name: Execute EDB repository setup script
       command: /tmp/edb_setup.sh
       args:
         creates: /etc/apt/sources.list.d/edb.list
       register: edb_repo_setup
-      when: ansible_distribution == "Ubuntu"
 
-    - name: Install EDB Advanced Server (Ubuntu)
+    - name: Install EDB Advanced Server
       apt:
         name: "edb-as{{ edb_version }}-server"
         state: present
-      when: ansible_distribution == "Ubuntu"
+      register: edb_install
+      retries: 3
+      delay: 5
+      until: edb_install is success
 
     - name: Remove temporary setup script
       file:
         path: /tmp/edb_setup.sh
         state: absent
-      when: ansible_distribution == "Ubuntu"
 
   post_tasks:
     - name: Verify EDB installation
@@ -96,3 +123,9 @@
       debug:
         var: psql_version.stdout_lines
       when: psql_version.rc == 0
+
+  handlers:
+    - name: Restart networking
+      service:
+        name: networking
+        state: restarted
