@@ -1,5 +1,5 @@
 ---
-- hosts: all
+- hosts: database_servers
   become: yes
   vars:
     edb_version: 17
@@ -8,16 +8,12 @@
   tasks:
     # DNS configuration for both Ubuntu and RHEL
     - name: Configure resolv.conf with Google DNS (Ubuntu)
-      when: ansible_distribution == "Ubuntu"
       shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-      args:
-        warn: false  # Disable warnings about using shell instead of copy module
+      when: ansible_distribution == "Ubuntu"
     
     - name: Configure resolv.conf with Google DNS (RHEL)
-      when: ansible_os_family == "RedHat"
       shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-      args:
-        warn: false  # Disable warnings about using shell instead of copy module
+      when: ansible_os_family == "RedHat"
 
     - name: Ensure resolv.conf permissions are correct
       file:
