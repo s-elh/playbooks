@@ -5,99 +5,24 @@
     edb_version: 17
     dns_server: 8.8.8.8
 
-  pre_tasks:
-    - name: Remove existing proxy configuration for Ubuntu
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/apt/apt.conf.d/proxy.conf
-        - /etc/environment
-      when: ansible_os_family == "Debian"
-
-    - name: Remove existing proxy configuration for RedHat
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/yum.conf
-        - /etc/environment
-      when: ansible_os_family == "RedHat"
-
-    - name: Unset proxy environment variables
-      lineinfile:
-        path: /etc/environment
-        state: absent
-        regexp: "{{ item }}"
-      loop:
-        - '^HTTP_PROXY='
-        - '^HTTPS_PROXY='
-        - '^http_proxy='
-        - '^https_proxy='
-
   tasks:
-    # DNS configuration
-    - name: Configure resolv.conf with Google DNS
-      copy:
-        content: "nameserver {{ dns_server }}\n"
-        dest: /etc/resolv.conf
-        mode: 0644
-
-    # Ubuntu-specific tasks
-    - name: Prepare APT for package installation (Ubuntu)
-      block:
-        - name: Clean APT lists
-          command: rm -rf /var/lib/apt/lists/*
-          when: ansible_os_family == "Debian"
-
-        - name: Update APT cache forcefully
-          apt:
-            update_cache: yes
-            force_apt_get: yes
-          register: apt_update
-          retries: 3
-          delay: 5
-          until: apt_update is success
-          when: ansible_os_family == "Debian"
-      when: ansible_os_family == "Debian"
-
-    # RedHat-specific tasks
-    - name: Prepare DNF for package installation (RedHat)
-      block:
-        - name: Clean DNF cache
-          command: dnf clean all
-          when: ansible_os_family == "RedHat"
-
-        - name: Update DNF cache
-          dnf:
-            update_cache: yes
-          register: dnf_update
-          retries: 3
-          delay: 5
-          until: dnf_update is success
-          when: ansible_os_family == "RedHat"
+    # DNS configuration for both Ubuntu and RHEL
+    - name: Configure resolv.conf with Google DNS (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
+    - name: Configure resolv.conf with Google DNS (RHEL)
       when: ansible_os_family == "RedHat"
-
-    # Install dependencies
-    - name: Install core dependencies (Ubuntu)
-      apt:
-        pkg:
-          - curl
-          - gnupg
-          - ca-certificates
-          - apt-transport-https
-        state: present
-        force_apt_get: yes
-      when: ansible_os_family == "Debian"
-
-    - name: Install core dependencies (RedHat)
-      dnf:
-        pkg:
-          - curl
-          - gnupg
-          - ca-certificates
-        state: present
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
+    # Clear proxy settings
+    - name: Clear apt proxy settings (Ubuntu)
+      when: ansible_distribution == "Ubuntu"
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+    
+    - name: Clear yum proxy settings (RHEL)
       when: ansible_os_family == "RedHat"
+      shell: echo > /etc/yum.conf.d/90curtin-aptproxy
 
     # Download and execute repository setup script
     - name: Download EDB repository setup script (Ubuntu)
@@ -106,7 +31,7 @@
         dest: /tmp/edb_setup.sh
         mode: 0755
         timeout: 60
-      when: ansible_os_family == "Debian"
+      when: ansible_distribution == "Ubuntu"
 
     - name: Download EDB repository setup script (RedHat)
       get_url:
@@ -129,17 +54,18 @@
       apt:
         name: "edb-as{{ edb_version }}-server"
         state: present
-        force_apt_get: yes
+        update_cache: yes
       register: edb_install_ubuntu
       retries: 3
       delay: 5
       until: edb_install_ubuntu is success
-      when: ansible_os_family == "Debian"
+      when: ansible_distribution == "Ubuntu"
 
     - name: Install EDB Advanced Server (RedHat)
       dnf:
         name: "edb-as{{ edb_version }}-server"
         state: present
+        update_cache: yes
       register: edb_install_redhat
       retries: 3
       delay: 5
