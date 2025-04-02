@@ -55,7 +55,7 @@
           until: apt_update is success
 
 - name: Install NetData on Ubuntu
-  hosts: master
+  hosts: all
   become: yes
   tasks:
     - name: Install dependencies for NetData
