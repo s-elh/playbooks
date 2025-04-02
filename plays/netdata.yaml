@@ -1,92 +1,25 @@
 ---
-- name: Install and Configure NetData on Ubuntu
-  hosts: all
-  become: yes  
-  vars:
-    dns_server: 8.8.8.8
-
-  pre_tasks:
-    - name: Remove existing proxy configuration
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/apt/apt.conf.d/proxy.conf
-        - /etc/environment
-
-    - name: Unset proxy environment variables
-      lineinfile:
-        path: /etc/environment
-        state: absent
-        regexp: "{{ item }}"
-      loop:
-        - '^HTTP_PROXY='
-        - '^HTTPS_PROXY='
-        - '^http_proxy='
-        - '^https_proxy='
-
-    - name: Configure direct APT access
-      copy:
-        content: |
-          Acquire::http::Proxy "false";
-          Acquire::https::Proxy "false";
-        dest: /etc/apt/apt.conf.d/99no-proxy
-        mode: 0644
-
-  tasks:
-    - name: Configure resolv.conf with Google DNS
-      copy:
-        content: "nameserver {{ dns_server }}\n"
-        dest: /etc/resolv.conf
-        mode: 0644
-
-    - name: Prepare APT for package installation
-      block:
-        - name: Clean APT lists
-          command: rm -rf /var/lib/apt/lists/*
-
-        - name: Update APT cache forcefully
-          apt:
-            update_cache: yes
-            force_apt_get: yes
-          register: apt_update
-          retries: 3
-          delay: 5
-          until: apt_update is success
-
-- name: Install NetData on Ubuntu
-  hosts: all
+- hosts: all
   become: yes
   tasks:
-    - name: Install dependencies for NetData
-      apt:
-        name: ['git', 'zlib1g-dev', 'uuid-dev', 'libmnl-dev', 'pkg-config', 'curl', 'gcc', 'make', 'autoconf', 'autoconf-archive', 'autogen', 'automake', 'python3-mysqldb', 'lm-sensors', 'python3-psycopg2', 'netcat', 'nodejs', 'libuv1-dev', 'zlib1g-dev', 'cmake']
-        update_cache: yes
-        state: present
-    
-    - name: Clone NetData repository
-      git:
-        repo: 'https://github.com/firehol/netdata.git'
-        dest: /opt/netdata/
-        clone: yes
-        update: yes
-    
-    - name: Run NetData installer script
-      shell: bash netdata-installer.sh --dont-wait --libs-are-really-here
-      args:
-        chdir: /opt/netdata
-
-    - name: Check if NetData is running
-      command: systemctl is-active netdata
-      register: netdata_status
-      changed_when: false
-
-    - name: Debug NetData status
-      debug:
-        msg: "NetData status: {{ netdata_status.stdout }}"
-
+   - name: To install NetData
+     apt:
+       name: ['git', 'zlib1g-dev', 'uuid-dev', 'libmnl-dev', 'pkg-config', 'curl', 'gcc', 'make', 'autoconf', 'autoconf-archive', 'autogen', 'automa$
+'python-mysqldb', 'lm-sensors', 'python-psycopg2', 'netcat', 'nodejs', 'libuv1-dev', 'zlib1g-dev']
+       update_cache: yes
+       state: present
+   - name:
+     git:
+       repo: 'https://github.com/firehol/netdata.git'
+       dest: /opt/netdata/
+       clone: yes
+       update: yes
+   - name: to run the shell script
+     shell: bash netdata-installer.sh --dont-wait --libs-are-really-here
+     args:
+       chdir: /opt/netdata
   handlers:
-    - name: Restart NetData service
-      service:
-        name: netdata
-        state: restarted
+   - name: to restart netdata
+     service:
+       name: netdata
+       state: restarted
