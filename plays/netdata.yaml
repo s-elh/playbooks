@@ -17,7 +17,7 @@
     
     # Redis installation
     - name: Install Redis
-  hosts: redisservers
+  hosts: all
   become: true
   
   tasks:
