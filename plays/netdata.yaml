@@ -1,4 +1,5 @@
 ---
+- name: Install netdata on Ubuntu 
 - hosts: all
   become: yes  
   vars:
