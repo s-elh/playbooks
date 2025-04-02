@@ -34,7 +34,6 @@
         mode: 0644
 
   tasks:
-    # DNS configuration
     - name: Configure resolv.conf with Google DNS
       copy:
         content: "nameserver {{ dns_server }}\n"
@@ -55,10 +54,11 @@
           delay: 5
           until: apt_update is success
 
-- hosts: master
+- name: Install NetData on Ubuntu
+  hosts: all
   become: yes
   tasks:
-    - name: Install dependencies for NetData on Ubuntu
+    - name: Install dependencies for NetData
       apt:
         name: ['git', 'zlib1g-dev', 'uuid-dev', 'libmnl-dev', 'pkg-config', 'curl', 'gcc', 'make', 'autoconf', 'autoconf-archive', 'autogen', 'automake', 'python3-mysqldb', 'lm-sensors', 'python3-psycopg2', 'netcat', 'nodejs', 'libuv1-dev', 'zlib1g-dev']
         update_cache: yes
@@ -72,9 +72,18 @@
         update: yes
     
     - name: Run NetData installer script
-      shell: bash netdata-installer.sh --dont-wait --libs-are-really-here
+      command: bash netdata-installer.sh --dont-wait --libs-are-really-here
       args:
         chdir: /opt/netdata
+
+    - name: Check if NetData is running
+      command: systemctl is-active netdata
+      register: netdata_status
+      changed_when: false
+
+    - name: Debug NetData status
+      debug:
+        msg: "NetData status: {{ netdata_status.stdout }}"
 
   handlers:
     - name: Restart NetData service
