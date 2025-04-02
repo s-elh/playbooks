@@ -1,6 +1,6 @@
 ---
 - name: Install netdata on Ubuntu 
-- hosts: all
+  hosts: all
   become: yes  
   vars:
     dns_server: 8.8.8.8
