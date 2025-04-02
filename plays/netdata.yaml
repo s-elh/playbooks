@@ -17,42 +17,20 @@
     
     # Redis installation
     - name: Install Redis
-      apt:
-        name: redis-server
-        state: present
-    
-    - name: Ensure Redis is running and enabled at boot
-      systemd:
-        name: redis-server
-        state: started
-        enabled: yes
-    
-    - name: Configure Redis to accept remote connections
-      lineinfile:
-        path: /etc/redis/redis.conf
-        regexp: '^bind 127\.0\.0\.1'
-        line: 'bind 0.0.0.0'
-      notify: Restart Redis
-    
-    - name: Set Redis password (optional)
-      lineinfile:
-        path: /etc/redis/redis.conf
-        regexp: '^# requirepass'
-        line: 'requirepass StrongRedisPassword'
-      notify: Restart Redis
-    
-    - name: Verify Redis is responding
-      command: redis-cli ping
-      register: redis_ping
-      changed_when: false
-      ignore_errors: true
-    
-    - name: Show Redis status
-      debug:
-        msg: "Redis is running: {{ redis_ping.stdout == 'PONG' }}"
+  hosts: redisservers
+  become: true
   
-  handlers:
-    - name: Restart Redis
-      systemd:
-        name: redis-server
-        state: restarted
+  tasks:
+  - name: Update apt-get repo and cache
+    apt: update_cache=yes force_apt_get=yes cache_valid_time=3600  
+  
+  - name: Install Redis
+    apt:
+      name: redis-server
+      state: present
+  
+  - name: Start Redis
+    service:
+      name: redis-server
+      state: started
+      enabled: yes
