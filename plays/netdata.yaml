@@ -1,45 +1,58 @@
-- hosts: all
+---
+- name: Installation de Redis sur Ubuntu
+  hosts: all
   become: yes
   tasks:
-    - name: To install NetData dependencies
+    # Basic system setup
+    - name: Configure resolv.conf with Google DNS
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
+    - name: Clear apt proxy settings
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+      
+    - name: Update apt cache
       apt:
-        name:
-          - git
-          - zlib1g-dev
-          - uuid-dev
-          - libmnl-dev
-          - pkg-config
-          - curl
-          - gcc
-          - g++
-          - make
-          - autoconf
-          - autoconf-archive
-          - autogen
-          - automake
-          - python3-mysqldb
-          - lm-sensors
-          - python3-psycopg2
-          - netcat
-          - nodejs
-          - libuv1-dev
         update_cache: yes
+        cache_valid_time: 3600
+    
+    # Redis installation
+    - name: Install Redis
+      apt:
+        name: redis-server
         state: present
-
-    - name: Clone NetData repository
-      git:
-        repo: 'https://github.com/firehol/netdata.git'
-        dest: /opt/netdata/
-        clone: yes
-        update: yes
-
-    - name: Run the NetData installer script
-      shell: bash netdata-installer.sh --dont-wait --libs-are-really-here
-      args:
-        chdir: /opt/netdata
-
+    
+    - name: Ensure Redis is running and enabled at boot
+      systemd:
+        name: redis-server
+        state: started
+        enabled: yes
+    
+    - name: Configure Redis to accept remote connections
+      lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: '^bind 127\.0\.0\.1'
+        line: 'bind 0.0.0.0'
+      notify: Restart Redis
+    
+    - name: Set Redis password (optional)
+      lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: '^# requirepass'
+        line: 'requirepass StrongRedisPassword'
+      notify: Restart Redis
+    
+    - name: Verify Redis is responding
+      command: redis-cli ping
+      register: redis_ping
+      changed_when: false
+      ignore_errors: true
+    
+    - name: Show Redis status
+      debug:
+        msg: "Redis is running: {{ redis_ping.stdout == 'PONG' }}"
+  
   handlers:
-    - name: Restart NetData service
-      service:
-        name: netdata
+    - name: Restart Redis
+      systemd:
+        name: redis-server
         state: restarted
