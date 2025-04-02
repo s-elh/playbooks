@@ -11,6 +11,7 @@
           - pkg-config
           - curl
           - gcc
+          - g++
           - make
           - autoconf
           - autoconf-archive
