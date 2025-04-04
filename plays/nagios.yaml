@@ -1,23 +1,31 @@
 ---
-- name: Install and Configure Nagios
-  hosts: all
+- name: Define Nagios target machines
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Add target machines dynamically
+      add_host:
+        name: "{{ item.ip }}"
+        ansible_user: "{{ item.user }}"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+        groups: nagios_servers
+      loop:
+        - { ip: "192.168.1.10", user: "ubuntu" }
+        - { ip: "192.168.1.11", user: "ubuntu" }
+
+- name: Install Nagios on target machines
+  hosts: nagios_servers
   become: yes
   vars:
-    ip_add: "10.1.38.12"
     nagios_version: "4.4.6"
     plugins_version: "2.3.3"
     nagios_user: "nagios"
     nagios_group: "nagcmd"
     nagios_web_user: "nagiosadmin"
-    nagios_password: "ACSCloud!2021!"
+    nagios_password: "{{ lookup('env', 'NAGIOS_PASSWORD') | default('ACSCloud!2021!', true) }}"  # Mot de passe modifiable via variable d'environnement
+
   tasks:
-    # Basic system setup
-    - name: Configure resolv.conf with Google DNS
-      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-    
-    - name: Clear apt proxy settings
-      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
-    - name: Update and upgrade system
+    - name: Update system
       apt:
         update_cache: yes
         upgrade: yes
@@ -40,17 +48,19 @@
           - curl
         state: present
 
-    - name: Add nagios user
+    - name: Create Nagios user and group
       user:
         name: "{{ nagios_user }}"
-        state: present
+        comment: "Nagios Monitoring User"
+        create_home: no
+        shell: /bin/false
 
-    - name: Add nagcmd group
+    - name: Create nagcmd group
       group:
         name: "{{ nagios_group }}"
         state: present
 
-    - name: Add nagios user to nagcmd group
+    - name: Add Nagios user to nagcmd group
       user:
         name: "{{ nagios_user }}"
         groups: "{{ nagios_group }}"
@@ -65,15 +75,15 @@
     - name: Download Nagios Core
       get_url:
         url: "https://github.com/NagiosEnterprises/nagioscore/releases/download/nagios-{{ nagios_version }}/nagios-{{ nagios_version }}.tar.gz"
-        dest: "/tmp/nagios-{{ nagios_version }}.tar.gz"
+        dest: "/tmp/nagios.tar.gz"
 
     - name: Extract Nagios Core
-      unarchive:
-        src: "/tmp/nagios-{{ nagios_version }}.tar.gz"
-        dest: "/tmp"
+      ansible.builtin.unarchive:
+        src: "/tmp/nagios.tar.gz"
+        dest: "/tmp/"
         remote_src: yes
 
-    - name: Compile and Install Nagios Core
+    - name: Compile and install Nagios Core
       shell: |
         cd /tmp/nagios-{{ nagios_version }}
         ./configure --with-nagios-group={{ nagios_user }} --with-command-group={{ nagios_group }}
@@ -86,22 +96,22 @@
     - name: Download Nagios Plugins
       get_url:
         url: "https://nagios-plugins.org/download/nagios-plugins-{{ plugins_version }}.tar.gz"
-        dest: "/tmp/nagios-plugins-{{ plugins_version }}.tar.gz"
+        dest: "/tmp/nagios-plugins.tar.gz"
 
     - name: Extract Nagios Plugins
-      unarchive:
-        src: "/tmp/nagios-plugins-{{ plugins_version }}.tar.gz"
-        dest: "/tmp"
+      ansible.builtin.unarchive:
+        src: "/tmp/nagios-plugins.tar.gz"
+        dest: "/tmp/"
         remote_src: yes
 
-    - name: Compile and Install Nagios Plugins
+    - name: Compile and install Nagios Plugins
       shell: |
         cd /tmp/nagios-plugins-{{ plugins_version }}
-        ./configure --with-nagios-user={{ nagios_user }} --with-nagios-group={{ nagios_user }}
+        ./configure --with-nagios-user={{ nagios_user }} --with-nagios-group={{ nagios_group }}
         make
         make install
 
-    - name: Configure Web Interface
+    - name: Install Nagios web configuration
       shell: |
         make install-webconf
         a2enmod rewrite cgi
@@ -112,13 +122,13 @@
     - name: Set up Nagios admin password
       shell: "htpasswd -bc /usr/local/nagios/etc/htpasswd.users {{ nagios_web_user }} {{ nagios_password }}"
 
-    - name: Start and enable Nagios service
+    - name: Start and enable Nagios
       systemd:
         name: nagios
         state: started
         enabled: yes
 
-    - name: Restart Apache2
+    - name: Restart Apache
       systemd:
         name: apache2
         state: restarted
