@@ -1,0 +1,118 @@
+  ---
+  - name: Install and Configure Nagios
+    hosts: all
+    become: yes
+    vars:
+      ip_add: "10.1.38.12"
+      nagios_version: "4.4.6"
+      plugins_version: "2.3.3"
+      nagios_user: "nagios"
+      nagios_group: "nagcmd"
+      nagios_web_user: "nagiosadmin"
+      nagios_password: "ACSCloud!2021!"
+    tasks:
+      - name: Update and upgrade system
+        apt:
+          update_cache: yes
+          upgrade: yes
+
+      - name: Install required packages
+        apt:
+          name:
+            - apache2
+            - php
+            - php-gd
+            - php-cli
+            - unzip
+            - wget
+            - libgd-dev
+            - libapache2-mod-php
+            - build-essential
+            - libperl-dev
+            - libssl-dev
+            - daemon
+            - curl
+          state: present
+
+      - name: Add nagios user and group
+        user:
+          name: "{{ nagios_user }}"
+          state: present
+
+      - name: Add nagcmd group
+        group:
+          name: "{{ nagios_group }}"
+          state: present
+
+      - name: Add nagios user to nagcmd group
+        user:
+          name: "{{ nagios_user }}"
+          groups: "{{ nagios_group }}"
+          append: yes
+
+      - name: Add www-data to nagcmd group
+        user:
+          name: "www-data"
+          groups: "{{ nagios_group }}"
+          append: yes
+
+      - name: Download Nagios Core
+        get_url:
+          url: "https://github.com/NagiosEnterprises/nagioscore/releases/download/nagios-{{ nagios_version }}/nagios-{{ nagios_version }}.tar.gz"
+          dest: "/tmp/nagios-{{ nagios_version }}.tar.gz"
+
+      - name: Extract Nagios Core
+        unarchive:
+          src: "/tmp/nagios-{{ nagios_version }}.tar.gz"
+          dest: "/tmp"
+          remote_src: yes
+
+      - name: Compile and Install Nagios Core
+        shell: |
+          cd /tmp/nagios-{{ nagios_version }}
+          ./configure --with-nagios-group={{ nagios_user }} --with-command-group={{ nagios_group }}
+          make all
+          make install
+          make install-init
+          make install-commandmode
+          make install-config
+
+      - name: Download Nagios Plugins
+        get_url:
+          url: "https://nagios-plugins.org/download/nagios-plugins-{{ plugins_version }}.tar.gz"
+          dest: "/tmp/nagios-plugins-{{ plugins_version }}.tar.gz"
+
+      - name: Extract Nagios Plugins
+        unarchive:
+          src: "/tmp/nagios-plugins-{{ plugins_version }}.tar.gz"
+          dest: "/tmp"
+          remote_src: yes
+
+      - name: Compile and Install Nagios Plugins
+        shell: |
+          cd /tmp/nagios-plugins-{{ plugins_version }}
+          ./configure --with-nagios-user={{ nagios_user }} --with-nagios-group={{ nagios_user }}
+          make
+          make install
+
+      - name: Configure Web Interface
+        shell: |
+          make install-webconf
+          a2enmod rewrite cgi
+          systemctl restart apache2
+        args:
+          chdir: "/tmp/nagios-{{ nagios_version }}"
+
+      - name: Set up Nagios admin password
+        shell: "htpasswd -bc /usr/local/nagios/etc/htpasswd.users {{ nagios_web_user }} {{ nagios_password }}"
+
+      - name: Start and enable Nagios service
+        systemd:
+          name: nagios
+          state: started
+          enabled: yes
+
+      - name: Restart Apache2
+        systemd:
+          name: apache2
+          state: restarted
