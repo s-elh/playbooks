@@ -3,12 +3,6 @@
   hosts: all
   gather_facts: no
   tasks:
-    # Basic system setup
-    - name: Configure resolv.conf with Google DNS
-      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-    
-    - name: Clear apt proxy settings
-      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
     - name: Add target machines dynamically
       add_host:
         name: "{{ item.ip }}"
