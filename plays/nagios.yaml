@@ -11,6 +11,12 @@
     nagios_web_user: "nagiosadmin"
     nagios_password: "ACSCloud!2021!"
   tasks:
+    # Basic system setup
+    - name: Configure resolv.conf with Google DNS
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+    
+    - name: Clear apt proxy settings
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
     - name: Update and upgrade system
       apt:
         update_cache: yes
