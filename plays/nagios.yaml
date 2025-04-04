@@ -14,7 +14,7 @@
         - { ip: "192.168.1.11", user: "ubuntu" }
 
 - name: Install Nagios on target machines
-  hosts: nagios_servers
+  hosts: all
   become: yes
   vars:
     nagios_version: "4.4.6"
