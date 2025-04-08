@@ -2,8 +2,6 @@
 - name: Install Cockpit on Ubuntu
   hosts: all
   become: yes
-  collections:
-    - community.general
 
   tasks:
     - name: Configure resolv.conf with Google DNS
@@ -27,9 +25,3 @@
         name: cockpit
         enabled: yes
         state: started
-
-    - name: Allow Cockpit port 9090 through UFW
-      community.general.ufw:
-        rule: allow
-        port: 9090
-        proto: tcp
