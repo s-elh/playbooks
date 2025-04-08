@@ -1,34 +1,35 @@
 ---
-- name: Install Redis
+- name: Install Cockpit on Ubuntu
   hosts: all
-  become: true
+  become: yes
+  collections:
+    - community.general
+
   tasks:
-    # Basic system setup
     - name: Configure resolv.conf with Google DNS
       shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
-    
+
     - name: Clear apt proxy settings
       shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
-      
+
     - name: Update apt cache
       apt:
         update_cache: yes
         cache_valid_time: 3600
-    
-    # Original Redis installation tasks
-    - name: Update apt-get repo and cache
+
+    - name: Install Cockpit
       apt:
-        update_cache: yes
-        force_apt_get: yes
-        cache_valid_time: 3600
-    
-    - name: Install Redis
-      apt:
-        name: redis-server
+        name: cockpit
         state: present
-    
-    - name: Start Redis
-      service:
-        name: redis-server
-        state: started
+
+    - name: Enable and start Cockpit service
+      systemd:
+        name: cockpit
         enabled: yes
+        state: started
+
+    - name: Allow Cockpit port 9090 through UFW
+      community.general.ufw:
+        rule: allow
+        port: 9090
+        proto: tcp
