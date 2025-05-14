@@ -1,0 +1,167 @@
+---
+- name: Install WordPress on Ubuntu
+  hosts: all
+  become: yes
+  vars:
+    mysql_password: "{{ lookup('cypher','secret=secret/mysqlpw') }}"
+    mysql_user: "{{ mysql_wp_user }}"
+    mysql_user_password: "{{ mysql_wp_password }}"
+    mysql_database: wordpress_db
+    http_host: your_domain
+    http_conf: your_domain.conf
+    http_port: "80"
+    disable_default: true
+
+  tasks:
+    # DNS et proxy
+    - name: Configure resolv.conf with Google DNS
+      shell: echo nameserver 8.8.8.8 > /etc/resolv.conf
+
+    - name: Clear apt proxy settings
+      shell: echo > /etc/apt/apt.conf.d/90curtin-aptproxy
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - apache2
+          - mysql-server
+          - php
+          - php-mysql
+          - php-curl
+          - php-gd
+          - php-mbstring
+          - php-xml
+          - php-xmlrpc
+          - php-soap
+          - php-intl
+          - php-zip
+          - python3-mysqldb
+          - ufw
+        state: present
+
+    - name: Start and enable services
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - apache2
+        - mysql
+
+    - name: Secure MySQL root user
+      shell: |
+        mysql --user=root <<EOF
+        ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '{{ mysql_password }}';
+        FLUSH PRIVILEGES;
+        EOF
+      ignore_errors: yes
+
+    - name: Create MySQL database
+      shell: |
+        mysql --user=root --password='{{ mysql_password }}' -e "CREATE DATABASE IF NOT EXISTS {{ mysql_database }};"
+      ignore_errors: yes
+
+    - name: Create MySQL user and grant privileges
+      shell: |
+        mysql --user=root --password='{{ mysql_password }}' <<EOF
+        CREATE USER IF NOT EXISTS '{{ mysql_user }}'@'localhost' IDENTIFIED BY '{{ mysql_user_password }}';
+        GRANT ALL PRIVILEGES ON {{ mysql_database }}.* TO '{{ mysql_user }}'@'localhost';
+        FLUSH PRIVILEGES;
+        EOF
+      ignore_errors: yes
+
+    - name: Download WordPress
+      get_url:
+        url: https://wordpress.org/latest.tar.gz
+        dest: /tmp/wordpress.tar.gz
+
+    - name: Extract WordPress
+      unarchive:
+        src: /tmp/wordpress.tar.gz
+        dest: /var/www/html/
+        remote_src: yes
+
+    - name: Set permissions
+      file:
+        path: /var/www/html/wordpress
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+        recurse: yes
+
+    - name: Copy WordPress config file
+      copy:
+        remote_src: yes
+        src: /var/www/html/wordpress/wp-config-sample.php
+        dest: /var/www/html/wordpress/wp-config.php
+        owner: www-data
+        group: www-data
+
+    - name: Update wp-config with DB credentials
+      replace:
+        path: /var/www/html/wordpress/wp-config.php
+        regexp: "{{ item.regexp }}"
+        replace: "{{ item.replace }}"
+      with_items:
+        - { regexp: 'database_name_here', replace: "{{ mysql_database }}" }
+        - { regexp: 'username_here', replace: "{{ mysql_user }}" }
+        - { regexp: 'password_here', replace: "{{ mysql_user_password }}" }
+
+    - name: Generate WordPress salts
+      shell: curl -s https://api.wordpress.org/secret-key/1.1/salt/
+      register: wp_salts
+      changed_when: false
+
+    - name: Add WordPress salts
+      blockinfile:
+        path: /var/www/html/wordpress/wp-config.php
+        block: "{{ wp_salts.stdout }}"
+        marker: "// ANSIBLE MANAGED BLOCK"
+        insertafter: "/* Add any custom values between this line and the \"stop editing\" line. */"
+
+    - name: Create Apache virtual host
+      copy:
+        content: |
+          <VirtualHost *:80>
+            ServerAdmin webmaster@localhost
+            DocumentRoot /var/www/html/wordpress
+            ServerName {{ http_host }}
+
+            <Directory /var/www/html/wordpress/>
+              Options FollowSymLinks
+              AllowOverride All
+              Require all granted
+            </Directory>
+
+            ErrorLog ${APACHE_LOG_DIR}/error.log
+            CustomLog ${APACHE_LOG_DIR}/access.log combined
+          </VirtualHost>
+        dest: "/etc/apache2/sites-available/{{ http_conf }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable Apache modules and site
+      shell: |
+        a2enmod rewrite
+        a2ensite {{ http_conf }}
+        a2dissite 000-default.conf
+      notify: Reload Apache
+
+    - name: Enable UFW and allow port 80
+      shell: |
+        ufw allow 80/tcp
+        ufw --force enable
+      ignore_errors: yes
+
+  handlers:
+    - name: Reload Apache
+      service:
+        name: apache2
+        state: reloaded
